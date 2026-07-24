@@ -1,0 +1,11 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated third-party dependency sources"
+paths = ['''^vendor/''']
+
+[[allowlists]]
+description = "Deterministic synthetic station credentials"
+regexTarget = "secret"
+regexes = ['''^0123456789abcdef0123456789abcdef(?:0123456789abcdef)?$''']

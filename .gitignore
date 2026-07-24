@@ -1,0 +1,45 @@
+# Local configuration and secrets
+/.env
+/.env.*
+!/.env.example
+
+# Dependencies and local tool environments
+/node_modules/
+/.venv/
+
+# Go build, test, and profiling output
+/zak-radio
+/zak-radio-go
+*.test
+*.out
+*.prof
+coverage.out
+
+# Browser test artifacts
+/.playwright-cli/
+/blob-report/
+/playwright-report/
+/test-results/
+
+# Python helper artifacts
+__pycache__/
+*.py[cod]
+/.mypy_cache/
+/.pytest_cache/
+/.ruff_cache/
+/.coverage
+/htmlcov/
+
+# Generated Apphost release packages
+/.apphost-package/
+/.apphost-packages/
+
+# Logs, editor state, and operating-system metadata
+*.log
+*.swp
+*.swo
+*~
+/.idea/
+/.vscode/
+.DS_Store
+Thumbs.db

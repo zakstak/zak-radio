@@ -1,0 +1,12 @@
+FROM golang:1.26.5-alpine
+
+RUN apk add --no-cache \
+    bash \
+    build-base \
+    coreutils \
+    findutils \
+    python3 \
+    rsync \
+    sqlite \
+    tar \
+    util-linux

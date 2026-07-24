@@ -1,0 +1,14 @@
+{
+  "name": "zak-radio",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./static/styles.tailwind.css -o ./static/styles.css --minify",
+    "watch:css": "tailwindcss -i ./static/styles.tailwind.css -o ./static/styles.css --watch",
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3"
+  }
+}
