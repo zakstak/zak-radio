@@ -33,14 +33,20 @@ window.ZakAPI = async function api(path, options = {}) {
   const init = { ...options };
   if (init.body && typeof init.body !== "string") {
     init.body = JSON.stringify(init.body);
-    init.headers = { "Content-Type": "application/json", ...(init.headers || {}) };
+    init.headers = {
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    };
   }
   const externalSignal = init.signal;
   const controller = new AbortController();
   const relayAbort = () => controller.abort(externalSignal?.reason);
   if (externalSignal?.aborted) relayAbort();
   else externalSignal?.addEventListener("abort", relayAbort, { once: true });
-  const requestTimeout = Math.max(100, Number(window.ZakRequestTimeoutMS) || 15_000);
+  const requestTimeout = Math.max(
+    100,
+    Number(window.ZakRequestTimeoutMS) || 15_000,
+  );
   const timeout = window.setTimeout(() => {
     controller.abort(new DOMException("Request timed out", "TimeoutError"));
   }, requestTimeout);
@@ -50,7 +56,9 @@ window.ZakAPI = async function api(path, options = {}) {
     if (!response.ok) {
       const error = new Error(`${response.status} ${response.statusText}`);
       error.status = response.status;
-      error.detail = (await response.text().catch(() => "")).trim().slice(0, 256);
+      error.detail = (await response.text().catch(() => ""))
+        .trim()
+        .slice(0, 256);
       throw error;
     }
     return await response.json();

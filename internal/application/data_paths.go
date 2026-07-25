@@ -120,6 +120,16 @@ func validateDataPaths(cfg Config) error {
 			return fmt.Errorf("static directory and metadata root must be disjoint")
 		}
 	}
+	if cfg.TimedLyricsRoot != "" {
+		timedLyrics, err := unsymlinkedPath(cfg.TimedLyricsRoot)
+		if err != nil {
+			return fmt.Errorf("timed lyrics: %w", err)
+		}
+		if lexicallyInside(timedLyrics, metadata) ||
+			lexicallyInside(metadata, timedLyrics) {
+			return fmt.Errorf("timed lyrics and metadata root must be disjoint")
+		}
+	}
 	return nil
 }
 

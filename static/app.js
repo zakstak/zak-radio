@@ -28,6 +28,10 @@ const state = {
   stationCapacityRetryAt: 0,
   stationCreatePending: false,
   renderedPath: "",
+  syncedLyrics: null,
+  activeLyricCue: -1,
+  lyricsLoadGeneration: 0,
+  lyricFollowPausedUntil: 0,
 };
 
 const els = {
@@ -47,6 +51,8 @@ const els = {
   lyricsFade: document.getElementById("lyricsFade"),
   lyricsMoreRow: document.getElementById("lyricsMoreRow"),
   toggleLyrics: document.getElementById("toggleLyrics"),
+  lyricsFollow: document.getElementById("lyricsFollow"),
+  lyricsSyncStatus: document.getElementById("lyricsSyncStatus"),
   prompt: document.getElementById("prompt"),
   download: document.getElementById("download"),
   currentTime: document.getElementById("currentTime"),
@@ -88,6 +94,7 @@ const els = {
   returnLive: document.getElementById("returnLive"),
   ownerAnnouncement: document.getElementById("audioOwnerAnnouncement"),
   radioRetry: document.getElementById("radioRetry"),
+  radioQueueSummary: document.getElementById("radioQueueSummary"),
 };
 
 let toastTimer;
@@ -105,7 +112,9 @@ function timeLabel(seconds) {
   const n = Number(seconds);
   if (!Number.isFinite(n) || n < 0) return "0:00";
   const m = Math.floor(n / 60);
-  const s = Math.floor(n % 60).toString().padStart(2, "0");
+  const s = Math.floor(n % 60)
+    .toString()
+    .padStart(2, "0");
   return `${m}:${s}`;
 }
 
@@ -119,8 +128,75 @@ function fileSize(bytes) {
 }
 window.ZakFormatBytes = fileSize;
 
+function cleanedTrackLabel(value) {
+  return String(value || "")
+    .replace(/^#+\s*/, "")
+    .replace(/^(?:🎵\s*)?(?:title|subject)\s*:\s*/i, "")
+    .trim()
+    .replace(/^[“"'`]+|[”"'`]+$/g, "")
+    .trim();
+}
+
+function weakTrackLabel(value) {
+  const label = cleanedTrackLabel(value);
+  if (!label || label.length > 88 || /^\d+$/.test(label)) return true;
+  if (/^(?:artist)\s*:/i.test(label)) return true;
+  if (
+    /^\[\s*(?:lyrics?|hook|verse|chorus|bridge|intro|outro|pre-?chorus)\b.*\]$/i.test(
+      label,
+    ) ||
+    /^(?:lyrics?|verse|chorus|bridge|intro|outro|pre-?chorus)\]$/i.test(
+      label,
+    ) ||
+    /^(?:lyrics?|hook|verse|chorus|bridge|intro|outro|pre-?chorus)\s*(?::.*)?$/i.test(
+      label,
+    )
+  ) {
+    return true;
+  }
+  if (/^[[(].*[\])]$/.test(label)) return true;
+  return false;
+}
+
+function trackDisplayTitle(track) {
+  const title = cleanedTrackLabel(track?.title);
+  if (!weakTrackLabel(title)) return title;
+  const subject = cleanedTrackLabel(
+    String(track?.summary || "").split(/\r?\n/, 1)[0],
+  );
+  if (!weakTrackLabel(subject)) return subject;
+  const group = cleanedTrackLabel(track?.group);
+  if (!weakTrackLabel(group)) return group;
+  return "Original track";
+}
+
+function trackDisplayGroup(track) {
+  const group = cleanedTrackLabel(track?.group);
+  return weakTrackLabel(group) ? "" : group;
+}
+
+function createArtworkFallback() {
+  const fallback = document.createElement("span");
+  fallback.className = "track-cover-fallback";
+  fallback.setAttribute("aria-hidden", "true");
+  fallback.innerHTML = `
+    <svg class="no-artwork-icon" viewBox="0 0 96 96">
+      <rect x="18" y="39" width="10" height="18" rx="5"></rect>
+      <rect x="34" y="25" width="10" height="46" rx="5"></rect>
+      <rect x="50" y="16" width="10" height="64" rx="5"></rect>
+      <rect x="66" y="31" width="10" height="34" rx="5"></rect>
+    </svg>
+    <span>No artwork</span>`;
+  return fallback;
+}
+
+window.ZakTrackDisplayTitle = trackDisplayTitle;
+window.ZakTrackDisplayGroup = trackDisplayGroup;
+window.ZakArtworkFallback = createArtworkFallback;
+
 function showToast(message, { priority = 0, duration = 2200, type = "" } = {}) {
-  if (priority < toastPriority && performance.now() < toastPriorityUntil) return;
+  if (priority < toastPriority && performance.now() < toastPriorityUntil)
+    return;
   window.clearTimeout(toastTimer);
   toastPriority = priority;
   toastPriorityUntil = performance.now() + duration;
@@ -173,36 +249,53 @@ function renderOwnerBar() {
     }
     return;
   }
-	const pathOwner = routePath().slice(1);
-	const radioOffView = audioController.owner === "radio" && routePath() !== "/";
-	const readerLibraryOwner = audioController.owner === "reader" &&
-	  routePath() === "/reader" && !window.ZakReader?.selectedId?.();
-	const radioIsLive = Boolean(state.station?.playing);
-  const radioNeedsJoin = radioOffView && radioIsLive &&
-    (els.audio.paused || state.localRadioSuspended || !state.userActivatedAudio);
-	setOwnerBarHidden((audioController.owner === pathOwner && !readerLibraryOwner) ||
-	  (audioController.owner === "radio" && !radioOffView));
-  setText(els.ownerKicker, radioOffView
-    ? "Live station"
-    : "Listening locally");
+  const pathOwner = routePath().slice(1);
+  const radioOffView = audioController.owner === "radio" && routePath() !== "/";
+  const readerLibraryOwner =
+    audioController.owner === "reader" &&
+    routePath() === "/reader" &&
+    !window.ZakReader?.selectedId?.();
+  const radioIsLive = Boolean(state.station?.playing);
+  const radioNeedsJoin =
+    radioOffView &&
+    radioIsLive &&
+    (els.audio.paused ||
+      state.localRadioSuspended ||
+      !state.userActivatedAudio);
+  setOwnerBarHidden(
+    (audioController.owner === pathOwner && !readerLibraryOwner) ||
+      (audioController.owner === "radio" && !radioOffView),
+  );
+  setText(els.ownerKicker, radioOffView ? "Live station" : "Listening locally");
   setText(els.ownerLabel, audioController.label);
   setText(els.returnLive, radioOffView ? "Open Radio" : "Return to live");
-  els.returnLive.setAttribute("aria-label", radioOffView
-    ? "Open Radio controls"
-    : "Return to live radio");
-  setText(els.ownerPlayPause, radioOffView && !radioIsLive
-    ? "Station paused"
-    : radioNeedsJoin ? "Join live" : els.audio.paused ? "Resume" : "Pause");
-  els.ownerPlayPause.disabled = radioOffView && !radioIsLive;
-  els.ownerPlayPause.setAttribute("aria-label",
+  els.returnLive.setAttribute(
+    "aria-label",
+    radioOffView ? "Open Radio controls" : "Return to live radio",
+  );
+  setText(
+    els.ownerPlayPause,
     radioOffView && !radioIsLive
       ? "Station paused"
       : radioNeedsJoin
-      ? "Join live audio"
-      : `${els.audio.paused ? "Resume" : "Pause"} local audio`);
-  const announcement = audioController.owner === "radio"
-    ? `${radioIsLive ? "Live station" : "Station paused"}: ${audioController.label}`
-    : `Local audio: ${audioController.label}`;
+        ? "Join live"
+        : els.audio.paused
+          ? "Resume"
+          : "Pause",
+  );
+  els.ownerPlayPause.disabled = radioOffView && !radioIsLive;
+  els.ownerPlayPause.setAttribute(
+    "aria-label",
+    radioOffView && !radioIsLive
+      ? "Station paused"
+      : radioNeedsJoin
+        ? "Join live audio"
+        : `${els.audio.paused ? "Resume" : "Pause"} local audio`,
+  );
+  const announcement =
+    audioController.owner === "radio"
+      ? `${radioIsLive ? "Live station" : "Station paused"}: ${audioController.label}`
+      : `Local audio: ${audioController.label}`;
   if (announcement !== ownerAnnouncement) {
     ownerAnnouncement = announcement;
     setText(els.ownerAnnouncement, announcement);
@@ -212,7 +305,8 @@ function renderOwnerBar() {
 function syncRouteLinks() {
   document.querySelectorAll("[data-route]").forEach((link) => {
     const url = new URL(link.dataset.route, window.location.origin);
-    if (state.stationId !== "main") url.searchParams.set("station", state.stationId);
+    if (state.stationId !== "main")
+      url.searchParams.set("station", state.stationId);
     link.href = `${url.pathname}${url.search}`;
   });
 }
@@ -230,10 +324,18 @@ function requestedStation() {
 
 function renderRoute(focusView = false, preserveScroll = false) {
   const path = routePath();
+  const readerHasItem =
+    path === "/reader" &&
+    new URLSearchParams(window.location.search).has("item");
   state.renderedPath = path;
-  els.skipToContent.href = path === "/library"
-    ? "#libraryViewTitle"
-    : path === "/reader" ? "#readerTitle" : "#title";
+  els.skipToContent.href =
+    path === "/library"
+      ? "#libraryViewTitle"
+      : path === "/reader"
+        ? readerHasItem
+          ? "#readerTitle"
+          : "#readerLibraryTitle"
+        : "#title";
   document.querySelectorAll("[data-view]").forEach((view) => {
     view.hidden = view.dataset.view !== path;
   });
@@ -251,27 +353,34 @@ function renderRoute(focusView = false, preserveScroll = false) {
   if (!preserveScroll) window.scrollTo({ top: 0 });
   window.dispatchEvent(new CustomEvent("zak-route", { detail: { path } }));
   if (focusView) {
-    const heading = path === "/library"
-      ? document.getElementById("libraryViewTitle")
-      : path === "/reader" ? document.getElementById("readerTitle") : els.title;
+    const heading =
+      path === "/library"
+        ? document.getElementById("libraryViewTitle")
+        : path === "/reader"
+          ? document.getElementById(
+              readerHasItem ? "readerTitle" : "readerLibraryTitle",
+            )
+          : els.title;
     window.queueMicrotask(() => heading?.focus({ preventScroll: true }));
   }
 }
 
 function updateShellContext() {
   const path = routePath();
-  els.shellContext.textContent = path === "/library"
-    ? "Original music archive"
-    : path === "/reader"
-      ? "Source reading room"
-      : `${state.tracks.length || "Shared"} tracks`;
+  els.shellContext.textContent =
+    path === "/library"
+      ? "Original music archive"
+      : path === "/reader"
+        ? "Source reading room"
+        : `${state.tracks.length || "Shared"} tracks`;
 }
 
 function navigate(path) {
   commitScrollState();
   const url = new URL(window.location.href);
   url.pathname = path;
-  if (state.stationId !== "main") url.searchParams.set("station", state.stationId);
+  if (state.stationId !== "main")
+    url.searchParams.set("station", state.stationId);
   else url.searchParams.delete("station");
   if (path !== "/reader") url.searchParams.delete("item");
   else if (routePath() === "/reader") url.searchParams.delete("item");
@@ -279,7 +388,10 @@ function navigate(path) {
     const item = window.ZakReader?.selectedId?.();
     if (item) url.searchParams.set("item", item);
   }
-  if (`${url.pathname}${url.search}` !== `${window.location.pathname}${window.location.search}`) {
+  if (
+    `${url.pathname}${url.search}` !==
+    `${window.location.pathname}${window.location.search}`
+  ) {
     window.history.pushState({ scroll: [0, 0] }, "", url);
   }
   renderRoute(true);
@@ -289,31 +401,45 @@ const audioController = {
   element: els.audio,
   owner: "",
   label: "",
+  stationId: "",
   generation: 0,
   is(owner) {
     return this.owner === owner;
   },
-  claim(owner, src, label) {
+  claim(owner, src, label, { stationId = "" } = {}) {
     const changedSource = !els.audio.src.endsWith(src);
-    const needsReload = changedSource || Boolean(els.audio.error) ||
+    const changedOwner = this.owner !== owner;
+    const changedStation = owner === "radio" && this.stationId !== stationId;
+    const needsReload =
+      changedSource ||
+      Boolean(els.audio.error) ||
       els.audio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE;
-    if (this.owner !== owner || changedSource) {
-      window.dispatchEvent(new CustomEvent("zak-audio-release", {
-        detail: {
-          owner: this.owner,
-          nextOwner: owner,
-          position: els.audio.currentTime || 0,
-          playing: !els.audio.paused,
-          generation: this.generation,
-        },
-      }));
+    if (!changedOwner && !changedStation && !changedSource && !needsReload) {
+      this.label = label;
+      renderOwnerBar();
+      updateNowPlayingMetadata();
+      return false;
+    }
+    if (changedOwner || changedStation || changedSource) {
+      window.dispatchEvent(
+        new CustomEvent("zak-audio-release", {
+          detail: {
+            owner: this.owner,
+            nextOwner: owner,
+            position: els.audio.currentTime || 0,
+            playing: !els.audio.paused,
+            generation: this.generation,
+          },
+        }),
+      );
     }
     this.generation++;
-    if (needsReload) {
+    if (needsReload || changedOwner || changedStation) {
       els.audio.pause();
     }
     this.owner = owner;
     this.label = label;
+    this.stationId = owner === "radio" ? stationId : "";
     els.audio.loop = false;
     clearMediaPositionState();
     if (needsReload) {
@@ -329,42 +455,38 @@ const audioController = {
       });
     }
     updateNowPlayingMetadata();
-    window.dispatchEvent(new CustomEvent("zak-audio-owner", { detail: { owner, label } }));
+    window.dispatchEvent(
+      new CustomEvent("zak-audio-owner", { detail: { owner, label } }),
+    );
     return needsReload;
   },
   async returnLive(sync = true) {
     const track = state.station ? currentTrack() : null;
     if (!track) {
-      showToast("Live station controls are unavailable. Local audio is still active.");
+      showToast(
+        "Live station controls are unavailable. Local audio is still active.",
+      );
       renderOwnerBar();
       return false;
     }
     state.userActivatedAudio = true;
     state.localRadioSuspended = false;
     els.audio.pause();
-    window.dispatchEvent(new CustomEvent("zak-audio-release", {
-      detail: {
-        owner: this.owner,
-        nextOwner: "radio",
-        position: els.audio.currentTime || 0,
-        playing: !els.audio.paused,
-        generation: this.generation,
-      },
-    }));
-    this.generation++;
-    this.owner = "radio";
-    this.label = track.title || "Live station";
-    clearMediaPositionState();
-    renderOwnerBar();
+    window.dispatchEvent(
+      new CustomEvent("zak-audio-release", {
+        detail: {
+          owner: this.owner,
+          nextOwner: "radio",
+          position: els.audio.currentTime || 0,
+          playing: !els.audio.paused,
+          generation: this.generation,
+        },
+      }),
+    );
     const src = mediaAudioURL(track);
-    if (!els.audio.src.endsWith(src)) {
-      els.audio.src = src;
-      els.audio.load();
-    }
-    window.dispatchEvent(new CustomEvent("zak-audio-owner", {
-      detail: { owner: "radio", label: this.label },
-    }));
-    updateNowPlayingMetadata();
+    this.claim("radio", src, trackDisplayTitle(track), {
+      stationId: state.stationId,
+    });
     if (sync) await syncAudioToStation();
     return true;
   },
@@ -376,15 +498,18 @@ const audioController = {
     els.audio.load();
     this.owner = "";
     this.label = "";
+    this.stationId = "";
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = null;
       clearMediaPositionState();
     }
     renderOwnerBar();
     updateNowPlayingMetadata();
-    window.dispatchEvent(new CustomEvent("zak-audio-owner", {
-      detail: { owner: "", label: "" },
-    }));
+    window.dispatchEvent(
+      new CustomEvent("zak-audio-owner", {
+        detail: { owner: "", label: "" },
+      }),
+    );
   },
   async play({ generation = this.generation, valid = () => true } = {}) {
     this.reloadIfFailed();
@@ -392,22 +517,29 @@ const audioController = {
       await els.audio.play();
       return true;
     } catch (error) {
-      if (error?.name !== "AbortError" && this.generation === generation && valid()) {
+      if (
+        error?.name !== "AbortError" &&
+        this.generation === generation &&
+        valid()
+      ) {
         reportAudioError(error);
       }
       return false;
     }
   },
-	reloadIfFailed() {
-    if (els.audio.error || els.audio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) {
+  reloadIfFailed() {
+    if (
+      els.audio.error ||
+      els.audio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE
+    ) {
       els.audio.load();
       return true;
     }
-	  return false;
-	},
-	refreshOwner() {
-	  renderOwnerBar();
-	},
+    return false;
+  },
+  refreshOwner() {
+    renderOwnerBar();
+  },
 };
 
 window.ZakAudio = audioController;
@@ -415,8 +547,11 @@ window.ZakNavigate = navigate;
 window.ZakShowToast = showToast;
 
 function clearMediaPositionState() {
-  if (!("mediaSession" in navigator) ||
-      typeof navigator.mediaSession.setPositionState !== "function") return;
+  if (
+    !("mediaSession" in navigator) ||
+    typeof navigator.mediaSession.setPositionState !== "function"
+  )
+    return;
   try {
     navigator.mediaSession.setPositionState();
   } catch {}
@@ -426,37 +561,46 @@ let catalogRequest;
 let catalogGeneration = 0;
 const catalogListeners = new Set();
 async function loadCatalog(force = false) {
-	if (catalogRequest && !force) return catalogRequest.promise;
-	if (catalogRequest && force) {
-	  catalogRequest.controller.abort();
-	  catalogRequest = null;
-	}
-	if (state.tracks.length && !force) return state.tracks;
-	const controller = new AbortController();
-	const generation = ++catalogGeneration;
-	const activeRequest = { controller, promise: null };
-	const request = api("/api/tracks", { signal: controller.signal }).then((data) => {
-	  if (generation !== catalogGeneration) throw new DOMException("Stale catalog", "AbortError");
-	  const tracks = Array.isArray(data.tracks) ? data.tracks : [];
-	  if (!tracks.length) throw new Error("The archive has no playable tracks.");
-	  state.tracks = tracks;
-	  state.trackStatsRevision = Number(data.track_stats_revision || 0);
-	  state.catalogRevision = String(data.catalog_revision || "");
-	  for (const listener of catalogListeners) listener(tracks);
-	  return tracks;
-	});
-	activeRequest.promise = request;
-	catalogRequest = activeRequest;
-	try {
-	  return await request;
-	} finally {
-	  if (catalogRequest === activeRequest) catalogRequest = null;
-	}
+  if (catalogRequest && !force) return catalogRequest.promise;
+  if (catalogRequest && force) {
+    catalogRequest.controller.abort();
+    catalogRequest = null;
+  }
+  if (state.tracks.length && !force) return state.tracks;
+  const controller = new AbortController();
+  const generation = ++catalogGeneration;
+  const activeRequest = { controller, promise: null };
+  const request = api("/api/tracks", { signal: controller.signal }).then(
+    (data) => {
+      if (generation !== catalogGeneration)
+        throw new DOMException("Stale catalog", "AbortError");
+      const tracks = Array.isArray(data.tracks) ? data.tracks : [];
+      if (!tracks.length)
+        throw new Error("The archive has no playable tracks.");
+      state.tracks = tracks;
+      state.trackStatsRevision = Number(data.track_stats_revision || 0);
+      state.catalogRevision = String(data.catalog_revision || "");
+      for (const listener of catalogListeners) listener(tracks);
+      return tracks;
+    },
+  );
+  activeRequest.promise = request;
+  catalogRequest = activeRequest;
+  try {
+    return await request;
+  } finally {
+    if (catalogRequest === activeRequest) catalogRequest = null;
+  }
 }
 
 function applyTrackStats(payload) {
   const revision = Number(payload?.revision || 0);
-  if (!revision || revision <= state.trackStatsRevision || !Array.isArray(payload.tracks)) return false;
+  if (
+    !revision ||
+    revision <= state.trackStatsRevision ||
+    !Array.isArray(payload.tracks)
+  )
+    return false;
   const byID = new Map(payload.tracks.map((stat) => [stat.track_id, stat]));
   for (const track of state.tracks) {
     const stat = byID.get(track.id);
@@ -466,7 +610,9 @@ function applyTrackStats(payload) {
   }
   state.trackStatsRevision = revision;
   if (state.station) {
-    const current = state.tracks.find((track) => track.id === state.station.track_id);
+    const current = state.tracks.find(
+      (track) => track.id === state.station.track_id,
+    );
     if (current) {
       state.station.liked = current.liked;
       state.station.skip_count = current.skip_count;
@@ -492,10 +638,13 @@ window.ZakCatalog = {
 
 function reportAudioError(error) {
   if (error?.name === "NotAllowedError") {
-    showToast("Tap Play to allow audio in this browser.", { type: "audio-error" });
+    showToast("Tap Play to allow audio in this browser.", {
+      type: "audio-error",
+    });
   } else {
-    showToast("Audio is unavailable. Check the media file and try again.",
-      { type: "audio-error" });
+    showToast("Audio is unavailable. Check the media file and try again.", {
+      type: "audio-error",
+    });
   }
 }
 
@@ -505,12 +654,16 @@ function durationOf(track) {
 }
 
 function mediaAudioURL(track) {
-  const version = encodeURIComponent(track?.audio_sha256 || state.catalogRevision || "current");
+  const version = encodeURIComponent(
+    track?.audio_sha256 || state.catalogRevision || "current",
+  );
   return `/media/${encodeURIComponent(track.id)}/audio?v=${version}`;
 }
 
 function mediaCoverURL(track) {
-  const version = encodeURIComponent(track?.cover_sha256 || state.catalogRevision || "current");
+  const version = encodeURIComponent(
+    track?.cover_sha256 || state.catalogRevision || "current",
+  );
   return `/media/${encodeURIComponent(track.id)}/cover?v=${version}`;
 }
 
@@ -531,17 +684,48 @@ function stationQuery() {
 }
 
 function canControlStation() {
-  return Boolean(state.station) &&
-    (state.stationId === "main" || Boolean(state.station.can_control));
+  return (
+    Boolean(state.station) &&
+    (state.stationId === "main" || Boolean(state.station.can_control))
+  );
+}
+
+function stationView() {
+  const temporary = state.stationId !== "main";
+  return {
+    stationId: state.stationId,
+    kind: temporary ? "private" : "shared",
+    label: temporary ? "your private station" : "the shared station",
+    canControl: canControlStation(),
+    queue: Array.isArray(state.station?.queue) ? [...state.station.queue] : [],
+  };
+}
+
+function publishStationView() {
+  window.dispatchEvent(
+    new CustomEvent("zak-station", { detail: stationView() }),
+  );
 }
 
 function setConnected(connected) {
   state.connected = connected;
   els.connectionDot.classList.toggle("is-connected", state.streamConnected);
-  els.connectionDot.classList.toggle("is-disconnected", !state.streamConnected);
-  setText(els.connectionText, state.streamConnected
-    ? "Connected"
-    : connected ? "Polling" : "Reconnecting");
+  els.connectionDot.classList.toggle(
+    "is-polling",
+    !state.streamConnected && connected,
+  );
+  els.connectionDot.classList.toggle(
+    "is-disconnected",
+    !state.streamConnected && !connected,
+  );
+  setText(
+    els.connectionText,
+    state.streamConnected
+      ? "Connected"
+      : connected
+        ? "Polling"
+        : "Reconnecting",
+  );
 }
 
 function setStationLoading() {
@@ -571,8 +755,16 @@ function setStationLoading() {
   renderProgress(0, 0);
   els.radioRetry.hidden = true;
   [
-    els.playPause, els.back10, els.forward10, els.prev, els.next, els.random,
-    els.repeatOne, els.progress, els.like, els.createStation,
+    els.playPause,
+    els.back10,
+    els.forward10,
+    els.prev,
+    els.next,
+    els.random,
+    els.repeatOne,
+    els.progress,
+    els.like,
+    els.createStation,
   ].forEach((control) => {
     control.disabled = true;
   });
@@ -597,13 +789,19 @@ function focusAfterStationAction(preferred) {
     els.createStation,
     els.shareStation,
     els.radioRetry,
-  ].find((element) => element && !element.hidden && !element.disabled &&
-    element.getClientRects().length > 0);
+  ].find(
+    (element) =>
+      element &&
+      !element.hidden &&
+      !element.disabled &&
+      element.getClientRects().length > 0,
+  );
   (target || els.stationMode).focus({ preventScroll: true });
 }
 
 function clearStationText(message) {
   state.lastTextTrackId = null;
+  resetSyncedLyrics();
   setLyricsExpanded(false);
   els.lyrics.textContent = message;
   els.prompt.textContent = "";
@@ -621,14 +819,41 @@ async function fetchText(track, kind) {
 async function loadTrackText(track) {
   if (!track || state.lastTextTrackId === track.id) return;
   state.lastTextTrackId = track.id;
+  const generation = ++state.lyricsLoadGeneration;
+  resetSyncedLyrics();
   setLyricsExpanded(false);
   els.lyrics.textContent = "Loading...";
   els.prompt.textContent = "Loading...";
+  const lyricRequest = track.has_synced_lyrics
+    ? loadTimedLyrics(track, generation)
+    : loadTrackTextKind(track, "lyrics", els.lyrics);
   await Promise.allSettled([
-    loadTrackTextKind(track, "lyrics", els.lyrics),
+    lyricRequest,
     loadTrackTextKind(track, "prompt", els.prompt),
   ]);
-  if (state.current?.id === track.id) window.requestAnimationFrame(updateLyricsOverflow);
+  if (state.current?.id === track.id)
+    window.requestAnimationFrame(updateLyricsOverflow);
+}
+
+async function loadTimedLyrics(track, generation) {
+  try {
+    const value = await fetchText(track, "timed_lyrics");
+    if (
+      state.current?.id !== track.id ||
+      generation !== state.lyricsLoadGeneration
+    )
+      return;
+    if (!value?.cues?.length) throw new Error("No synchronized lyric cues");
+    renderTimedLyrics(value);
+  } catch {
+    if (
+      state.current?.id !== track.id ||
+      generation !== state.lyricsLoadGeneration
+    )
+      return;
+    resetSyncedLyrics();
+    await loadTrackTextKind(track, "lyrics", els.lyrics);
+  }
 }
 
 async function loadTrackTextKind(track, kind, element) {
@@ -642,23 +867,156 @@ async function loadTrackTextKind(track, kind, element) {
     retry.type = "button";
     retry.className = "button text-retry";
     retry.textContent = `Retry ${kind}`;
-    retry.addEventListener("click", () => loadTrackTextKind(track, kind, element));
-    element.replaceChildren(document.createTextNode(`Unable to load ${kind}. `), retry);
+    retry.addEventListener("click", () =>
+      loadTrackTextKind(track, kind, element),
+    );
+    element.replaceChildren(
+      document.createTextNode(`Unable to load ${kind}. `),
+      retry,
+    );
   }
+}
+
+function resetSyncedLyrics() {
+  state.syncedLyrics = null;
+  state.activeLyricCue = -1;
+  state.lyricFollowPausedUntil = 0;
+  els.lyricsViewport.classList.remove("has-synced-lyrics");
+  els.lyricsFollow.hidden = true;
+  els.lyricsSyncStatus.textContent = "";
+  els.toggleLyrics.hidden = false;
+}
+
+function renderTimedLyrics(timedLyrics) {
+  state.syncedLyrics = timedLyrics;
+  state.activeLyricCue = -1;
+  els.lyricsViewport.classList.add("has-synced-lyrics");
+  els.lyricsViewport.classList.add("is-collapsed");
+  els.lyricsFade.hidden = true;
+  els.lyricsMoreRow.hidden = true;
+  els.toggleLyrics.hidden = true;
+  els.lyricsFollow.hidden = true;
+  const coverage = Math.round(
+    Number(timedLyrics.quality?.line_coverage || 0) * 100,
+  );
+  els.lyricsSyncStatus.textContent =
+    coverage >= 100
+      ? "Following the song"
+      : `Following the song · ${coverage}% of written lines matched`;
+
+  const root = document.createElement("div");
+  root.className = "synced-lyrics";
+  let section = null;
+  let sectionBody = root;
+  timedLyrics.cues.forEach((cue, index) => {
+    const nextSection = String(cue.section || "");
+    if (nextSection !== section) {
+      section = nextSection;
+      const group = document.createElement("section");
+      group.className = "synced-lyrics-section";
+      if (section) {
+        const heading = document.createElement("h4");
+        heading.className = "synced-lyrics-heading";
+        heading.textContent = section;
+        group.append(heading);
+      }
+      root.append(group);
+      sectionBody = group;
+    }
+    const line = document.createElement("button");
+    line.type = "button";
+    line.className = "synced-lyric-cue";
+    line.dataset.lyricCue = String(index);
+    line.textContent = cue.text;
+    line.setAttribute(
+      "aria-label",
+      `Seek to ${timeLabel(cue.start)}: ${cue.text}`,
+    );
+    line.addEventListener("click", () => {
+      if (!canControlStation()) {
+        showToast("Only the station controller can seek this station.");
+        return;
+      }
+      postControl("seek", { position: Number(cue.start || 0) });
+    });
+    sectionBody.append(line);
+  });
+  els.lyrics.replaceChildren(root);
+  updateSyncedLyrics();
+}
+
+function lyricCueAt(position) {
+  const cues = state.syncedLyrics?.cues || [];
+  let low = 0;
+  let high = cues.length - 1;
+  let candidate = -1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (Number(cues[middle].start) <= position) {
+      candidate = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  if (candidate < 0) return -1;
+  return position <= Number(cues[candidate].end) + 0.35 ? candidate : -1;
+}
+
+function updateSyncedLyrics(position = Number(els.audio.currentTime || 0)) {
+  if (!state.syncedLyrics || !audioController.is("radio")) return;
+  const next = lyricCueAt(position);
+  if (next === state.activeLyricCue) return;
+  if (state.activeLyricCue >= 0) {
+    const previous = els.lyrics.querySelector(
+      `[data-lyric-cue="${state.activeLyricCue}"]`,
+    );
+    previous?.classList.remove("is-current");
+    previous?.removeAttribute("aria-current");
+  }
+  state.activeLyricCue = next;
+  if (next < 0) return;
+  const current = els.lyrics.querySelector(`[data-lyric-cue="${next}"]`);
+  current?.classList.add("is-current");
+  current?.setAttribute("aria-current", "true");
+  if (!current || performance.now() < state.lyricFollowPausedUntil) return;
+  const top =
+    current.offsetTop -
+    Math.max(0, (els.lyricsViewport.clientHeight - current.offsetHeight) / 2);
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  els.lyricsViewport.scrollTo({
+    top: Math.max(0, top),
+    behavior: reduced ? "auto" : "smooth",
+  });
+}
+
+function pauseLyricFollowing() {
+  if (!state.syncedLyrics) return;
+  state.lyricFollowPausedUntil = performance.now() + 10000;
+  els.lyricsFollow.hidden = false;
+  els.lyricsSyncStatus.textContent = "Manual scrolling · follow paused";
 }
 
 function setLyricsExpanded(expanded) {
   els.lyricsViewport.classList.toggle("is-collapsed", !expanded);
   els.lyricsFade.hidden = expanded;
   els.toggleLyrics.setAttribute("aria-expanded", String(expanded));
-  els.toggleLyrics.textContent = expanded ? "Collapse lyrics" : "Show full lyrics";
+  els.toggleLyrics.textContent = expanded
+    ? "Collapse lyrics"
+    : "Show full lyrics";
 }
 
 function updateLyricsOverflow() {
+  if (state.syncedLyrics) {
+    els.lyricsMoreRow.hidden = true;
+    els.lyricsFade.hidden = true;
+    return;
+  }
   const expanded = els.toggleLyrics.getAttribute("aria-expanded") === "true";
   const wasCollapsed = els.lyricsViewport.classList.contains("is-collapsed");
   if (!wasCollapsed) els.lyricsViewport.classList.add("is-collapsed");
-  const overflows = els.lyrics.scrollHeight > els.lyricsViewport.clientHeight + 1;
+  const overflows =
+    els.lyrics.scrollHeight > els.lyricsViewport.clientHeight + 1;
   if (!wasCollapsed) els.lyricsViewport.classList.remove("is-collapsed");
   els.lyricsMoreRow.hidden = !overflows;
   els.lyricsFade.hidden = expanded || !overflows;
@@ -667,15 +1025,26 @@ function updateLyricsOverflow() {
 function renderTrack(track) {
   if (!track) return;
   const changed = state.current?.id !== track.id;
+  const displayTitle = trackDisplayTitle(track);
   state.current = track;
-  els.title.textContent = track.title || "Untitled";
-  els.source.textContent = [track.source, track.artist].filter(Boolean).join(" · ") || "Zak Radio";
-  els.details.textContent = [track.group, timeLabel(track.duration), fileSize(track.audio_bytes)].filter(Boolean).join("  ·  ");
+  els.title.textContent = displayTitle;
+  els.source.textContent =
+    [track.source, track.artist].filter(Boolean).join(" · ") || "Zak Radio";
+  els.details.textContent = [
+    trackDisplayGroup(track),
+    timeLabel(track.duration),
+    fileSize(track.audio_bytes),
+  ]
+    .filter(Boolean)
+    .join("  ·  ");
   els.download.href = mediaAudioURL(track);
-  els.download.download = `${track.title || track.id}.mp3`;
+  els.download.download = `${displayTitle || track.id}.mp3`;
   els.download.removeAttribute("aria-disabled");
   const showCoverFallback = () => {
-    setText(els.emptyCover, (track.title || track.id || "Z").trim().charAt(0).toUpperCase() || "Z");
+    if (!els.emptyCover.querySelector(".no-artwork-icon")) {
+      const fallback = createArtworkFallback();
+      els.emptyCover.replaceChildren(...Array.from(fallback.childNodes));
+    }
     els.cover.classList.add("hidden");
     els.emptyCover.classList.remove("hidden");
     els.emptyCover.classList.add("grid");
@@ -686,20 +1055,17 @@ function renderTrack(track) {
   els.emptyCover.classList.toggle("grid", !track.has_cover);
   if (track.has_cover) els.cover.src = mediaCoverURL(track);
   else showCoverFallback();
-	const src = mediaAudioURL(track);
-	if (audioController.is("radio")) {
-	  audioController.label = track.title || "Untitled";
-	  renderOwnerBar();
-	}
-	if (audioController.is("radio") && !els.audio.src.endsWith(src)) {
-    els.audio.src = src;
-    els.audio.load();
+  const src = mediaAudioURL(track);
+  if (audioController.is("radio")) {
+    audioController.claim("radio", src, displayTitle, {
+      stationId: state.stationId,
+    });
   }
   els.progress.max = String(durationOf(track));
   els.duration.textContent = timeLabel(durationOf(track));
   if (routePath() === "/") loadTrackText(track);
   if (changed) {
-    els.nowPlayingAnnouncement.textContent = `Now playing ${track.title || "Untitled"}`;
+    els.nowPlayingAnnouncement.textContent = `Now playing ${displayTitle}`;
   }
   updateNowPlayingMetadata();
 }
@@ -711,11 +1077,16 @@ function renderStation() {
   const playing = Boolean(station.playing);
   const repeatOne = Boolean(station.repeat_one);
   const shuffle = Boolean(station.shuffle);
-  const needsLocalJoin = playing &&
-    (!audioController.is("radio") || els.audio.paused || state.localRadioSuspended);
+  const needsLocalJoin =
+    playing &&
+    (!audioController.is("radio") ||
+      els.audio.paused ||
+      state.localRadioSuspended);
   els.stationStatus.textContent = needsLocalJoin
     ? "Live now · tap Join live to hear"
-    : playing ? "Live now" : "Station paused";
+    : playing
+      ? "Live now"
+      : "Station paused";
   els.livePulse.classList.toggle("is-live", playing);
   const playLabel = needsLocalJoin ? "Join live" : playing ? "Pause" : "Play";
   els.playPause.querySelector(".sr-only").textContent = playLabel;
@@ -729,9 +1100,16 @@ function renderStation() {
   els.like.setAttribute("aria-pressed", station.liked ? "true" : "false");
   const skips = Number(station.skip_count || 0);
   els.skipCount.textContent = `${skips} early ${skips === 1 ? "skip" : "skips"}`;
+  const queue = Array.isArray(station.queue) ? station.queue : [];
+  const nextTrack = state.tracks.find((item) => item.id === queue[0]);
+  els.radioQueueSummary.textContent = queue.length
+    ? `${nextTrack ? trackDisplayTitle(nextTrack) : "A queued track"} is next${queue.length > 1 ? ` · ${queue.length} total` : ""}.`
+    : "The station queue is empty.";
   const temporary = state.stationId !== "main";
   const canControl = canControlStation();
-  els.stationMode.textContent = temporary ? "Private station" : "Shared station";
+  els.stationMode.textContent = temporary
+    ? "Private station"
+    : "Shared station";
   els.stationAccess.textContent = temporary
     ? canControl
       ? "Only this browser can turn this dial. The share link is listen-only."
@@ -750,12 +1128,18 @@ function renderStation() {
   ].forEach((control) => {
     control.disabled = !canControl;
   });
-  const canPauseLocally = playing && audioController.is("radio") && !els.audio.paused;
+  const canPauseLocally =
+    playing && audioController.is("radio") && !els.audio.paused;
   els.playPause.disabled = !canControl && !needsLocalJoin && !canPauseLocally;
   els.like.disabled = false;
-  els.createStation.disabled = state.stationCreatePending ||
+  els.createStation.disabled =
+    state.stationCreatePending ||
     performance.now() < state.stationCapacityRetryAt;
-  if (!audioController.is("radio") || els.audio.paused || state.localRadioSuspended) {
+  if (
+    !audioController.is("radio") ||
+    els.audio.paused ||
+    state.localRadioSuspended
+  ) {
     updateProgressFromStation();
   }
   renderOwnerBar();
@@ -766,29 +1150,34 @@ function updateNowPlayingMetadata() {
   const track = currentTrack();
   const path = routePath();
   if (!track) {
-    document.title = path === "/library" ? "Library · Zak Radio" : path === "/reader" ? "Reader · Zak Radio" : "Zak Radio";
+    document.title =
+      path === "/library"
+        ? "Library · Zak Radio"
+        : path === "/reader"
+          ? "Reader · Zak Radio"
+          : "Zak Radio";
     return;
   }
   const playing = Boolean(state.station?.playing);
   if (audioController.is("radio") && path === "/") {
-    document.title = `${playing ? "▶ " : ""}${track.title || "Untitled"} · Zak Radio`;
+    document.title = `${playing ? "▶ " : ""}${trackDisplayTitle(track)} · Zak Radio`;
   } else if (path === "/library") {
     document.title = "Library · Zak Radio";
   } else if (path === "/reader") {
     document.title = "Reader · Zak Radio";
   } else {
-    document.title = `${audioController.label || track.title || "Zak Radio"} · Zak Radio`;
+    document.title = `${audioController.label || trackDisplayTitle(track)} · Zak Radio`;
   }
   if ("mediaSession" in navigator) {
-    navigator.mediaSession.playbackState = els.audio.paused ? "paused" : "playing";
+    navigator.mediaSession.playbackState = els.audio.paused
+      ? "paused"
+      : "playing";
     if (!audioController.is("radio")) return;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: track.title || "Untitled",
+      title: trackDisplayTitle(track),
       artist: track.artist || "Zak",
       album: "Zak Radio",
-      artwork: track.has_cover
-        ? [{ src: mediaCoverURL(track) }]
-        : [],
+      artwork: track.has_cover ? [{ src: mediaCoverURL(track) }] : [],
     });
   }
 }
@@ -824,7 +1213,8 @@ function updateProgressFromStation() {
 }
 
 function renderProgress(position, duration) {
-  const percent = duration > 0 ? Math.max(0, Math.min(100, (position / duration) * 100)) : 0;
+  const percent =
+    duration > 0 ? Math.max(0, Math.min(100, (position / duration) * 100)) : 0;
   els.progressFill.style.width = `${percent}%`;
   els.progressThumb.style.left = `${percent}%`;
 }
@@ -838,10 +1228,28 @@ function estimatedStationPosition(station) {
   return duration ? Math.min(position, duration) : position;
 }
 
-async function syncAudioToStation() {
-  const station = state.station;
-  const track = currentTrack();
-  if (!station || !track || !audioController.is("radio")) return;
+function currentStationLease(station, stationId, stationGeneration) {
+  return (
+    state.station === station &&
+    state.stationId === stationId &&
+    state.stationRequestGeneration === stationGeneration &&
+    audioController.is("radio") &&
+    audioController.stationId === stationId
+  );
+}
+
+async function syncAudioToStation(
+  station = state.station,
+  stationId = state.stationId,
+  stationGeneration = state.stationRequestGeneration,
+) {
+  const track = state.tracks.find((item) => item.id === station?.track_id);
+  if (
+    !station ||
+    !track ||
+    !currentStationLease(station, stationId, stationGeneration)
+  )
+    return;
   if (station.playing && state.localRadioSuspended) {
     els.audio.pause();
     renderStation();
@@ -865,11 +1273,16 @@ async function syncAudioToStation() {
     }
     const played = await audioController.play({
       generation,
-      valid: () => state.station === station && Number(state.station?.revision || 0) === revision &&
-        audioController.is("radio"),
+      valid: () =>
+        currentStationLease(station, stationId, stationGeneration) &&
+        Number(state.station?.revision || 0) === revision,
     });
-    if (state.station !== station || Number(state.station?.revision || 0) !== revision ||
-        !audioController.is("radio") || audioController.generation !== generation) return;
+    if (
+      !currentStationLease(station, stationId, stationGeneration) ||
+      Number(state.station?.revision || 0) !== revision ||
+      audioController.generation !== generation
+    )
+      return;
     state.localPlaybackBlocked = !played;
     renderStation();
   } else {
@@ -887,55 +1300,85 @@ function mergeCurrentStats(station) {
   return track;
 }
 
-async function applyStation(station, {
-  requestStarted = null,
-  receivedAt = performance.now(),
-  authoritative = false,
-} = {}) {
+async function applyStation(
+  station,
+  {
+    requestStarted = null,
+    receivedAt = performance.now(),
+    authoritative = false,
+  } = {},
+) {
+  const stationId = state.stationId;
+  const stationGeneration = state.stationRequestGeneration;
   if (!station) return;
-  if (station.station_id && station.station_id !== state.stationId) return;
-  if (station.catalog_revision &&
-      station.catalog_revision !== state.catalogRevision) {
+  if (station.station_id && station.station_id !== stationId) return;
+  if (
+    station.catalog_revision &&
+    station.catalog_revision !== state.catalogRevision
+  ) {
     await loadCatalog(true);
   }
+  if (
+    stationId !== state.stationId ||
+    stationGeneration !== state.stationRequestGeneration ||
+    (station.station_id && station.station_id !== state.stationId)
+  )
+    return;
   if (state.station?.station_id === station.station_id) {
     const incomingRevision = Number(station.revision || 0);
     const currentRevision = Number(state.station.revision || 0);
     const incomingTime = Number(station.server_time || 0);
     const currentTime = Number(state.station.server_time || 0);
-    if (incomingRevision < currentRevision ||
-        (!authoritative &&
-          incomingRevision === currentRevision && incomingTime <= currentTime)) return;
+    if (
+      incomingRevision < currentRevision ||
+      (!authoritative &&
+        incomingRevision === currentRevision &&
+        incomingTime <= currentTime)
+    )
+      return;
   }
   const serverTime = Number(station.server_time || 0);
   if (serverTime > 0 && requestStarted !== null) {
-    const sample = ((Number(requestStarted) + Number(receivedAt)) / 2) / 1000 - serverTime;
+    const sample =
+      (Number(requestStarted) + Number(receivedAt)) / 2 / 1000 - serverTime;
     if (Number.isFinite(sample)) {
-      state.serverClockOffset = state.serverClockOffset === null
-        ? sample
-        : state.serverClockOffset * 0.75 + sample * 0.25;
+      state.serverClockOffset =
+        state.serverClockOffset === null
+          ? sample
+          : state.serverClockOffset * 0.75 + sample * 0.25;
     }
   }
   station.can_control = state.stationId === "main" || Boolean(state.ownerToken);
   state.station = station;
   els.radioRetry.hidden = true;
-  state.stationReceivedAt = serverTime > 0 && Number.isFinite(state.serverClockOffset)
-    ? serverTime + state.serverClockOffset
-    : receivedAt / 1000;
+  state.stationReceivedAt =
+    serverTime > 0 && Number.isFinite(state.serverClockOffset)
+      ? serverTime + state.serverClockOffset
+      : receivedAt / 1000;
   const track = mergeCurrentStats(station);
   if (track && state.current !== track) renderTrack(track);
   if (track && !audioController.owner) {
-    audioController.claim("radio", mediaAudioURL(track), track.title || "Live station");
+    audioController.claim(
+      "radio",
+      mediaAudioURL(track),
+      trackDisplayTitle(track),
+      {
+        stationId,
+      },
+    );
   }
   renderStation();
-  await syncAudioToStation();
+  publishStationView();
+  await syncAudioToStation(station, stationId, stationGeneration);
 }
 
 async function refreshStation(force = false, required = false) {
   const stationId = state.stationId;
   const generation = state.stationRequestGeneration;
-  if (state.stationRequestInFlight?.generation === generation &&
-      state.stationRequestInFlight?.stationId === stationId) {
+  if (
+    state.stationRequestInFlight?.generation === generation &&
+    state.stationRequestInFlight?.stationId === stationId
+  ) {
     if (!force) return state.stationRequestInFlight.promise;
     state.stationRequestInFlight.controller.abort();
     state.stationRequestInFlight = null;
@@ -948,15 +1391,25 @@ async function refreshStation(force = false, required = false) {
         signal: controller.signal,
       });
       const receivedAt = performance.now();
-      if (generation !== state.stationRequestGeneration || stationId !== state.stationId) return;
+      if (
+        generation !== state.stationRequestGeneration ||
+        stationId !== state.stationId
+      )
+        return;
       setConnected(true);
       await applyStation(station, {
-        requestStarted, receivedAt, authoritative: force,
+        requestStarted,
+        receivedAt,
+        authoritative: force,
       });
       return true;
     } catch (error) {
       if (controller.signal.aborted) return false;
-      if (generation !== state.stationRequestGeneration || stationId !== state.stationId) return;
+      if (
+        generation !== state.stationRequestGeneration ||
+        stationId !== state.stationId
+      )
+        return;
       state.streamConnected = false;
       state.eventSource?.close();
       state.eventSource = null;
@@ -964,7 +1417,10 @@ async function refreshStation(force = false, required = false) {
       window.clearTimeout(state.eventReconnectTimer);
       state.eventReconnectTimer = window.setTimeout(connectStationEvents, 500);
       if (error.status === 404 && state.stationId !== "main") {
-        showToast("That temporary station expired.", { priority: 10, duration: 4000 });
+        showToast("That temporary station expired.", {
+          priority: 10,
+          duration: 4000,
+        });
         await switchStation("main", "");
       }
       if (required && !state.station) throw error;
@@ -976,7 +1432,8 @@ async function refreshStation(force = false, required = false) {
   try {
     return await request;
   } finally {
-    if (state.stationRequestInFlight === activeRequest) state.stationRequestInFlight = null;
+    if (state.stationRequestInFlight === activeRequest)
+      state.stationRequestInFlight = null;
   }
 }
 
@@ -1011,7 +1468,10 @@ function connectStationEvents() {
   });
   source.addEventListener("expired", async () => {
     if (source !== state.eventSource) return;
-    showToast("That temporary station expired.", { priority: 10, duration: 4000 });
+    showToast("That temporary station expired.", {
+      priority: 10,
+      duration: 4000,
+    });
     await switchStation("main", "");
   });
   source.onerror = () => {
@@ -1019,7 +1479,7 @@ function connectStationEvents() {
     source.close();
     state.streamConnected = false;
     setConnected(state.connected);
-    const delay = Math.min(30000, 500 * (2 ** state.eventReconnectAttempt++));
+    const delay = Math.min(30000, 500 * 2 ** state.eventReconnectAttempt++);
     state.eventReconnectTimer = window.setTimeout(() => {
       if (source === state.eventSource) connectStationEvents();
     }, delay);
@@ -1032,7 +1492,8 @@ async function postControl(action, extra = {}) {
   const generation = state.controlGeneration;
   state.userActivatedAudio = true;
   const execute = async () => {
-    if (generation !== state.controlGeneration || stationId !== state.stationId) return;
+    if (generation !== state.controlGeneration || stationId !== state.stationId)
+      return;
     try {
       const station = await api("/api/control", {
         method: "POST",
@@ -1043,11 +1504,20 @@ async function postControl(action, extra = {}) {
           ...extra,
         },
       });
-      if (generation !== state.controlGeneration || stationId !== state.stationId) return;
+      if (
+        generation !== state.controlGeneration ||
+        stationId !== state.stationId
+      )
+        return;
       setConnected(true);
       await applyStation(station);
+      return station;
     } catch (error) {
-      if (generation !== state.controlGeneration || stationId !== state.stationId) return;
+      if (
+        generation !== state.controlGeneration ||
+        stationId !== state.stationId
+      )
+        return;
       if (error.status === 403 && stationId !== "main") {
         window.ZakStorage.remove(`zak-radio-owner:${stationId}`);
         state.ownerToken = "";
@@ -1065,13 +1535,29 @@ async function postControl(action, extra = {}) {
         state.station = null;
         els.stationStatus.textContent = "Station state unavailable";
         els.playPause.disabled = true;
-        showToast("The change could not be confirmed. Reconnecting to the station.");
+        showToast(
+          "The change could not be confirmed. Reconnecting to the station.",
+        );
       }
+      return null;
     }
   };
   state.controlQueue = state.controlQueue.catch(() => {}).then(execute);
   return state.controlQueue;
 }
+
+window.ZakStation = {
+  current: stationView,
+  async enqueue(action, trackID) {
+    if (
+      !["play_next", "add_to_queue"].includes(action) ||
+      !trackID ||
+      !canControlStation()
+    )
+      return null;
+    return postControl(action, { track_id: trackID });
+  },
+};
 
 async function switchStation(stationId, ownerToken) {
   state.controlGeneration++;
@@ -1088,6 +1574,7 @@ async function switchStation(stationId, ownerToken) {
   }
   window.history.replaceState(window.history.state || {}, "", url);
   syncRouteLinks();
+  publishStationView();
   connectStationEvents();
   const loaded = await refreshStation();
   if (!loaded && state.stationId === (stationId || "main")) {
@@ -1105,14 +1592,19 @@ async function createTemporaryStation() {
   try {
     let attempt;
     try {
-      attempt = JSON.parse(window.ZakStorage.get("zak-radio-create-attempt", "null"));
+      attempt = JSON.parse(
+        window.ZakStorage.get("zak-radio-create-attempt", "null"),
+      );
     } catch {}
     if (!attempt?.idempotency_key || !attempt?.owner_token) {
       attempt = {
         idempotency_key: randomBrowserHex(16),
         owner_token: randomBrowserHex(24),
       };
-      window.ZakStorage.set("zak-radio-create-attempt", JSON.stringify(attempt));
+      window.ZakStorage.set(
+        "zak-radio-create-attempt",
+        JSON.stringify(attempt),
+      );
     }
     const created = await api("/api/stations", {
       method: "POST",
@@ -1124,19 +1616,26 @@ async function createTemporaryStation() {
     });
     window.ZakStorage.remove("zak-radio-create-attempt");
     const ownerPersisted = window.ZakStorage.set(
-      `zak-radio-owner:${created.station_id}`, created.owner_token);
+      `zak-radio-owner:${created.station_id}`,
+      created.owner_token,
+    );
     const loaded = await switchStation(created.station_id, created.owner_token);
     if (loaded) {
       focusTarget = els.mainStation;
-      showToast(ownerPersisted
-        ? "Private station created for 24 hours."
-        : "Private station created. This browser cannot save ownership after reload.", {
-        priority: ownerPersisted ? 0 : 10,
-        duration: ownerPersisted ? 2200 : 5000,
-      });
+      showToast(
+        ownerPersisted
+          ? "Private station created for 24 hours."
+          : "Private station created. This browser cannot save ownership after reload.",
+        {
+          priority: ownerPersisted ? 0 : 10,
+          duration: ownerPersisted ? 2200 : 5000,
+        },
+      );
     } else {
-      showToast("Private station created, but its state could not be loaded. Retry the station.",
-        { priority: 10, duration: 5000 });
+      showToast(
+        "Private station created, but its state could not be loaded. Retry the station.",
+        { priority: 10, duration: 5000 },
+      );
     }
   } catch (error) {
     if (error.status === 429 && /capacity/i.test(error.detail || "")) {
@@ -1145,11 +1644,14 @@ async function createTemporaryStation() {
       window.setTimeout(() => {
         if (performance.now() >= state.stationCapacityRetryAt) renderStation();
       }, 5100);
-      showToast("All private-station slots are in use. Try again after one expires.",
-        { priority: 10, duration: 5000 });
+      showToast(
+        "All private-station slots are in use. Try again after one expires.",
+        { priority: 10, duration: 5000 },
+      );
       focusTarget = els.stationMode;
     } else {
-      if (error.status === 400) window.ZakStorage.remove("zak-radio-create-attempt");
+      if (error.status === 400)
+        window.ZakStorage.remove("zak-radio-create-attempt");
       showToast("Couldn’t create a private station.");
     }
   } finally {
@@ -1162,7 +1664,9 @@ async function createTemporaryStation() {
 function randomBrowserHex(bytes) {
   const values = new Uint8Array(bytes);
   crypto.getRandomValues(values);
-  return Array.from(values, (value) => value.toString(16).padStart(2, "0")).join("");
+  return Array.from(values, (value) =>
+    value.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 async function copyStationLink() {
@@ -1183,8 +1687,11 @@ async function copyStationLink() {
 
 async function togglePlayback() {
   const stationPlaying = Boolean(state.station?.playing);
-  const needsLocalJoin = stationPlaying &&
-    (!audioController.is("radio") || els.audio.paused || state.localRadioSuspended);
+  const needsLocalJoin =
+    stationPlaying &&
+    (!audioController.is("radio") ||
+      els.audio.paused ||
+      state.localRadioSuspended);
   if (needsLocalJoin) {
     state.userActivatedAudio = true;
     state.localPlaybackBlocked = false;
@@ -1248,20 +1755,23 @@ async function toggleLike() {
   if (!track) return;
   const trackID = track.id;
   const previous = state.likeQueues.get(trackID) || Promise.resolve();
-  const mutation = previous.catch(() => {}).then(async () => {
-    try {
-      const result = await api("/api/like", {
-        method: "POST",
-        body: { track_id: trackID },
-      });
-      applyTrackStats(result);
-    } catch {
-      showToast("Couldn’t update this track.");
-    }
-  });
+  const mutation = previous
+    .catch(() => {})
+    .then(async () => {
+      try {
+        const result = await api("/api/like", {
+          method: "POST",
+          body: { track_id: trackID },
+        });
+        applyTrackStats(result);
+      } catch {
+        showToast("Couldn’t update this track.");
+      }
+    });
   state.likeQueues.set(trackID, mutation);
   await mutation;
-  if (state.likeQueues.get(trackID) === mutation) state.likeQueues.delete(trackID);
+  if (state.likeQueues.get(trackID) === mutation)
+    state.likeQueues.delete(trackID);
 }
 
 function setStationUnavailable(message) {
@@ -1271,12 +1781,21 @@ function setStationUnavailable(message) {
   els.stationMode.textContent = "Station unavailable";
   els.stationAccess.textContent = "Retry to reconnect to this station.";
   els.title.textContent = message;
-  els.details.textContent = "Station state could not be loaded. The music archive remains available.";
+  els.details.textContent =
+    "Station state could not be loaded. The music archive remains available.";
   clearStationText("Station content is unavailable.");
   els.stationStatus.textContent = "Station unavailable";
   [
-    els.playPause, els.back10, els.forward10, els.prev, els.next, els.random,
-    els.repeatOne, els.progress, els.like, els.createStation,
+    els.playPause,
+    els.back10,
+    els.forward10,
+    els.prev,
+    els.next,
+    els.random,
+    els.repeatOne,
+    els.progress,
+    els.like,
+    els.createStation,
   ].forEach((control) => {
     control.disabled = true;
   });
@@ -1294,9 +1813,10 @@ async function boot(forceCatalog = false) {
   const stationId = requestedStation();
   state.stationId = stationId;
   syncRouteLinks();
-  state.ownerToken = stationId === "main"
-    ? ""
-    : window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
+  state.ownerToken =
+    stationId === "main"
+      ? ""
+      : window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
   try {
     await loadCatalog(forceCatalog);
   } catch (error) {
@@ -1312,12 +1832,14 @@ async function boot(forceCatalog = false) {
     connectStationEvents();
     if (state.invalidStationLink) {
       state.invalidStationLink = false;
-      showToast("That station link was invalid. Returned to the shared station.",
-        { priority: 10, duration: 4000 });
+      showToast(
+        "That station link was invalid. Returned to the shared station.",
+        { priority: 10, duration: 4000 },
+      );
     }
     window.clearInterval(state.pollTimer);
     state.pollTimer = window.setInterval(refreshStation, 5000);
-  } catch (error) {
+  } catch {
     setConnected(false);
     setStationUnavailable("Station unavailable");
     connectStationEvents();
@@ -1331,8 +1853,12 @@ window.ZakRecoverShell = async () => {
 };
 
 els.playPause.addEventListener("click", togglePlayback);
-els.back10.addEventListener("click", () => postControl("relative_seek", { position: -10 }));
-els.forward10.addEventListener("click", () => postControl("relative_seek", { position: 10 }));
+els.back10.addEventListener("click", () =>
+  postControl("relative_seek", { position: -10 }),
+);
+els.forward10.addEventListener("click", () =>
+  postControl("relative_seek", { position: 10 }),
+);
 els.prev.addEventListener("click", () => postControl("prev"));
 els.next.addEventListener("click", () => postControl("next"));
 els.random.addEventListener("click", toggleShuffle);
@@ -1348,6 +1874,24 @@ els.toggleDetails.addEventListener("click", () => {
 });
 els.toggleLyrics.addEventListener("click", () => {
   setLyricsExpanded(els.toggleLyrics.getAttribute("aria-expanded") !== "true");
+});
+els.lyricsFollow.addEventListener("click", () => {
+  state.lyricFollowPausedUntil = 0;
+  els.lyricsFollow.hidden = true;
+  const coverage = Math.round(
+    Number(state.syncedLyrics?.quality?.line_coverage || 0) * 100,
+  );
+  els.lyricsSyncStatus.textContent =
+    coverage >= 100
+      ? "Following the song"
+      : `Following the song · ${coverage}% of written lines matched`;
+  state.activeLyricCue = -1;
+  updateSyncedLyrics();
+});
+["wheel", "touchmove"].forEach((eventName) => {
+  els.lyricsViewport.addEventListener(eventName, pauseLyricFollowing, {
+    passive: true,
+  });
 });
 if ("ResizeObserver" in window) {
   const lyricsResizeObserver = new ResizeObserver(() => updateLyricsOverflow());
@@ -1369,80 +1913,109 @@ els.shareClose.addEventListener("click", () => {
 });
 document.querySelectorAll("[data-route]").forEach((link) => {
   link.addEventListener("click", (event) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+      return;
     event.preventDefault();
     navigate(link.dataset.route);
   });
 });
 window.addEventListener("popstate", (event) => {
-	const scroll = Array.isArray(event.state?.scroll) ? event.state.scroll : [0, 0];
-	window.ZakPendingRouteScroll = [Number(scroll[0]) || 0, Number(scroll[1]) || 0];
-	const restoredAwayFromTop = window.ZakPendingRouteScroll.some((value) => value !== 0);
-	const changedView = state.renderedPath !== routePath();
+  const scroll = Array.isArray(event.state?.scroll)
+    ? event.state.scroll
+    : [0, 0];
+  window.ZakPendingRouteScroll = [
+    Number(scroll[0]) || 0,
+    Number(scroll[1]) || 0,
+  ];
+  const restoredAwayFromTop = window.ZakPendingRouteScroll.some(
+    (value) => value !== 0,
+  );
+  const changedView = state.renderedPath !== routePath();
   const stationId = requestedStation();
   if (stationId !== state.stationId) {
     state.controlGeneration++;
     state.controlQueue = Promise.resolve();
     state.stationRequestGeneration++;
     state.stationId = stationId;
-    state.ownerToken = stationId === "main"
-      ? ""
-      : window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
+    state.ownerToken =
+      stationId === "main"
+        ? ""
+        : window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
     setStationLoading();
     connectStationEvents();
     const generation = state.stationRequestGeneration;
     void refreshStation().then((loaded) => {
-      if (!loaded && generation === state.stationRequestGeneration &&
-          stationId === state.stationId) {
+      if (
+        !loaded &&
+        generation === state.stationRequestGeneration &&
+        stationId === state.stationId
+      ) {
         setStationUnavailable("Station unavailable");
       }
     });
   }
-	renderRoute(changedView && !restoredAwayFromTop, true);
-	window.requestAnimationFrame(() => {
+  renderRoute(changedView && !restoredAwayFromTop, true);
+  window.requestAnimationFrame(() => {
     window.scrollTo({
       left: window.ZakPendingRouteScroll?.[0] || 0,
       top: window.ZakPendingRouteScroll?.[1] || 0,
       behavior: "instant",
     });
-	  const hasReaderItem = routePath() === "/reader" &&
-	    new URLSearchParams(location.search).has("item");
-	  if (changedView && restoredAwayFromTop) {
-	    const routeLink = [...document.querySelectorAll(`[data-route="${routePath()}"]`)]
-	      .find((link) => link.getClientRects().length && !link.closest("[hidden]"));
-	    routeLink?.focus({ preventScroll: true });
-	  }
-	  if (!hasReaderItem) window.ZakPendingRouteScroll = null;
+    const hasReaderItem =
+      routePath() === "/reader" &&
+      new URLSearchParams(location.search).has("item");
+    if (changedView && restoredAwayFromTop) {
+      const routeLink = [
+        ...document.querySelectorAll(`[data-route="${routePath()}"]`),
+      ].find(
+        (link) => link.getClientRects().length && !link.closest("[hidden]"),
+      );
+      routeLink?.focus({ preventScroll: true });
+    }
+    if (!hasReaderItem) window.ZakPendingRouteScroll = null;
   });
 });
 if ("scrollRestoration" in window.history) {
   window.history.scrollRestoration = "manual";
 }
 if (!Array.isArray(window.history.state?.scroll)) {
-  window.history.replaceState({
-    ...(window.history.state || {}),
-    scroll: [window.scrollX, window.scrollY],
-  }, "");
+  window.history.replaceState(
+    {
+      ...(window.history.state || {}),
+      scroll: [window.scrollX, window.scrollY],
+    },
+    "",
+  );
 }
 function commitScrollState() {
-  window.history.replaceState({
-    ...(window.history.state || {}),
-    scroll: [window.scrollX, window.scrollY],
-  }, "");
+  window.history.replaceState(
+    {
+      ...(window.history.state || {}),
+      scroll: [window.scrollX, window.scrollY],
+    },
+    "",
+  );
 }
 window.ZakCommitScrollState = commitScrollState;
-window.addEventListener("scroll", () => {
-  window.clearTimeout(scrollStateTimer);
-  scrollStateTimer = window.setTimeout(() => {
-    commitScrollState();
-  }, 120);
-}, { passive: true });
+window.addEventListener(
+  "scroll",
+  () => {
+    window.clearTimeout(scrollStateTimer);
+    scrollStateTimer = window.setTimeout(() => {
+      commitScrollState();
+    }, 120);
+  },
+  { passive: true },
+);
 els.returnLive.addEventListener("click", async () => {
-  const restoreRadioFocus = routePath() === "/" && els.ownerBar.contains(document.activeElement);
+  const restoreRadioFocus =
+    routePath() === "/" && els.ownerBar.contains(document.activeElement);
   if (audioController.is("radio")) navigate("/");
   else await audioController.returnLive();
   if (restoreRadioFocus) {
-    (els.playPause.disabled ? els.title : els.playPause).focus({ preventScroll: true });
+    (els.playPause.disabled ? els.title : els.playPause).focus({
+      preventScroll: true,
+    });
   }
 });
 els.ownerPlayPause.addEventListener("click", async () => {
@@ -1471,14 +2044,14 @@ els.ownerPlayPause.addEventListener("click", async () => {
   }
 });
 els.radioRetry.addEventListener("click", async () => {
-	els.radioRetry.disabled = true;
-	try {
-	  await boot(true);
-	  if (state.station && !els.radioRetry.hidden) els.radioRetry.hidden = true;
-	  if (state.station) els.title.focus({ preventScroll: true });
-	} finally {
-	  els.radioRetry.disabled = false;
-	}
+  els.radioRetry.disabled = true;
+  try {
+    await boot(true);
+    if (state.station && !els.radioRetry.hidden) els.radioRetry.hidden = true;
+    if (state.station) els.title.focus({ preventScroll: true });
+  } finally {
+    els.radioRetry.disabled = false;
+  }
 });
 els.audio.addEventListener("error", () => reportAudioError(els.audio.error));
 els.audio.addEventListener("play", () => {
@@ -1517,35 +2090,48 @@ if ("mediaSession" in navigator) {
       const offset = Number(details.seekOffset || 10);
       if (audioController.is("reader")) window.ZakReader?.seekBy?.(-offset);
       else if (audioController.is("radio")) {
-        if (canControlStation()) postControl("relative_seek", { position: -offset });
-      }
-      else els.audio.currentTime = Math.max(0, (els.audio.currentTime || 0) - offset);
+        if (canControlStation())
+          postControl("relative_seek", { position: -offset });
+      } else
+        els.audio.currentTime = Math.max(
+          0,
+          (els.audio.currentTime || 0) - offset,
+        );
     });
     navigator.mediaSession.setActionHandler("seekforward", (details) => {
       const offset = Number(details.seekOffset || 10);
       if (audioController.is("reader")) window.ZakReader?.seekBy?.(offset);
       else if (audioController.is("radio")) {
-        if (canControlStation()) postControl("relative_seek", { position: offset });
-      }
-      else els.audio.currentTime = Math.min(els.audio.duration || Infinity,
-        (els.audio.currentTime || 0) + offset);
+        if (canControlStation())
+          postControl("relative_seek", { position: offset });
+      } else
+        els.audio.currentTime = Math.min(
+          els.audio.duration || Infinity,
+          (els.audio.currentTime || 0) + offset,
+        );
     });
     navigator.mediaSession.setActionHandler("seekto", (details) => {
       const position = Number(details.seekTime || 0);
       if (audioController.is("reader")) window.ZakReader?.seekTo?.(position);
       else if (audioController.is("radio")) {
         if (canControlStation()) postControl("seek", { position });
-      }
-      else els.audio.currentTime = position;
+      } else els.audio.currentTime = position;
     });
   } catch {}
 }
 window.addEventListener("zak-audio-owner", renderStation);
 els.audio.addEventListener("timeupdate", () => {
-  if (audioController.is("radio")) updateProgressFromAudio();
+  if (audioController.is("radio")) {
+    updateProgressFromAudio();
+    updateSyncedLyrics();
+  }
 });
 els.audio.addEventListener("loadedmetadata", () => {
-  if (audioController.is("radio")) updateProgressFromAudio();
+  if (audioController.is("radio")) {
+    updateProgressFromAudio();
+    state.activeLyricCue = -1;
+    updateSyncedLyrics();
+  }
 });
 els.audio.addEventListener("ended", () => {
   if (!audioController.is("radio")) return;
@@ -1569,7 +2155,16 @@ document.addEventListener("keydown", (event) => {
   const activeTag = document.activeElement?.tagName || "";
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(activeTag);
   const interactive = /^(BUTTON|A)$/.test(activeTag);
-  if (typing || interactive || routePath() !== "/" || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+  if (
+    typing ||
+    interactive ||
+    routePath() !== "/" ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.shiftKey
+  )
+    return;
   if (event.code === "Space") {
     if (els.playPause.disabled) return;
     event.preventDefault();
@@ -1588,8 +2183,12 @@ document.addEventListener("keydown", (event) => {
 renderRoute();
 boot();
 window.setInterval(() => {
-  if (routePath() === "/" &&
-      (!audioController.is("radio") || els.audio.paused || state.localRadioSuspended)) {
+  if (
+    routePath() === "/" &&
+    (!audioController.is("radio") ||
+      els.audio.paused ||
+      state.localRadioSuspended)
+  ) {
     updateProgressFromStation();
   }
 }, 500);

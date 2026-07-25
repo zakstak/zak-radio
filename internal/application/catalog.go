@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	catalogmodel "zak-radio-apphost/internal/catalog"
+	catalogmodel "zak-radio/internal/catalog"
 )
 
 var (
@@ -37,13 +37,17 @@ const (
 	maxAudioArtifactBytes = 512 << 20
 	minTrackDuration      = 0.05
 	maxStationDuration    = 1e9
+	timedLyricsSubjects   = "subjects.json"
 )
 
 func validRouteID(id string) bool {
 	return len(id) <= maxRouteIDBytes && catalogIDPattern.MatchString(id)
 }
 
-func loadCatalog(cfg Config, archiveRoot, metadataRoot *os.Root) (Catalog, error) {
+func loadCatalog(
+	cfg Config,
+	archiveRoot, metadataRoot, timedLyricsRoot *os.Root,
+) (Catalog, error) {
 	indexData, err := readRootBytes(
 		archiveRoot, cfg.Archive, filepath.Join(cfg.Archive, "index.json"), maxCatalogJSONBytes)
 	if err != nil {
@@ -61,6 +65,35 @@ func loadCatalog(cfg Config, archiveRoot, metadataRoot *os.Root) (Catalog, error
 	curated, err := decodeCuratedFile(curatedData)
 	if err != nil {
 		return Catalog{}, fmt.Errorf("load curated metadata: %w", err)
+	}
+	if timedLyricsRoot != nil {
+		subjectsPath := filepath.Join(cfg.TimedLyricsRoot, timedLyricsSubjects)
+		if safeOptionalFile(subjectsPath, cfg.TimedLyricsRoot) {
+			subjectsData, err := readRootBytes(
+				timedLyricsRoot, cfg.TimedLyricsRoot,
+				subjectsPath, maxCatalogJSONBytes,
+			)
+			if err != nil {
+				return Catalog{}, fmt.Errorf("load immutable subjects: %w", err)
+			}
+			subjects, err := decodeCuratedFile(subjectsData)
+			if err != nil {
+				return Catalog{}, fmt.Errorf("load immutable subjects: %w", err)
+			}
+			for id, subject := range subjects.Tracks {
+				current := curated.Tracks[id]
+				if subject.Title != "" {
+					current.Title = subject.Title
+				}
+				if subject.Artist != "" {
+					current.Artist = subject.Artist
+				}
+				if subject.Summary != "" {
+					current.Summary = subject.Summary
+				}
+				curated.Tracks[id] = current
+			}
+		}
 	}
 	tracks := make([]Track, 0, len(index.Tracks))
 	seenIDs := make(map[string]struct{}, len(index.Tracks))
@@ -111,7 +144,10 @@ func loadCatalog(cfg Config, archiveRoot, metadataRoot *os.Root) (Catalog, error
 		if !exists(cover) {
 			cover = filepath.Join(dir, "cover.jpg")
 		}
-		lyrics, prompt := filepath.Join(dir, "lyrics.md"), filepath.Join(dir, "prompt.txt")
+		lyrics := filepath.Join(dir, "lyrics.md")
+		timedLyrics := filepath.Join(dir, "lyrics.timed.json")
+		timedLyricsBundled := false
+		prompt := filepath.Join(dir, "prompt.txt")
 		c := curated.Tracks[item.ID]
 		if !exists(cover) && c.Cover != "" {
 			cover = cleanJoin(cfg.MetadataRoot, c.Cover)
@@ -146,6 +182,29 @@ func loadCatalog(cfg Config, archiveRoot, metadataRoot *os.Root) (Catalog, error
 		if !safeOptionalFile(lyrics, cfg.Archive) {
 			lyrics = ""
 		}
+		var timedLyricsSHA256 string
+		timedLyricsRootHandle := archiveRoot
+		timedLyricsRootPath := cfg.Archive
+		if !safeOptionalFile(timedLyrics, cfg.Archive) &&
+			timedLyricsRoot != nil {
+			bundledPath := filepath.Join(cfg.TimedLyricsRoot, item.ID+".json")
+			if safeOptionalFile(bundledPath, cfg.TimedLyricsRoot) {
+				timedLyrics = bundledPath
+				timedLyricsBundled = true
+				timedLyricsRootHandle = timedLyricsRoot
+				timedLyricsRootPath = cfg.TimedLyricsRoot
+			}
+		}
+		if safeOptionalFile(timedLyrics, timedLyricsRootPath) {
+			if _, _, timedLyricsSHA256, err = loadTimedLyrics(
+				timedLyricsRootHandle, timedLyricsRootPath, timedLyrics, item.ID,
+				item.AudioSHA256, duration,
+			); err != nil {
+				return Catalog{}, errorsForCatalog(item.ID, err.Error())
+			}
+		} else {
+			timedLyrics = ""
+		}
 		if !safeOptionalFile(prompt, cfg.Archive) {
 			prompt = ""
 		}
@@ -173,7 +232,10 @@ func loadCatalog(cfg Config, archiveRoot, metadataRoot *os.Root) (Catalog, error
 			Summary: c.Summary, SearchText: searchText,
 			HasCover: exists(cover), AudioBytes: audioInfo.Size(), AudioSHA256: item.AudioSHA256,
 			CoverSHA256: coverSHA256, AudioPath: audio, CoverPath: cover,
-			CoverBytes: coverBytes, LyricsPath: lyrics, PromptPath: prompt,
+			CoverBytes: coverBytes, LyricsPath: lyrics,
+			TimedLyricsPath: timedLyrics, TimedLyricsSHA256: timedLyricsSHA256,
+			TimedLyricsBundled: timedLyricsBundled,
+			HasSyncedLyrics:    timedLyrics != "", PromptPath: prompt,
 		})
 	}
 	if len(tracks) == 0 {

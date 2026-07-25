@@ -48,7 +48,8 @@ if [[ -n "$release_package" ]]; then
   case "$release_package/" in "$snapshot/"*)
     echo "release package must be outside the snapshot" >&2
     exit 1
-  ;; esac
+    ;;
+  esac
   original_release="$("$script_root/verify-release-package.sh" "$release_package")"
   install -d -m 0700 "$scratch/package"
   (
@@ -66,11 +67,12 @@ if [[ -n "$release_package" ]]; then
 fi
 if [[ -n "$identity_receipt" ]]; then
   [[ -f "$identity_receipt" && ! -L "$identity_receipt" &&
-     "$(stat -c '%s' "$identity_receipt")" -le 4096 ]] || usage
+    "$(stat -c '%s' "$identity_receipt")" -le 4096 ]] || usage
   case "$identity_receipt" in "$snapshot"/*)
     echo "identity receipt must be outside the snapshot" >&2
     exit 1
-  ;; esac
+    ;;
+  esac
 fi
 for required in "$snapshot" "$snapshot/volume" "$snapshot/RECEIPT" \
   "$snapshot/SHA256SUMS" "$snapshot/OWNER_MODES"; do
@@ -80,7 +82,7 @@ for required in "$snapshot" "$snapshot/volume" "$snapshot/RECEIPT" \
   }
 done
 [[ -d "$snapshot/volume" && -f "$snapshot/RECEIPT" &&
-   -f "$snapshot/SHA256SUMS" && -f "$snapshot/OWNER_MODES" ]] || usage
+  -f "$snapshot/SHA256SUMS" && -f "$snapshot/OWNER_MODES" ]] || usage
 if find "$snapshot" -maxdepth 1 -mindepth 1 \
   \( -type l -o \( ! -type f ! -type d \) \) -print -quit | grep -q .; then
   echo "snapshot contains unsupported control links or special files" >&2
@@ -104,7 +106,7 @@ done
 "$script_root/check-retained-budget.sh" "$snapshot/volume"
 "$script_root/validate-volume-tree.sh" "$snapshot/volume"
 [[ "$(wc -l <"$snapshot/SHA256SUMS")" -le 100000 &&
-   "$(wc -l <"$snapshot/OWNER_MODES")" -le 100001 ]] || {
+"$(wc -l <"$snapshot/OWNER_MODES")" -le 100001 ]] || {
   echo "snapshot control manifests exceed their line budget" >&2
   exit 1
 }
@@ -117,7 +119,7 @@ while IFS= read -r line; do
   }
   path="${line:66}"
   [[ "$path" != /* && "$path" != *"/../"* && "$path" != "../"* &&
-     "$path" != *"/./"* && "$path" != *\\* ]] || {
+    "$path" != *"/./"* && "$path" != *\\* ]] || {
     echo "snapshot checksum path escapes or is not normalized" >&2
     exit 1
   }
@@ -142,8 +144,8 @@ schema="$(sed -n 's/^schema_version=//p' "$snapshot/RECEIPT")"
 source_release="$(sed -n 's/^source_release=//p' "$snapshot/RECEIPT")"
 identity="$(sed -n 's/^snapshot_identity=//p' "$snapshot/RECEIPT")"
 [[ "$created" =~ ^[0-9]{8}T[0-9]{6}\.[0-9]{9}Z$ &&
-   "$schema" =~ ^[0-9]+$ && "$source_release" =~ ^[0-9a-f]{64}$ &&
-   "$identity" =~ ^[0-9a-f]{64}$ ]] || {
+  "$schema" =~ ^[0-9]+$ && "$source_release" =~ ^[0-9a-f]{64}$ &&
+  "$identity" =~ ^[0-9a-f]{64}$ ]] || {
   echo "snapshot receipt is incomplete" >&2
   exit 1
 }
@@ -179,18 +181,15 @@ if [[ -n "$identity_receipt" ]]; then
   recorded_manifest="$(sed -n 's/^snapshot_manifest_sha256=//p' "$identity_receipt")"
   recorded_modes="$(sed -n 's/^snapshot_owner_modes_sha256=//p' "$identity_receipt")"
   [[ "$recorded_identity" == "$identity" &&
-     "$recorded_release" == "$source_release" &&
-     "$recorded_manifest" == "$(sha256sum "$snapshot/SHA256SUMS" | cut -d' ' -f1)" &&
-     "$recorded_modes" == "$(sha256sum "$snapshot/OWNER_MODES" | cut -d' ' -f1)" ]] || {
+    "$recorded_release" == "$source_release" &&
+    "$recorded_manifest" == "$(sha256sum "$snapshot/SHA256SUMS" | cut -d' ' -f1)" &&
+    "$recorded_modes" == "$(sha256sum "$snapshot/OWNER_MODES" | cut -d' ' -f1)" ]] || {
     echo "snapshot does not match its independently retained identity receipt" >&2
     exit 1
   }
 fi
 if [[ -n "$release_package" ]]; then
-  package_schema="$(
-    sed -n 's/^const currentSchemaVersion = //p' \
-      "$release_package/internal/application/migration_schema.go"
-  )"
+  package_schema="$(tr -d '\r\n' <"$release_package/SCHEMA_VERSION")"
   [[ "$package_schema" =~ ^[0-9]+$ && "$schema" == "$package_schema" ]] || {
     echo "snapshot schema does not match the verified release package" >&2
     exit 1

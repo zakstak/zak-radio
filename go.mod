@@ -1,4 +1,4 @@
-module zak-radio-apphost
+module zak-radio
 
 go 1.24
 

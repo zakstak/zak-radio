@@ -56,12 +56,14 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 	limiter := NewRequestLimiter()
 	streamStarts := NewRequestLimiter()
 	streams := NewStreamLimiter(64, 16)
+	assets := NewStreamLimiter(128, 16)
 	content := NewStreamLimiter(64, 4)
 	writes := NewStreamLimiter(32, 2)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(2 * time.Minute))
 		setSecurityHeaders(w)
-		if !allowedHost(r.Host, allowedHosts) {
+		requestHost := effectiveRequestHost(r, trustedProxies)
+		if !allowedHost(requestHost, allowedHosts) {
 			http.Error(w, "unrecognized request host", http.StatusMisdirectedRequest)
 			return
 		}
@@ -70,7 +72,7 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 			return
 		}
 		if r.Method == http.MethodOptions {
-			if !sameOriginRequest(r, allowedOrigins) {
+			if !sameOriginRequest(r, requestHost, allowedOrigins) {
 				http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
 				return
 			}
@@ -88,7 +90,7 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 			return
 		}
 		if r.Method == http.MethodPost {
-			if !sameOriginRequest(r, allowedOrigins) {
+			if !sameOriginRequest(r, requestHost, allowedOrigins) {
 				http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
 				return
 			}
@@ -121,8 +123,19 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 			}
 			defer release()
 		}
-		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && IsContentRoute(r.URL.Path) {
-			release, ok := content.acquire(ClientAddressWithPrefix(r, trustedProxies, clientIPv6Prefix))
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			IsPageAssetRoute(r.URL.Path) {
+			release, ok := assets.acquire(
+				ClientAddressWithPrefix(r, trustedProxies, clientIPv6Prefix))
+			if !ok {
+				http.Error(w, "page asset capacity reached", http.StatusTooManyRequests)
+				return
+			}
+			defer release()
+		} else if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			IsContentRoute(r.URL.Path) {
+			release, ok := content.acquire(
+				ClientAddressWithPrefix(r, trustedProxies, clientIPv6Prefix))
 			if !ok {
 				http.Error(w, "content stream capacity reached", http.StatusTooManyRequests)
 				return
@@ -131,6 +144,12 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func IsPageAssetRoute(path string) bool {
+	return path == "/" || path == "/library" || path == "/library/" ||
+		path == "/reader" || path == "/reader/" ||
+		strings.HasPrefix(path, "/static/")
 }
 
 func authorizedIngress(r *http.Request, trustedIngress string) bool {
@@ -145,7 +164,8 @@ func authorizedIngress(r *http.Request, trustedIngress string) bool {
 	hostname := strings.Trim(strings.ToLower(hostName(r.Host)), "[]")
 	requestsLoopback := hostname == "localhost" || net.ParseIP(hostname).IsLoopback()
 	if requestsLoopback {
-		return remote != nil && remote.IsLoopback()
+		return remote != nil && (remote.IsLoopback() ||
+			trustedIngress != "*" && proxyTrusted(remote, trustedIngress))
 	}
 	return remote != nil && proxyTrusted(remote, trustedIngress)
 }
@@ -194,7 +214,7 @@ func setSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Frame-Options", "DENY")
 }
 
-func sameOriginRequest(r *http.Request, allowedOrigins string) bool {
+func sameOriginRequest(r *http.Request, requestHost, allowedOrigins string) bool {
 	if strings.EqualFold(r.Header.Get("Sec-Fetch-Site"), "cross-site") {
 		return false
 	}
@@ -207,7 +227,23 @@ func sameOriginRequest(r *http.Request, allowedOrigins string) bool {
 		parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return false
 	}
-	return strings.EqualFold(parsed.Host, r.Host) && allowedOrigin(parsed, allowedOrigins)
+	return strings.EqualFold(parsed.Host, requestHost) && allowedOrigin(parsed, allowedOrigins)
+}
+
+func effectiveRequestHost(r *http.Request, trustedProxies string) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil || host == "" {
+		host = r.RemoteAddr
+	}
+	remote := net.ParseIP(strings.TrimSpace(host))
+	if remote == nil || !proxyTrusted(remote, trustedProxies) {
+		return r.Host
+	}
+	forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if forwarded == "" || strings.ContainsAny(forwarded, ", \t\r\n") {
+		return r.Host
+	}
+	return forwarded
 }
 
 func allowedHost(host, configured string) bool {

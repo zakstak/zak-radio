@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const currentSchemaVersion = 14
+const currentSchemaVersion = 15
 
 type migration struct {
 	version int
@@ -132,6 +132,7 @@ func preflightDatabaseMode(
 		"reader_items": maxReaderItems, "reader_playback": maxReaderItems,
 		"reader_segments": maxReaderSegments, "skip_counts": maxCatalogTracks,
 		"station_creation_keys": maxTempStations,
+		"station_queue":         maxStationQueue * (maxTempStations + 1),
 		"stations":              maxTempStations + 1,
 		"station":               maxTempStations + 1, "station_settings": maxTempStations + 1,
 		"temporary_stations": maxTempStations, "skips": maxCatalogTracks * 100,
@@ -337,6 +338,7 @@ select count(*) from sqlite_master where type='table' and name not like 'sqlite_
 		{12, enforceRevisionHeadroom},
 		{13, reserveRevisionHeadroomAndClock},
 		{14, addStationCreationIdempotency},
+		{15, addStationQueue},
 	}
 	for _, item := range migrations {
 		if item.version <= version {
@@ -359,6 +361,17 @@ select count(*) from sqlite_master where type='table' and name not like 'sqlite_
 		}
 	}
 	return nil
+}
+
+func addStationQueue(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+create table if not exists station_queue (
+	station_id text not null references stations(id) on delete cascade,
+	position integer not null check(position between 0 and 99),
+	track_id text not null,
+	primary key(station_id, position)
+);`)
+	return err
 }
 
 func reserveRevisionHeadroomAndClock(ctx context.Context, tx *sql.Tx) error {
@@ -583,6 +596,10 @@ func enforceStationCreatorCapacity(ctx context.Context, tx *sql.Tx) error {
 
 func addReaderPlaybackWriterSequence(ctx context.Context, tx *sql.Tx) error {
 	for _, statement := range []string{
+		`delete from reader_playback
+		 where not exists (
+			select 1 from reader_items where reader_items.id=reader_playback.item_id
+		 );`,
 		`create table reader_playback_v8 (
 			item_id text primary key references reader_items(id) on delete cascade,
 			segment_index integer not null default 0,

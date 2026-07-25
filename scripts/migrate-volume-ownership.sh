@@ -11,8 +11,8 @@ usage() {
   exit 2
 }
 [[ "$#" == 10 && "$1" == "--volume" && "$3" == "--backup" &&
-   "$5" == "--source-package" && "$7" == "--receipt" &&
-   "$9" == "--identity-receipt" ]] || usage
+  "$5" == "--source-package" && "$7" == "--receipt" &&
+  "$9" == "--identity-receipt" ]] || usage
 [[ "$(id -u)" == "0" ]] || {
   echo "ownership migration must run as root" >&2
   exit 2
@@ -28,21 +28,31 @@ source_package="$(realpath "$6")"
 receipt="$(realpath -m "$8")"
 identity_receipt="$(realpath "${10}")"
 [[ -d "$volume_root" && -d "$backup_root" && -d "$source_package" &&
-   ! -L "$source_package" &&
-   "$volume_root" != "/" && "$backup_root" != "/" &&
-   "$receipt" != "/" && ! -e "$receipt" &&
-   -f "$identity_receipt" && ! -L "$identity_receipt" ]] || usage
-case "$receipt/" in "$volume_root/"*) echo "receipt must be outside the retained volume" >&2; exit 2 ;; esac
-case "$receipt/" in "$backup_root/"*) echo "receipt must be outside the rollback snapshot" >&2; exit 2 ;; esac
+  ! -L "$source_package" &&
+  "$volume_root" != "/" && "$backup_root" != "/" &&
+  "$receipt" != "/" && ! -e "$receipt" &&
+  -f "$identity_receipt" && ! -L "$identity_receipt" ]] || usage
+case "$receipt/" in "$volume_root/"*)
+  echo "receipt must be outside the retained volume" >&2
+  exit 2
+  ;;
+esac
+case "$receipt/" in "$backup_root/"*)
+  echo "receipt must be outside the rollback snapshot" >&2
+  exit 2
+  ;;
+esac
 backup_store_root="$(dirname -- "$backup_root")"
-case "$source_package/" in "$volume_root/"*|"$backup_store_root/"*)
+case "$source_package/" in "$volume_root/"* | "$backup_store_root/"*)
   echo "source package must be outside the volume and rollback storage" >&2
   exit 2
-;; esac
-case "$identity_receipt" in "$backup_store_root"/*|"$volume_root"/*)
+  ;;
+esac
+case "$identity_receipt" in "$backup_store_root"/* | "$volume_root"/*)
   echo "rollback identity receipt must be independently stored outside backup storage and volume" >&2
   exit 2
-;; esac
+  ;;
+esac
 
 script_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 command -v python3 >/dev/null
@@ -145,7 +155,7 @@ cmp "$scratch/before.sha256" "$scratch/after.sha256"
 ) >"$scratch/after.owner-modes"
 sync -f "$locked_volume_root"
 [[ ! -L "$volume_root" &&
-   "$(stat -Lc '%d:%i' "$volume_root")" == "$(stat -Lc '%d:%i' "$locked_volume_root")" ]] || {
+  "$(stat -Lc '%d:%i' "$volume_root")" == "$(stat -Lc '%d:%i' "$locked_volume_root")" ]] || {
   echo "retained volume pathname changed during ownership migration" >&2
   exit 1
 }
@@ -169,7 +179,7 @@ receipt_staging="$(mktemp "$(dirname -- "$receipt")/.zak-radio-ownership.XXXXXX"
 chmod 0640 "$receipt_staging"
 sync -f "$receipt_staging"
 [[ -f "$receipt" && ! -L "$receipt" &&
-   "$(stat -c '%d:%i' "$receipt")" == "$intent_identity" ]] || {
+  "$(stat -c '%d:%i' "$receipt")" == "$intent_identity" ]] || {
   echo "ownership intent receipt changed during migration" >&2
   exit 1
 }

@@ -24,6 +24,7 @@ func Run() error {
 	flag.StringVar(&cfg.Archive, "archive", cfg.Archive, "music archive path")
 	flag.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite database path")
 	flag.StringVar(&cfg.ReaderLibrary, "reader-library", cfg.ReaderLibrary, "reader library path")
+	flag.StringVar(&cfg.TimedLyricsRoot, "timed-lyrics", cfg.TimedLyricsRoot, "optional immutable timed-lyrics bundle")
 	flag.StringVar(&cfg.AllowedHosts, "allowed-hosts", cfg.AllowedHosts, "comma-separated exact external Host values, plus optional loopback")
 	flag.StringVar(&cfg.AllowedOrigins, "allowed-origins", cfg.AllowedOrigins, "comma-separated exact browser origins, plus optional loopback")
 	flag.StringVar(&cfg.TrustedProxies, "trusted-proxies", cfg.TrustedProxies, "comma-separated proxy IPs or CIDRs allowed to set X-Real-IP")
@@ -34,9 +35,6 @@ func Run() error {
 		"validate-migration-source-volume", "",
 		"validate a supported stopped migration source read-only, then exit")
 	flag.Parse()
-	if err := validatePackagedRouting(cfg); err != nil {
-		return err
-	}
 	if *validateRoot != "" {
 		if err := validateVolume(context.Background(), *validateRoot); err != nil {
 			return err

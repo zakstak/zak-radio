@@ -1,6 +1,6 @@
 package application
 
-import appevents "zak-radio-apphost/internal/events"
+import appevents "zak-radio/internal/events"
 
 type Broadcaster = appevents.Broadcaster
 

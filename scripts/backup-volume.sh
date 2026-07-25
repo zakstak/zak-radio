@@ -11,28 +11,40 @@ usage() {
   exit 2
 }
 [[ "$#" == 10 && "$1" == "--source" && "$3" == "--output" &&
-   "$5" == "--source-package" && "$7" == "--expected-runtime-release" &&
-   "$9" == "--identity-receipt" ]] || usage
+  "$5" == "--source-package" && "$7" == "--expected-runtime-release" &&
+  "$9" == "--identity-receipt" ]] || usage
 source_root="$(realpath "$2")"
 output_root="$(realpath -m "$4")"
 source_package="$(realpath "$6")"
 expected_runtime_release="$8"
 identity_receipt="$(realpath -m "${10}")"
 [[ -d "$source_package" && ! -L "$source_package" &&
-   "$expected_runtime_release" =~ ^[0-9a-f]{64}$ ]] || usage
+  "$expected_runtime_release" =~ ^[0-9a-f]{64}$ ]] || usage
 [[ -d "$source_root" && "$source_root" != "/" && "$output_root" != "/" ]] || usage
 [[ "$identity_receipt" != "/" && ! -e "$identity_receipt" ]] || usage
 case "$output_root/" in
-  "$source_root/"*) echo "backup output must be outside the retained volume" >&2; exit 2 ;;
+  "$source_root/"*)
+    echo "backup output must be outside the retained volume" >&2
+    exit 2
+    ;;
 esac
 case "$source_package/" in
-  "$source_root/"*|"$output_root/"*) echo "source package must be outside the retained volume and backup storage" >&2; exit 2 ;;
+  "$source_root/"* | "$output_root/"*)
+    echo "source package must be outside the retained volume and backup storage" >&2
+    exit 2
+    ;;
 esac
 case "$output_root/" in
-  "$source_package/"*) echo "backup output must be outside the immutable source package" >&2; exit 2 ;;
+  "$source_package/"*)
+    echo "backup output must be outside the immutable source package" >&2
+    exit 2
+    ;;
 esac
 case "$identity_receipt/" in
-  "$source_root/"*|"$output_root/"*|"$source_package/"*) echo "identity receipt must be outside the volume, backup storage, and source package" >&2; exit 2 ;;
+  "$source_root/"* | "$output_root/"* | "$source_package/"*)
+    echo "identity receipt must be outside the volume, backup storage, and source package" >&2
+    exit 2
+    ;;
 esac
 script_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 command -v go >/dev/null
@@ -47,7 +59,7 @@ if ! python3 "$script_root/with-volume-lock.py" --verify "$source_root" 2>/dev/n
   exec python3 "$script_root/with-volume-lock.py" "$source_root" -- "$0" "$@"
 fi
 locked_source_root="/proc/self/fd/$ZAK_RADIO_VOLUME_ROOT_FD/."
-tar --version | grep -q 'GNU tar' || {
+tar --version | grep -F 'GNU tar' >/dev/null || {
   echo "backup requires GNU tar for bounded sparse-file handling" >&2
   exit 2
 }
@@ -119,7 +131,7 @@ output_available="$(df -B1 --output=avail "$output_anchor" | tail -n 1 | tr -d '
   exit 1
 }
 required_bytes=$((allocated_bytes + 128 * 1024 * 1024))
-(( output_available >= required_bytes )) || {
+((output_available >= required_bytes)) || {
   echo "backup requires $required_bytes free bytes; $output_available available" >&2
   exit 1
 }

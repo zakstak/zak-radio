@@ -14,7 +14,7 @@ fi
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 script_root="$repo_root/scripts"
 case "$1" in
-  /proc/self/fd/[0-9]*/.|/dev/fd/[0-9]*/.) volume_root="$1" ;;
+  /proc/self/fd/[0-9]*/. | /dev/fd/[0-9]*/.) volume_root="$1" ;;
   *) volume_root="$(realpath "$1")" ;;
 esac
 [[ -d "$volume_root" && "$volume_root" != "/" ]] || {

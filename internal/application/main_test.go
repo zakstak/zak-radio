@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -126,6 +127,92 @@ func TestShuffleRequiresExplicitState(t *testing.T) {
 
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusBadRequest)
+	}
+}
+
+func TestStationQueueIsOrderedAndConsumedByNext(t *testing.T) {
+	app := newTestApp(t)
+
+	postControlForTest(t, app,
+		`{"action":"add_to_queue","track_id":"one"}`)
+	station := postControlForTest(t, app,
+		`{"action":"play_next","track_id":"two"}`)
+	queue, ok := station["queue"].([]any)
+	if !ok || len(queue) != 2 || queue[0] != "two" || queue[1] != "one" {
+		t.Fatalf("queue = %#v, want [two one]", station["queue"])
+	}
+
+	station = postControlForTest(t, app, `{"action":"next"}`)
+	queue, _ = station["queue"].([]any)
+	if station["track_id"] != "two" || len(queue) != 1 || queue[0] != "one" {
+		t.Fatalf("first queued next = %#v", station)
+	}
+
+	station = postControlForTest(t, app, `{"action":"next"}`)
+	queue, _ = station["queue"].([]any)
+	if station["track_id"] != "one" || len(queue) != 0 {
+		t.Fatalf("second queued next = %#v", station)
+	}
+}
+
+func TestStationQueueIsConsumedAtNaturalTrackEnd(t *testing.T) {
+	app := newTestApp(t)
+	fixed := time.Unix(1_800_000_000, 0)
+	freezeStationClockForTest(app.station, fixed)
+	if _, err := app.station.Execute(context.Background(), Command{
+		Action: "add_to_queue", TrackID: "two",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.db.Exec(`
+update stations set track_id='one', position=0, playing=1, repeat_one=0,
+	shuffle=0, updated_at=?, track_changed_at=? where id=?`,
+		unixTime(fixed)-11, unixTime(fixed)-11, mainStationID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.station.Advance(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := app.station.Snapshot(context.Background(), mainStationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.TrackID != "two" || math.Abs(snapshot.Position-1) > 0.001 ||
+		len(snapshot.Queue) != 0 {
+		t.Fatalf("natural queued advance = %#v", snapshot)
+	}
+}
+
+func TestTemporaryStationQueueIsIsolatedFromSharedStation(t *testing.T) {
+	app := newTestApp(t)
+	stationID, ownerToken, _, err := app.station.Create(
+		context.Background(), "one", strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	private, err := app.station.Execute(context.Background(), Command{
+		StationID: stationID, OwnerToken: ownerToken,
+		Action: "add_to_queue", TrackID: "two",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, err := app.station.Snapshot(context.Background(), mainStationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(private.Queue) != 1 || private.Queue[0] != "two" || len(shared.Queue) != 0 {
+		t.Fatalf("private queue=%v shared queue=%v", private.Queue, shared.Queue)
+	}
+	private, err = app.station.Execute(context.Background(), Command{
+		StationID: stationID, OwnerToken: ownerToken, Action: "next",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if private.TrackID != "two" || shared.TrackID != "one" {
+		t.Fatalf("private next=%q shared track=%q", private.TrackID, shared.TrackID)
 	}
 }
 
@@ -422,6 +509,164 @@ func TestHTTPRoutesPreserveStationAndMediaContracts(t *testing.T) {
 	}
 	if got := response.Header.Get("Accept-Ranges"); got != "bytes" {
 		t.Fatalf("Accept-Ranges = %q", got)
+	}
+}
+
+func TestTimedLyricsAreValidatedVersionedAndServed(t *testing.T) {
+	cfg := newTestConfig(t)
+	sidecarPath := filepath.Join(cfg.Archive, "tracks", "one", "lyrics.timed.json")
+	sidecar := `{
+  "version": 1,
+  "track_id": "one",
+  "audio_sha256": "6ed8919ce20490a5e3ad8630a4fab69475297abd07db73918dd5f36fcfaeb11b",
+  "duration": 10,
+  "language": "en",
+  "quality": {
+    "candidate_lines": 1,
+    "aligned_lines": 1,
+    "line_coverage": 1,
+    "word_coverage": 1,
+    "mean_confidence": 0.9
+  },
+  "cues": [{
+    "start": 1,
+    "end": 2,
+    "section": "Verse",
+    "text": "Hello",
+    "words": [{"start": 1, "end": 2, "text": "Hello", "confidence": 0.9}]
+  }]
+}`
+	if err := os.WriteFile(sidecarPath, []byte(sidecar), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+	if !app.byID["one"].HasSyncedLyrics ||
+		len(app.byID["one"].TimedLyricsSHA256) != 64 {
+		t.Fatalf("timed lyric catalog state = %#v", app.byID["one"])
+	}
+
+	response := httptest.NewRecorder()
+	app.apiTrackText(
+		response,
+		httptest.NewRequest(http.MethodGet, "/api/track/one?kind=timed_lyrics", nil),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("timed lyrics status = %d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		TimedLyrics TimedLyrics `json:"timed_lyrics"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.TimedLyrics.TrackID != "one" ||
+		len(payload.TimedLyrics.Cues) != 1 ||
+		payload.TimedLyrics.Cues[0].Text != "Hello" {
+		t.Fatalf("timed lyrics response = %#v", payload.TimedLyrics)
+	}
+
+	if err := os.WriteFile(sidecarPath, []byte(sidecar+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	app.apiTrackText(
+		response,
+		httptest.NewRequest(http.MethodGet, "/api/track/one?kind=timed_lyrics", nil),
+	)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("tampered timed lyrics status = %d, want 500", response.Code)
+	}
+}
+
+func TestImmutableTimedLyricsBundleIsUsedWithoutMutatingArchive(t *testing.T) {
+	cfg := newTestConfig(t)
+	cfg.TimedLyricsRoot = filepath.Join(filepath.Dir(cfg.MetadataRoot), "timed-lyrics")
+	if err := os.Mkdir(cfg.TimedLyricsRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sidecarPath := filepath.Join(cfg.TimedLyricsRoot, "one.json")
+	sidecar := `{
+  "version": 1,
+  "track_id": "one",
+  "audio_sha256": "6ed8919ce20490a5e3ad8630a4fab69475297abd07db73918dd5f36fcfaeb11b",
+  "duration": 10,
+  "quality": {
+    "candidate_lines": 1,
+    "aligned_lines": 1,
+    "line_coverage": 1,
+    "word_coverage": 1,
+    "mean_confidence": 0.9
+  },
+  "cues": [{"start": 1, "end": 2, "text": "Bundled line"}]
+}`
+	if err := os.WriteFile(sidecarPath, []byte(sidecar), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(cfg.TimedLyricsRoot, timedLyricsSubjects),
+		[]byte(`{"tracks":{"one":{"title":"Observed subject"}}}`), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+	track := app.byID["one"]
+	if !track.HasSyncedLyrics || !track.TimedLyricsBundled {
+		t.Fatalf("bundled timed lyric catalog state = %#v", track)
+	}
+	if track.Title != "Observed subject" {
+		t.Fatalf("immutable subject title = %q", track.Title)
+	}
+	if _, err := os.Stat(
+		filepath.Join(cfg.Archive, "tracks", "one", "lyrics.timed.json"),
+	); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("archive was unexpectedly changed: %v", err)
+	}
+
+	response := httptest.NewRecorder()
+	app.apiTrackText(
+		response,
+		httptest.NewRequest(http.MethodGet, "/api/track/one?kind=timed_lyrics", nil),
+	)
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), "Bundled line") {
+		t.Fatalf("bundled timed lyrics status=%d body=%s",
+			response.Code, response.Body.String())
+	}
+}
+
+func TestCatalogRejectsTimedLyricsForDifferentAudio(t *testing.T) {
+	cfg := newTestConfig(t)
+	sidecar := `{
+  "version": 1,
+  "track_id": "one",
+  "audio_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "duration": 10,
+  "quality": {
+    "candidate_lines": 1,
+    "aligned_lines": 1,
+    "line_coverage": 1,
+    "word_coverage": 1,
+    "mean_confidence": 1
+  },
+  "cues": [{"start": 1, "end": 2, "text": "Hello"}]
+}`
+	if err := os.WriteFile(
+		filepath.Join(cfg.Archive, "tracks", "one", "lyrics.timed.json"),
+		[]byte(sidecar), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewApp(cfg); err == nil ||
+		!strings.Contains(err.Error(), "audio_sha256 does not match") {
+		t.Fatalf("startup error = %v", err)
 	}
 }
 

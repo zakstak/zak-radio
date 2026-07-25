@@ -3,7 +3,7 @@ package application
 import (
 	"net/http"
 
-	"zak-radio-apphost/internal/httpguard"
+	"zak-radio/internal/httpguard"
 )
 
 const maxJSONBodyBytes = httpguard.MaxJSONBodyBytes

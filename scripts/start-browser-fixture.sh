@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 browser_port="${ZAK_RADIO_BROWSER_PORT:-28799}"
 [[ "$browser_port" =~ ^[0-9]+$ &&
-   "$browser_port" -ge 1024 && "$browser_port" -le 65535 ]] || {
+  "$browser_port" -ge 1024 && "$browser_port" -le 65535 ]] || {
   echo "ZAK_RADIO_BROWSER_PORT must be an integer from 1024 to 65535" >&2
   exit 2
 }
@@ -32,14 +32,14 @@ EOF
 
 go build -trimpath -o "$fixture_root/zak-radio" "$repo_root/cmd/zak-radio"
 ZAK_RADIO_METADATA_ROOT="$fixture_root" \
-ZAK_RADIO_ARCHIVE="$archive" \
-ZAK_RADIO_DB="$fixture_root/station.sqlite3" \
-ZAK_RADIO_READER_LIBRARY="$fixture_root/reader-library" \
-ZAK_RADIO_STATIC_DIR="$repo_root/static" \
-ZAK_RADIO_ALLOWED_HOSTS=loopback \
-ZAK_RADIO_ALLOWED_ORIGINS=loopback \
-ZAK_RADIO_TRUSTED_PROXIES= \
-ZAK_RADIO_TRUSTED_INGRESS= \
+  ZAK_RADIO_ARCHIVE="$archive" \
+  ZAK_RADIO_DB="$fixture_root/station.sqlite3" \
+  ZAK_RADIO_READER_LIBRARY="$fixture_root/reader-library" \
+  ZAK_RADIO_STATIC_DIR="$repo_root/static" \
+  ZAK_RADIO_ALLOWED_HOSTS=loopback \
+  ZAK_RADIO_ALLOWED_ORIGINS=loopback \
+  ZAK_RADIO_TRUSTED_PROXIES='' \
+  ZAK_RADIO_TRUSTED_INGRESS='' \
   "$fixture_root/zak-radio" --host 127.0.0.1 --port "$browser_port" &
 server_pid="$!"
 wait "$server_pid"

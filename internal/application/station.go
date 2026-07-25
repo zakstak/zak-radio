@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	stationmodel "zak-radio-apphost/internal/station"
+	stationmodel "zak-radio/internal/station"
 )
 
 var temporaryStationIDPattern = regexp.MustCompile(`^[a-f0-9]{12}(?:[a-f0-9]{20})?$`)
@@ -27,6 +27,7 @@ const (
 	earlySkipSeconds       = 6.0
 	maxTempStations        = 100
 	maxCreatorStations     = 5
+	maxStationQueue        = 100
 	maxNormalizeSteps      = 10000
 	maxShuffleCatchUpSteps = 64
 	maxRetainedTimestamp   = 1e11
@@ -308,7 +309,7 @@ func (s *StationService) Execute(ctx context.Context, command Command) (Snapshot
 		_ = tx.Rollback()
 		return Snapshot{}, err
 	}
-	if _, err := s.normalizeElapsed(&row, now); err != nil {
+	if _, err := s.normalizeElapsedWithQueue(ctx, tx, &row, now); err != nil {
 		_ = tx.Rollback()
 		return Snapshot{}, err
 	}
@@ -318,7 +319,7 @@ func (s *StationService) Execute(ctx context.Context, command Command) (Snapshot
 	}
 	row.UpdatedAt = now
 	if row.Playing && row.Position >= s.duration(row.TrackID) {
-		if _, err := s.normalizeElapsed(&row, now); err != nil {
+		if _, err := s.normalizeElapsedWithQueue(ctx, tx, &row, now); err != nil {
 			_ = tx.Rollback()
 			return Snapshot{}, err
 		}
@@ -440,7 +441,7 @@ func (s *StationService) reconcileCatalogStatistics(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, table := range []string{"likes", "skip_counts"} {
+	for _, table := range []string{"likes", "skip_counts", "station_queue"} {
 		rows, err := tx.QueryContext(ctx, "select track_id from "+table)
 		if err != nil {
 			return err
@@ -511,7 +512,7 @@ func (s *StationService) advanceOne(ctx context.Context, id string, now float64)
 		}
 		return Snapshot{}, false, err
 	}
-	changed, err := s.normalizeElapsed(&row, now)
+	changed, err := s.normalizeElapsedWithQueue(ctx, tx, &row, now)
 	if err != nil {
 		_ = tx.Rollback()
 		return Snapshot{}, false, err
@@ -548,6 +549,12 @@ func incrementStationRevision(row *Station) error {
 }
 
 func (s *StationService) normalizeElapsed(row *Station, now float64) (bool, error) {
+	return s.normalizeElapsedWithQueue(context.Background(), nil, row, now)
+}
+
+func (s *StationService) normalizeElapsedWithQueue(
+	ctx context.Context, tx *sql.Tx, row *Station, now float64,
+) (bool, error) {
 	duration := s.duration(row.TrackID)
 	elapsed := row.Position + math.Max(0, now-row.UpdatedAt)
 	if !row.Playing || duration <= 0 || elapsed < duration {
@@ -557,7 +564,15 @@ func (s *StationService) normalizeElapsed(row *Station, now float64) (bool, erro
 		row.Position = math.Mod(elapsed, duration)
 		row.TrackChangedAt = now - row.Position
 	} else {
-		if !row.Shuffle {
+		queueLength := 0
+		if tx != nil {
+			var err error
+			queueLength, err = s.queueLength(ctx, tx, row.ID)
+			if err != nil {
+				return false, err
+			}
+		}
+		if !row.Shuffle && queueLength == 0 {
 			var cycle float64
 			for _, track := range s.catalog.Tracks {
 				cycle += asFloat(track.Duration)
@@ -573,7 +588,15 @@ func (s *StationService) normalizeElapsed(row *Station, now float64) (bool, erro
 			if elapsed >= previous {
 				return false, errors.New("station normalization made no progress")
 			}
-			row.TrackID = s.nextTrack(*row, 1)
+			next := s.nextTrack(*row, 1)
+			if tx != nil {
+				var err error
+				next, err = s.nextQueuedOrCatalog(ctx, tx, *row)
+				if err != nil {
+					return false, err
+				}
+			}
+			row.TrackID = next
 			duration = s.duration(row.TrackID)
 			if duration < minTrackDuration || math.IsNaN(duration) || math.IsInf(duration, 0) {
 				return false, errors.New("catalog contains a track with invalid duration")
@@ -635,7 +658,11 @@ func (s *StationService) applyCommand(ctx context.Context, tx *sql.Tx, row *Stat
 		if err := s.recordEarly(ctx, tx, *row, now); err != nil {
 			return err
 		}
-		return s.setTrack(row, s.nextTrack(*row, 1), now)
+		next, err := s.nextQueuedOrCatalog(ctx, tx, *row)
+		if err != nil {
+			return err
+		}
+		return s.setTrack(row, next, now)
 	case "prev":
 		if err := s.recordEarly(ctx, tx, *row, now); err != nil {
 			return err
@@ -658,10 +685,100 @@ func (s *StationService) applyCommand(ctx context.Context, tx *sql.Tx, row *Stat
 		}
 		row.Position = clamp(current)
 		row.Shuffle = *command.Shuffle
+	case "play_next":
+		return s.enqueueTrack(ctx, tx, row.ID, command.TrackID, true)
+	case "add_to_queue":
+		return s.enqueueTrack(ctx, tx, row.ID, command.TrackID, false)
 	default:
 		return fmt.Errorf("%w: unsupported action", ErrInvalidCommand)
 	}
 	return nil
+}
+
+func (s *StationService) queueLength(
+	ctx context.Context, q queryer, stationID string,
+) (int, error) {
+	var count int
+	err := q.QueryRowContext(ctx,
+		"select count(*) from station_queue where station_id=?", stationID).Scan(&count)
+	return count, err
+}
+
+func (s *StationService) queueTracks(
+	ctx context.Context, q queryer, stationID string,
+) ([]string, error) {
+	rows, err := q.QueryContext(ctx, `
+select track_id from station_queue where station_id=? order by position`, stationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tracks := make([]string, 0)
+	for rows.Next() {
+		var trackID string
+		if err := rows.Scan(&trackID); err != nil {
+			return nil, err
+		}
+		tracks = append(tracks, trackID)
+	}
+	return tracks, rows.Err()
+}
+
+func (s *StationService) replaceQueue(
+	ctx context.Context, tx *sql.Tx, stationID string, tracks []string,
+) error {
+	if len(tracks) > maxStationQueue {
+		return ErrQueueFull
+	}
+	if _, err := tx.ExecContext(ctx,
+		"delete from station_queue where station_id=?", stationID); err != nil {
+		return err
+	}
+	for position, trackID := range tracks {
+		if _, err := tx.ExecContext(ctx, `
+insert into station_queue(station_id, position, track_id) values (?, ?, ?)`,
+			stationID, position, trackID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *StationService) enqueueTrack(
+	ctx context.Context, tx *sql.Tx, stationID, trackID string, first bool,
+) error {
+	if s.catalog.ByID[trackID] == nil {
+		return fmt.Errorf("%w: unknown track", ErrInvalidCommand)
+	}
+	tracks, err := s.queueTracks(ctx, tx, stationID)
+	if err != nil {
+		return err
+	}
+	if len(tracks) >= maxStationQueue {
+		return ErrQueueFull
+	}
+	if first {
+		tracks = append([]string{trackID}, tracks...)
+	} else {
+		tracks = append(tracks, trackID)
+	}
+	return s.replaceQueue(ctx, tx, stationID, tracks)
+}
+
+func (s *StationService) nextQueuedOrCatalog(
+	ctx context.Context, tx *sql.Tx, row Station,
+) (string, error) {
+	tracks, err := s.queueTracks(ctx, tx, row.ID)
+	if err != nil {
+		return "", err
+	}
+	if len(tracks) == 0 {
+		return s.nextTrack(row, 1), nil
+	}
+	if err := s.replaceQueue(ctx, tx, row.ID, tracks[1:]); err != nil {
+		return "", err
+	}
+	return tracks[0], nil
 }
 
 func (s *StationService) changeTrack(ctx context.Context, tx *sql.Tx, row *Station, trackID string, now float64) error {
@@ -764,6 +881,10 @@ func (s *StationService) snapshot(ctx context.Context, q queryer, row Station, n
 	if err := q.QueryRowContext(ctx, "select coalesce((select skip_count from skip_counts where track_id=?), 0)", row.TrackID).Scan(&skipCount); err != nil {
 		return Snapshot{}, err
 	}
+	queue, err := s.queueTracks(ctx, q, row.ID)
+	if err != nil {
+		return Snapshot{}, err
+	}
 	return Snapshot{
 		StationID: row.ID, CatalogRevision: s.catalog.Revision,
 		Kind: row.Kind, TrackID: row.TrackID,
@@ -771,6 +892,7 @@ func (s *StationService) snapshot(ctx context.Context, q queryer, row Station, n
 		RepeatOne: row.RepeatOne, Shuffle: row.Shuffle, UpdatedAt: row.UpdatedAt,
 		TrackChangedAt: row.TrackChangedAt, ServerTime: now, Liked: liked != 0,
 		SkipCount: skipCount, ExpiresAt: row.ExpiresAt, Revision: row.Revision,
+		Queue: queue,
 	}, nil
 }
 
@@ -800,6 +922,7 @@ func validStationID(id string) bool {
 var (
 	ErrForbidden      = stationmodel.ErrForbidden
 	ErrCapacity       = stationmodel.ErrCapacity
+	ErrQueueFull      = stationmodel.ErrQueueFull
 	ErrInvalidCommand = stationmodel.ErrInvalidCommand
 )
 

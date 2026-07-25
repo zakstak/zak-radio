@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 
-	readermodel "zak-radio-apphost/internal/reader"
+	readermodel "zak-radio/internal/reader"
 )
 
 type ReaderItem = readermodel.Item

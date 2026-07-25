@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -33,37 +32,17 @@ type digestAudit struct {
 	artifact integrityArtifact
 }
 
-func (a *App) probeDatabaseHealth(ctx context.Context) (database, journal, writable bool) {
-	var version int
-	database = a.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version) == nil &&
-		version == currentSchemaVersion && revisionHeadroomIntegrity(ctx, a.db) == nil
-	var mode string
-	journal = database &&
-		a.db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode) == nil &&
-		strings.EqualFold(mode, "wal")
-	if !database {
-		return database, journal, false
+func pendingIntegrityChecks() map[string]bool {
+	return map[string]bool{
+		"catalog":          false,
+		"database":         false,
+		"database_runtime": false,
+		"journal":          false,
+		"media":            false,
+		"reader_integrity": false,
+		"static":           false,
+		"writable":         false,
 	}
-	var filesystem syscall.Statfs_t
-	if syscall.Statfs(a.cfg.MetadataRoot, &filesystem) != nil ||
-		int64(filesystem.Bavail)*int64(filesystem.Bsize) < 64*1024*1024 {
-		return database, journal, false
-	}
-	tx, err := a.db.BeginTx(ctx, nil)
-	if err != nil {
-		return database, journal, false
-	}
-	result, err := tx.ExecContext(ctx,
-		"update stations set revision=revision where id=?", mainStationID)
-	if err == nil {
-		var affected int64
-		affected, err = result.RowsAffected()
-		if err == nil && affected != 1 {
-			err = fmt.Errorf("main station rows affected: %d", affected)
-		}
-	}
-	_ = tx.Rollback()
-	return database, journal, err == nil
 }
 
 func (a *App) integrityLoop(ctx context.Context, interval time.Duration) {
@@ -414,18 +393,28 @@ select
 		(expires_at is not null and (typeof(expires_at) not in ('integer','real') or expires_at<0 or expires_at>?)) or
 		typeof(revision)<>'integer' or revision<1 or revision>=? ) +
 	(case when (select count(*) from stations)>? then 1 else 0 end) +
-	(select count(*) from station_creation_keys where
-		typeof(key_hash)<>'text' or length(key_hash)<>64 or key_hash glob '*[^0-9a-f]*' or
-		typeof(station_id)<>'text' or length(cast(station_id as blob))>64 or
-		typeof(owner_hash)<>'text' or length(owner_hash)<>64 or owner_hash glob '*[^0-9a-f]*' or
-		typeof(created_at) not in ('integer','real') or created_at<0 or created_at>? or
-		not exists (select 1 from stations s where s.id=station_id and
-			s.kind='temporary' and s.owner_hash=station_creation_keys.owner_hash)) +
-	(case when (select count(*) from station_creation_keys)>? then 1 else 0 end)
-`, maxRouteIDBytes, maxReaderItemSegments, maxRetainedTimestamp, maxRevisionValue-2,
+		(select count(*) from station_creation_keys where
+			typeof(key_hash)<>'text' or length(key_hash)<>64 or key_hash glob '*[^0-9a-f]*' or
+			typeof(station_id)<>'text' or length(cast(station_id as blob))>64 or
+			typeof(owner_hash)<>'text' or length(owner_hash)<>64 or owner_hash glob '*[^0-9a-f]*' or
+			typeof(created_at) not in ('integer','real') or created_at<0 or created_at>? or
+			not exists (select 1 from stations s where s.id=station_id and
+				s.kind='temporary' and s.owner_hash=station_creation_keys.owner_hash)) +
+		(case when (select count(*) from station_creation_keys)>? then 1 else 0 end) +
+		(select count(*) from station_queue where
+			typeof(station_id)<>'text' or length(cast(station_id as blob))>64 or
+			instr(station_id,char(0))>0 or
+			typeof(position)<>'integer' or position<0 or position>=? or
+			typeof(track_id)<>'text' or length(cast(track_id as blob))>? or
+			instr(track_id,char(0))>0 or
+			not exists (select 1 from stations s where s.id=station_id)) +
+		(case when (select count(*) from station_queue)>? then 1 else 0 end)
+	`, maxRouteIDBytes, maxReaderItemSegments, maxRetainedTimestamp, maxRevisionValue-2,
 		maxRouteIDBytes, maxRetainedTimestamp, maxRetainedTimestamp,
 		maxRetainedTimestamp, maxRetainedTimestamp, maxRevisionValue-2,
-		maxTempStations+1, maxRetainedTimestamp, maxTempStations).Scan(&invalid); err != nil {
+		maxTempStations+1, maxRetainedTimestamp, maxTempStations,
+		maxStationQueue, maxRouteIDBytes,
+		maxStationQueue*(maxTempStations+1)).Scan(&invalid); err != nil {
 		return err
 	}
 	if invalid != 0 {

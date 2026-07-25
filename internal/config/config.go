@@ -10,29 +10,23 @@ import (
 )
 
 type Config struct {
-	MetadataRoot     string
-	Archive          string
-	DBPath           string
-	ReaderLibrary    string
-	StaticDir        string
-	AllowedHosts     string
-	AllowedOrigins   string
-	TrustedProxies   string
-	TrustedIngress   string
-	ClientIPv6Prefix int
-	Host             string
-	Port             int
+	MetadataRoot      string
+	Archive           string
+	DBPath            string
+	ReaderLibrary     string
+	StaticDir         string
+	TimedLyricsRoot   string
+	AllowedHosts      string
+	AllowedOrigins    string
+	TrustedProxies    string
+	TrustedIngress    string
+	ClientIPv6Prefix  int
+	DeferStartupAudit bool
+	Host              string
+	Port              int
 }
 
-type PackagedRouting struct {
-	Sealed         bool
-	AllowedHosts   string
-	AllowedOrigins string
-	TrustedProxies string
-	TrustedIngress string
-}
-
-func Load(packaged PackagedRouting) (Config, error) {
+func Load() (Config, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return Config{}, err
@@ -46,67 +40,38 @@ func Load(packaged PackagedRouting) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	allowedHosts, err := routingValue("ZAK_RADIO_ALLOWED_HOSTS", "loopback", packaged.AllowedHosts, packaged.Sealed)
-	if err != nil {
-		return Config{}, err
-	}
-	allowedOrigins, err := routingValue("ZAK_RADIO_ALLOWED_ORIGINS", "loopback", packaged.AllowedOrigins, packaged.Sealed)
-	if err != nil {
-		return Config{}, err
-	}
-	trustedProxies, err := routingValue("ZAK_RADIO_TRUSTED_PROXIES", "", packaged.TrustedProxies, packaged.Sealed)
-	if err != nil {
-		return Config{}, err
-	}
-	trustedIngress, err := routingValue("ZAK_RADIO_TRUSTED_INGRESS", "", packaged.TrustedIngress, packaged.Sealed)
+	deferStartupAudit, err := envBool("ZAK_RADIO_DEFER_STARTUP_AUDIT", false)
 	if err != nil {
 		return Config{}, err
 	}
 	return Config{
-		MetadataRoot:     metadataRoot,
-		Archive:          env("ZAK_RADIO_ARCHIVE", filepath.Join(metadataRoot, "music-library")),
-		DBPath:           env("ZAK_RADIO_DB", filepath.Join(metadataRoot, "station.sqlite3")),
-		ReaderLibrary:    env("ZAK_RADIO_READER_LIBRARY", filepath.Join(metadataRoot, "reader-library")),
-		StaticDir:        env("ZAK_RADIO_STATIC", filepath.Join(wd, "static")),
-		AllowedHosts:     allowedHosts,
-		AllowedOrigins:   allowedOrigins,
-		TrustedProxies:   trustedProxies,
-		TrustedIngress:   trustedIngress,
-		ClientIPv6Prefix: ipv6Prefix,
-		Host:             env("ZAK_RADIO_HOST", "127.0.0.1"),
-		Port:             port,
+		MetadataRoot:      metadataRoot,
+		Archive:           env("ZAK_RADIO_ARCHIVE", filepath.Join(metadataRoot, "music-library")),
+		DBPath:            env("ZAK_RADIO_DB", filepath.Join(metadataRoot, "station.sqlite3")),
+		ReaderLibrary:     env("ZAK_RADIO_READER_LIBRARY", filepath.Join(metadataRoot, "reader-library")),
+		StaticDir:         env("ZAK_RADIO_STATIC", filepath.Join(wd, "static")),
+		TimedLyricsRoot:   env("ZAK_RADIO_TIMED_LYRICS", ""),
+		AllowedHosts:      env("ZAK_RADIO_ALLOWED_HOSTS", "loopback"),
+		AllowedOrigins:    env("ZAK_RADIO_ALLOWED_ORIGINS", "loopback"),
+		TrustedProxies:    env("ZAK_RADIO_TRUSTED_PROXIES", ""),
+		TrustedIngress:    env("ZAK_RADIO_TRUSTED_INGRESS", ""),
+		ClientIPv6Prefix:  ipv6Prefix,
+		DeferStartupAudit: deferStartupAudit,
+		Host:              env("ZAK_RADIO_HOST", "127.0.0.1"),
+		Port:              port,
 	}, nil
 }
 
-func routingValue(key, fallback, sealed string, routingSealed bool) (string, error) {
+func envBool(key string, fallback bool) (bool, error) {
 	value, present := os.LookupEnv(key)
-	if !routingSealed {
-		if present && value != "" {
-			return value, nil
-		}
+	if !present || value == "" {
 		return fallback, nil
 	}
-	if present && value != sealed {
-		return "", fmt.Errorf("%s differs from immutable packaged routing configuration", key)
+	result, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", key)
 	}
-	return sealed, nil
-}
-
-func ValidatePackagedRouting(cfg Config, packaged PackagedRouting) error {
-	if !packaged.Sealed {
-		return nil
-	}
-	for name, values := range map[string][2]string{
-		"allowed hosts":   {cfg.AllowedHosts, packaged.AllowedHosts},
-		"allowed origins": {cfg.AllowedOrigins, packaged.AllowedOrigins},
-		"trusted proxies": {cfg.TrustedProxies, packaged.TrustedProxies},
-		"trusted ingress": {cfg.TrustedIngress, packaged.TrustedIngress},
-	} {
-		if values[0] != values[1] {
-			return fmt.Errorf("%s differs from immutable packaged routing configuration", name)
-		}
-	}
-	return nil
+	return result, nil
 }
 
 func envInt(key string, fallback int) (int, error) {
@@ -126,7 +91,11 @@ func (c Config) Normalized() (Config, error) {
 	for name, value := range map[string]*string{
 		"metadata root": &c.MetadataRoot, "archive": &c.Archive, "database": &c.DBPath,
 		"reader library": &c.ReaderLibrary, "static directory": &c.StaticDir,
+		"timed lyrics": &c.TimedLyricsRoot,
 	} {
+		if *value == "" {
+			continue
+		}
 		*value, err = filepath.Abs(*value)
 		if err != nil {
 			return Config{}, fmt.Errorf("%s path: %w", name, err)
@@ -169,6 +138,9 @@ func ValidateListener(cfg Config) error {
 		"trusted ingress": cfg.TrustedIngress,
 	} {
 		if strings.TrimSpace(configured) == "" {
+			continue
+		}
+		if name == "trusted ingress" && strings.TrimSpace(configured) == "*" {
 			continue
 		}
 		for _, value := range strings.Split(configured, ",") {

@@ -7,8 +7,8 @@ usage() {
 }
 
 [[ "$#" == 12 && "$1" == "--backup" && "$3" == "--target" &&
-   "$5" == "--ownership" && "$7" == "--receipt" &&
-   "$9" == "--release-package" && "${11}" == "--identity-receipt" ]] || usage
+  "$5" == "--ownership" && "$7" == "--receipt" &&
+  "$9" == "--release-package" && "${11}" == "--identity-receipt" ]] || usage
 [[ ! -L "$2" && ! -L "${10}" && ! -L "${12}" ]] || {
   echo "snapshot, release package, and identity receipt must not be symlinks" >&2
   exit 2
@@ -22,25 +22,36 @@ release_file="$release_package/RELEASE"
 identity_receipt="$(realpath "${12}")"
 [[ "$ownership_mode" == "current" || "$ownership_mode" == "preserve" ]] || usage
 [[ -d "$backup_root" && -d "$release_package" && ! -L "$release_package" &&
-   -f "$release_file" && ! -L "$release_file" &&
-   -f "$identity_receipt" && ! -L "$identity_receipt" &&
-   "$backup_root" != "/" && "$target_root" != "/" &&
-   "$receipt_path" != "/" && "$receipt_path" != "$target_root" ]] || usage
-case "$target_root/" in "$backup_root/"*) echo "target must not be inside snapshot" >&2; exit 2 ;; esac
-case "$backup_root/" in "$target_root/"*) echo "snapshot must not be inside target" >&2; exit 2 ;; esac
-case "$receipt_path" in "$backup_root"/*|"$target_root"/*|"$release_package"/*)
+  -f "$release_file" && ! -L "$release_file" &&
+  -f "$identity_receipt" && ! -L "$identity_receipt" &&
+  "$backup_root" != "/" && "$target_root" != "/" &&
+  "$receipt_path" != "/" && "$receipt_path" != "$target_root" ]] || usage
+case "$target_root/" in "$backup_root/"*)
+  echo "target must not be inside snapshot" >&2
+  exit 2
+  ;;
+esac
+case "$backup_root/" in "$target_root/"*)
+  echo "snapshot must not be inside target" >&2
+  exit 2
+  ;;
+esac
+case "$receipt_path" in "$backup_root"/* | "$target_root"/* | "$release_package"/*)
   echo "restore receipt must be outside snapshot, target, and release package" >&2
   exit 2
-;; esac
+  ;;
+esac
 backup_store_root="$(dirname -- "$backup_root")"
-case "$release_package/" in "$backup_store_root/"*|"$target_root/"*)
+case "$release_package/" in "$backup_store_root/"* | "$target_root/"*)
   echo "release package must be outside backup storage and target" >&2
   exit 2
-;; esac
-case "$identity_receipt" in "$backup_store_root"/*|"$target_root"/*|"$release_package"/*)
+  ;;
+esac
+case "$identity_receipt" in "$backup_store_root"/* | "$target_root"/* | "$release_package"/*)
   echo "identity receipt must be independently stored outside backup, target, and release package" >&2
   exit 2
-;; esac
+  ;;
+esac
 [[ ! -e "$receipt_path" ]] || {
   echo "refusing to overwrite restore receipt: $receipt_path" >&2
   exit 2
@@ -57,7 +68,7 @@ command -v sync >/dev/null
 command -v du >/dev/null
 command -v df >/dev/null
 command -v flock >/dev/null
-tar --version | grep -q 'GNU tar' || {
+tar --version | grep -F 'GNU tar' >/dev/null || {
   echo "restore requires GNU tar for bounded archive handling" >&2
   exit 2
 }
@@ -137,16 +148,16 @@ scratch_required=$((allocated_bytes + space_overhead))
 target_required=$((allocated_bytes + space_overhead))
 if [[ "$(stat -c '%d' "$scratch")" == "$(stat -c '%d' "$target_anchor")" ]]; then
   combined_required=$((scratch_required + target_required))
-  (( scratch_available >= combined_required )) || {
+  ((scratch_available >= combined_required)) || {
     echo "restore requires $combined_required free bytes for scratch and target; $scratch_available available" >&2
     exit 1
   }
 else
-  (( scratch_available >= scratch_required )) || {
+  ((scratch_available >= scratch_required)) || {
     echo "restore scratch requires $scratch_required free bytes; $scratch_available available" >&2
     exit 1
   }
-  (( target_available >= target_required )) || {
+  ((target_available >= target_required)) || {
     echo "restore target requires $target_required free bytes; $target_available available" >&2
     exit 1
   }
@@ -168,10 +179,7 @@ snapshot_identity="$(
 )"
 source_release="$(sed -n 's/^source_release=//p' "$sealed/RECEIPT")"
 database_schema="$(sqlite3 "file:$sealed/volume/station.sqlite3?immutable=1" 'pragma user_version;')"
-max_schema="$(
-  sed -n 's/^const currentSchemaVersion = //p' \
-    "$sealed_package/internal/application/migration_schema.go"
-)"
+max_schema="$(tr -d '\r\n' <"$sealed_package/SCHEMA_VERSION")"
 [[ "$max_schema" =~ ^[0-9]+$ && "$database_schema" == "$max_schema" ]] || {
   echo "snapshot schema $database_schema is incompatible with this release (requires $max_schema)" >&2
   exit 1
@@ -189,8 +197,8 @@ parent_identity="$(stat -Lc '%d:%i' "$pinned_parent")"
 parent_uid="$(stat -Lc '%u' "$pinned_parent")"
 parent_mode="$(stat -Lc '%a' "$pinned_parent")"
 [[ "$(stat -Lc '%d:%i' "$target_parent")" == "$parent_identity" &&
-   ( "$parent_uid" == "0" || "$parent_uid" == "$(id -u)" ) &&
-   $((8#$parent_mode & 8#022)) == 0 ]] || {
+("$parent_uid" == "0" || "$parent_uid" == "$(id -u)") &&
+$((8#$parent_mode & 8#022)) == 0 ]] || {
   echo "restore target parent must be stable, trusted, and not group/world writable" >&2
   exit 1
 }
@@ -203,7 +211,7 @@ trap 'rm -rf -- "$scratch"; [[ -z "${target_guard:-}" ]] || rmdir -- "$target_gu
 
 if [[ -n "$target_preflight_identity" ]]; then
   [[ ! -L "$target_root" &&
-     "$(stat -Lc '%d:%i' "$target_root")" == "$target_preflight_identity" ]] || {
+    "$(stat -Lc '%d:%i' "$target_root")" == "$target_preflight_identity" ]] || {
     echo "restore target changed after preflight" >&2
     exit 1
   }
@@ -254,7 +262,7 @@ cmp -s \
 }
 sync -f "$pinned_target"
 [[ ! -L "$target_root" &&
-   "$(stat -Lc '%d:%i' "$target_root")" == "$target_identity" ]] || {
+  "$(stat -Lc '%d:%i' "$target_root")" == "$target_identity" ]] || {
   echo "restore target pathname changed during installation" >&2
   exit 1
 }

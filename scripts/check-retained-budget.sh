@@ -7,7 +7,7 @@ set -euo pipefail
 }
 
 case "$1" in
-  /proc/self/fd/[0-9]*/.|/dev/fd/[0-9]*/.) volume_root="$1" ;;
+  /proc/self/fd/[0-9]*/. | /dev/fd/[0-9]*/.) volume_root="$1" ;;
   *) volume_root="$(realpath "$1")" ;;
 esac
 entries="$(find "$volume_root" -mindepth 1 -printf . | wc -c)"
@@ -15,7 +15,7 @@ product_bytes=0
 backup_bytes=0
 while IFS= read -r -d '' size && IFS= read -r -d '' base; do
   if [[ "$base" =~ ^.+\.schema-v[0-9]+-[0-9a-f]{64}\.bak$ ||
-        "$base" =~ ^.+\.migration-v[0-9]+\.backup-receipt$ ]]; then
+    "$base" =~ ^.+\.migration-v[0-9]+\.backup-receipt$ ]]; then
     backup_bytes=$((backup_bytes + size))
   else
     product_bytes=$((product_bytes + size))
@@ -27,9 +27,9 @@ backup_limit=$((1 * 1024 * 1024 * 1024))
 total_limit=$((product_limit + backup_limit))
 total_bytes=$((product_bytes + backup_bytes))
 [[ "$entries" -le 100000 &&
-   "$product_bytes" -le "$product_limit" &&
-   "$backup_bytes" -le "$backup_limit" &&
-   "$total_bytes" -le "$total_limit" ]] || {
+  "$product_bytes" -le "$product_limit" &&
+  "$backup_bytes" -le "$backup_limit" &&
+  "$total_bytes" -le "$total_limit" ]] || {
   echo "retained volume exceeds its entry, product, backup, or total apparent-byte budget" >&2
   exit 1
 }

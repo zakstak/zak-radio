@@ -11,7 +11,7 @@ set -euo pipefail
 }
 volume_root="$(realpath "$1")"
 [[ -d "$volume_root" && "$volume_root" != "/" &&
-   -f "$volume_root/station.sqlite3" ]] || {
+  -f "$volume_root/station.sqlite3" ]] || {
   echo "invalid retained volume" >&2
   exit 2
 }
@@ -29,7 +29,7 @@ preflight_identity="$(stat -Lc '%d:%i' "$pinned_root")"
 "$script_root/validate-volume-tree.sh" "$pinned_root"
 volume_identity="$(stat -Lc '%d:%i' "$pinned_root")"
 [[ "$volume_identity" == "$preflight_identity" &&
-   "$(stat -Lc '%d:%i' "$volume_root")" == "$volume_identity" ]] || {
+  "$(stat -Lc '%d:%i' "$volume_root")" == "$volume_identity" ]] || {
   echo "retained volume changed while it was being pinned" >&2
   exit 1
 }
@@ -39,6 +39,8 @@ find -H "$pinned_root" -type d -exec chmod 0750 {} +
 find -H "$pinned_root" -type f -exec chmod 0640 {} +
 
 database_identity="$(stat -Lc '%d:%i' "$pinned_root/station.sqlite3")"
+# The nested shell receives its volume path as literal $1.
+# shellcheck disable=SC2016
 setpriv --reuid=65532 --regid=65532 --clear-groups \
   sh -c '
     probe="$1/.zak-radio-runtime-probe"
@@ -50,7 +52,7 @@ setpriv --reuid=65532 --regid=65532 --clear-groups \
     sqlite3 "$1/station.sqlite3" "pragma wal_checkpoint(truncate);" >/dev/null
   ' bash "$pinned_root"
 [[ ! -L "$pinned_root/station.sqlite3" &&
-   "$(stat -Lc '%d:%i' "$pinned_root/station.sqlite3")" == "$database_identity" ]] || {
+  "$(stat -Lc '%d:%i' "$pinned_root/station.sqlite3")" == "$database_identity" ]] || {
   echo "retained database changed during unprivileged SQLite preflight" >&2
   exit 1
 }
@@ -62,7 +64,7 @@ for sidecar in "$pinned_root/station.sqlite3-wal" "$pinned_root/station.sqlite3-
   rm -f -- "$sidecar"
 done
 [[ ! -L "$volume_root" &&
-   "$(stat -Lc '%d:%i' "$volume_root")" == "$volume_identity" ]] || {
+  "$(stat -Lc '%d:%i' "$volume_root")" == "$volume_identity" ]] || {
   echo "retained volume pathname changed during provisioning" >&2
   exit 1
 }

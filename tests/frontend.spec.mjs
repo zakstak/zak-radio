@@ -2,7 +2,195 @@ import { expect, test } from "@playwright/test";
 
 test("date-only metadata stays in its catalog month", async ({ page }) => {
   await page.goto("/library");
-  await expect(page.locator('[data-track-id="alpha"]')).toContainText("Jul 2026");
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(page.locator('[data-track-id="alpha"]')).toContainText(
+    "Jul 2026", { timeout: 15_000 });
+  expect(await page.evaluate(() => ({
+    catalog: typeof window.ZakCatalog,
+    reader: typeof window.ZakReader,
+  }))).toEqual({ catalog: "object", reader: "object" });
+});
+
+test("Library requires an explicit queue or preview action", async ({ page }) => {
+  await page.goto("/library");
+  const audio = page.locator("#audio");
+  const queueBefore = await page.evaluate(async () =>
+    (await (await fetch("/api/station?station_id=main")).json()).queue);
+
+  await page.getByRole("button", { name: "Choose actions for Alpha Sunrise" }).click();
+  await expect(page.getByRole("button", { name: "Play Alpha Sunrise next" })).toBeFocused();
+  expect(await audio.evaluate((element) => element.paused)).toBe(true);
+  expect(await page.evaluate(async () =>
+    (await (await fetch("/api/station?station_id=main")).json()).queue)).toEqual(queueBefore);
+
+  await page.getByRole("button", { name: "Add Alpha Sunrise to queue" }).click();
+  await expect(page.locator(".track-action-status")).toContainText(
+    "was added to the shared station");
+  await expect.poll(() => page.evaluate(async () =>
+    (await (await fetch("/api/station?station_id=main")).json()).queue.length),
+  ).toBe(queueBefore.length + 1);
+});
+
+test("weak track metadata falls back to its subject and deliberate no-artwork icon", async ({ page }) => {
+  const original = await (await page.request.get("/api/tracks")).json();
+  const weakTrack = {
+    ...original.tracks[0],
+    title: "[Intro]",
+    group: "[Intro]",
+    summary: "Midnight deployment",
+    has_cover: false,
+  };
+  await page.route("**/api/tracks", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ ...original, tracks: [weakTrack] }),
+  }));
+
+  await page.goto("/library");
+  const card = page.locator(`[data-track-id="${weakTrack.id}"]`);
+  await expect(card.locator(".track-card-title")).toHaveText("Midnight deployment");
+  await expect(card.locator(".track-cover-fallback .no-artwork-icon")).toBeVisible();
+  await expect(card.locator(".track-cover-fallback")).toContainText("No artwork");
+  await expect(card).not.toContainText("[Intro]");
+
+  await page.goto("/");
+  await expect(page.locator("#title")).toHaveText("Midnight deployment");
+  await expect(page.locator("#emptyCover .no-artwork-icon")).toBeVisible();
+  await expect(page.locator("#emptyCover")).toContainText("No artwork");
+});
+
+test("Polling is an activity state rather than an error state", async ({ page }) => {
+  await page.route("**/api/station/events**", (route) => route.abort());
+  await page.goto("/library");
+  await expect(page.locator("#connectionText")).toHaveText("Polling");
+  await expect(page.locator("#connectionDot")).toHaveClass(/is-polling/);
+  await expect(page.locator("#connectionDot")).not.toHaveClass(/is-disconnected/);
+});
+
+test("timed lyrics follow radio playback, yield to scrolling, and seek the station", async ({ page }) => {
+  const catalog = await (await page.request.get("/api/tracks")).json();
+  catalog.tracks[0].has_synced_lyrics = true;
+  catalog.tracks[0].lyrics_timing_sha256 = "a".repeat(64);
+  await page.route("**/api/tracks", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(catalog),
+  }));
+  await page.route("**/api/track/alpha?kind=timed_lyrics", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      id: "alpha",
+      timed_lyrics: {
+        version: 1,
+        track_id: "alpha",
+        duration: 1.5,
+        quality: { line_coverage: 1 },
+        cues: [
+          { start: 0.05, end: 0.45, section: "Verse", text: "First line" },
+          { start: 0.55, end: 1.2, section: "Verse", text: "Second line" },
+        ],
+      },
+    }),
+  }));
+  let seekPosition = null;
+  await page.route("**/api/control", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.action === "seek") seekPosition = body.position;
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".synced-lyric-cue")).toHaveCount(2);
+  await expect(page.locator("#lyricsSyncStatus")).toHaveText("Following the song");
+  await expect(page.locator("#lyricsViewport")).toHaveClass(/has-synced-lyrics/);
+  await page.locator("#audio").evaluate((audio) => {
+    audio.currentTime = 0.7;
+    audio.dispatchEvent(new Event("timeupdate"));
+  });
+  await expect(page.getByRole("button", { name: /Second line/ }))
+    .toHaveAttribute("aria-current", "true");
+
+  await page.locator("#lyricsViewport").dispatchEvent("wheel");
+  await expect(page.getByRole("button", { name: "Follow song" })).toBeVisible();
+  await expect(page.locator("#lyricsSyncStatus")).toContainText("follow paused");
+  await page.getByRole("button", { name: "Follow song" }).click();
+  await expect(page.getByRole("button", { name: "Follow song" })).toBeHidden();
+
+  await page.getByRole("button", { name: /Seek to .*First line/ }).click();
+  await expect.poll(() => seekPosition).toBe(0.05);
+});
+
+test("switching stations retires an in-flight update from the prior station", async ({ page }) => {
+  const catalog = await (await page.request.get("/api/tracks")).json();
+  const authoritative = await (await page.request.get("/api/station")).json();
+  const privateStationID = "abcdef123456";
+  let catalogRequests = 0;
+  let releaseOldStation;
+  const oldStationGate = new Promise((resolve) => {
+    releaseOldStation = resolve;
+  });
+  let oldStationWaiting;
+  const oldStationEntered = new Promise((resolve) => {
+    oldStationWaiting = resolve;
+  });
+
+  await page.route("**/api/tracks", async (route) => {
+    catalogRequests++;
+    if (catalogRequests === 2) {
+      oldStationWaiting();
+      await oldStationGate;
+    }
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(catalog),
+    }).catch(() => {});
+  });
+  await page.route("**/api/station/events?*", (route) => route.abort());
+  await page.route("**/api/station?*", async (route) => {
+    const requested = new URL(route.request().url()).searchParams.get("station_id");
+    const station = requested === privateStationID
+      ? {
+          ...authoritative,
+          station_id: privateStationID,
+          track_id: catalog.tracks[0].id,
+          catalog_revision: catalog.catalog_revision,
+          revision: 22,
+          queue: ["private-choice"],
+        }
+      : {
+          ...authoritative,
+          station_id: "main",
+          catalog_revision: "stale-main-catalog",
+          revision: 11,
+          queue: ["shared-choice"],
+        };
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(station),
+    });
+  });
+
+  await page.goto("/");
+  await Promise.race([
+    oldStationEntered,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("old station did not enter catalog refresh")), 7000)),
+  ]);
+  await page.evaluate((stationID) => {
+    history.pushState({}, "", `/?station=${stationID}`);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
+  }, privateStationID);
+  await expect.poll(() => page.evaluate(() => window.ZakAudio.stationId))
+    .toBe(privateStationID);
+  await expect.poll(() => page.evaluate(() => window.ZakStation.current().queue))
+    .toEqual(["private-choice"]);
+
+  releaseOldStation();
+  await expect.poll(() => page.evaluate(() => ({
+    stationId: window.ZakAudio.stationId,
+    queue: window.ZakStation.current().queue,
+  }))).toEqual({
+    stationId: privateStationID,
+    queue: ["private-choice"],
+  });
 });
 
 test("private-station creation is single-flight and preserves action focus", async ({ page }) => {
@@ -157,10 +345,15 @@ test("Reader announces filtering and clears current-item semantics in library mo
   await page.locator('[data-item-id="item-test"]').click();
   await expect(page.locator('[data-item-id="item-test"]')).toHaveAttribute("aria-current", "true");
   await page.locator('a[data-route="/reader"]').click();
-  await expect(page.locator("#readerTitle")).toBeFocused();
+  await expect(page.locator("#readerLibraryTitle")).toBeFocused();
   await expect(page.locator('[data-item-id="item-test"]')).not.toHaveAttribute("aria-current", "true");
   await expect(page.locator("#readerTime")).toHaveText("0:00");
   await expect(page.locator("#readerDuration")).toHaveText("0:00");
+  await page.getByRole("button", { name: "Ready", exact: true }).click();
+  await expect(page.locator("#readerCount")).toHaveText("0 reader items");
+  await page.getByRole("button", { name: "Processing", exact: true }).click();
+  await expect(page.locator("#readerCount")).toHaveText("1 reader items");
+  await page.getByRole("button", { name: "All", exact: true }).click();
   await page.locator("#readerSearch").fill("no match");
   await expect(page.locator("#readerCount")).toHaveText("0 reader items");
 });
@@ -211,12 +404,11 @@ test("Reader keeps loading distinct from an empty reading room", async ({ page }
   });
   await page.goto("/reader");
   await expect(page.locator("#readerItems")).toHaveAttribute("aria-busy", "true");
-  await expect(page.locator("#readerText")).toHaveAttribute("aria-busy", "true");
-  await expect(page.locator("#readerText")).toContainText("Loading Reader…");
-  await expect(page.locator("#readerText")).not.toContainText("reading room is quiet");
+  await expect(page.locator("#readerItems")).toContainText("Loading Reader…");
+  await expect(page.locator("#readerItems")).not.toContainText("reading room is quiet");
   releaseReader();
   await expect(page.locator("#readerItems")).toHaveAttribute("aria-busy", "false");
-  await expect(page.locator("#readerText")).toContainText("reading room is quiet");
+  await expect(page.locator("#readerItems")).toContainText("reading room is quiet");
 });
 
 test("station outage does not invent a paused off-route player", async ({ page }) => {
@@ -467,8 +659,10 @@ test("Reader rapid A-B-A navigation prefers unsaved local progress", async ({ pa
   await page.getByRole("button", { name: "Read: Reader A segment" }).click();
   await expect.poll(() => page.locator("#audio").evaluate((audio) => audio.currentTime))
     .toBeGreaterThan(0.2);
+  await page.locator("#readerLibraryBack").click();
   await page.locator('[data-item-id="reader-b"]').click();
   await expect(page.locator("#readerTitle")).toHaveText("Reader B");
+  await page.locator("#readerLibraryBack").click();
   await page.locator('[data-item-id="reader-a"]').click();
   await expect(page.locator("#readerTitle")).toHaveText("Reader A");
   await expect.poll(() => page.locator("#readerProgress").inputValue().then(Number))
@@ -523,7 +717,7 @@ test("Reader mobile header does not occlude focused segments", async ({ page }) 
 
 test("slash shortcut is scoped to Library", async ({ page }) => {
   await page.goto("/reader");
-  const readerCanceled = await page.locator("#readerTitle").evaluate((heading) => {
+  const readerCanceled = await page.locator("#readerLibraryTitle").evaluate((heading) => {
     heading.focus();
     const event = new KeyboardEvent("keydown", {
       key: "/",
@@ -752,7 +946,7 @@ test("Recent filtering parses catalog dates linearly", async ({ page }) => {
 for (const [path, target] of [
   ["/", "#title"],
   ["/library", "#libraryViewTitle"],
-  ["/reader", "#readerTitle"],
+  ["/reader", "#readerLibraryTitle"],
 ]) {
   test(`skip link bypasses application navigation on ${path}`, async ({ page }) => {
     await page.goto(path);

@@ -35,7 +35,6 @@ type App struct {
 	trackStatsMu     sync.RWMutex
 	trackStatsCache  []byte
 	trackStatsRev    int64
-	healthProbes     chan struct{}
 	integrityMu      sync.RWMutex
 	integrity        map[string]bool
 	catalogDigests   []retainedDigest
@@ -46,6 +45,7 @@ type App struct {
 	metadataRoot     *os.Root
 	readerRoot       *os.Root
 	staticRoot       *os.Root
+	timedLyricsRoot  *os.Root
 }
 
 func NewApp(cfg Config) (*App, error) {
@@ -84,6 +84,17 @@ func NewApp(cfg Config) (*App, error) {
 		readerRoot.Close()
 		return nil, err
 	}
+	var timedLyricsRoot *os.Root
+	if cfg.TimedLyricsRoot != "" {
+		timedLyricsRoot, err = os.OpenRoot(cfg.TimedLyricsRoot)
+		if err != nil {
+			archiveRoot.Close()
+			metadataRoot.Close()
+			readerRoot.Close()
+			staticRoot.Close()
+			return nil, err
+		}
+	}
 	rootsOpen := true
 	defer func() {
 		if rootsOpen {
@@ -91,9 +102,12 @@ func NewApp(cfg Config) (*App, error) {
 			metadataRoot.Close()
 			readerRoot.Close()
 			staticRoot.Close()
+			if timedLyricsRoot != nil {
+				timedLyricsRoot.Close()
+			}
 		}
 	}()
-	catalog, err := loadCatalog(cfg, archiveRoot, metadataRoot)
+	catalog, err := loadCatalog(cfg, archiveRoot, metadataRoot, timedLyricsRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +115,32 @@ func NewApp(cfg Config) (*App, error) {
 		{root: archiveRoot, rootPath: cfg.Archive, path: filepath.Join(cfg.Archive, "index.json")},
 		{root: metadataRoot, rootPath: cfg.MetadataRoot, path: filepath.Join(cfg.MetadataRoot, "curated-tracks.json")},
 	}
+	if timedLyricsRoot != nil {
+		subjectsPath := filepath.Join(cfg.TimedLyricsRoot, timedLyricsSubjects)
+		if safeOptionalFile(subjectsPath, cfg.TimedLyricsRoot) {
+			catalogDigests = append(catalogDigests, retainedDigest{
+				root: timedLyricsRoot, rootPath: cfg.TimedLyricsRoot,
+				path: subjectsPath,
+			})
+		}
+	}
+	for index := range catalog.Tracks {
+		track := &catalog.Tracks[index]
+		if track.TimedLyricsPath != "" {
+			root, rootPath := archiveRoot, cfg.Archive
+			if track.TimedLyricsBundled {
+				root, rootPath = timedLyricsRoot, cfg.TimedLyricsRoot
+			}
+			catalogDigests = append(catalogDigests, retainedDigest{
+				root: root, rootPath: rootPath,
+				path: track.TimedLyricsPath, digest: track.TimedLyricsSHA256,
+			})
+		}
+	}
 	for index := range catalogDigests {
+		if catalogDigests[index].digest != "" {
+			continue
+		}
 		catalogDigests[index].digest, err = rootedDigest(
 			catalogDigests[index].root, catalogDigests[index].rootPath, catalogDigests[index].path)
 		if err != nil {
@@ -162,16 +201,27 @@ func NewApp(cfg Config) (*App, error) {
 		readerParses:     make(chan struct{}, 2),
 		readerParseCalls: make(map[string]*readerParseCall),
 		trackReads:       make(chan struct{}, 2),
-		healthProbes:     make(chan struct{}, 1),
-		integrity:        make(map[string]bool),
+		integrity:        pendingIntegrityChecks(),
 		catalogDigests:   catalogDigests,
 		digestFailures:   make(map[string]string),
 		archiveRoot:      archiveRoot, metadataRoot: metadataRoot,
 		readerRoot: readerRoot, staticRoot: staticRoot,
+		timedLyricsRoot: timedLyricsRoot,
 	}
+	rootsOpen = false
 	// Readiness never becomes green until every trusted retained-media digest
-	// has been checked at least once for this process.
-	app.auditAllIntegrity(ctx)
+	// has been checked at least once for this process. Kiln candidates defer
+	// that bounded audit so the listener can return 503 while the audit runs,
+	// instead of leaving Kiln's health connection waiting on process startup.
+	if cfg.DeferStartupAudit {
+		app.wg.Add(1)
+		go func() {
+			defer app.wg.Done()
+			app.auditAllIntegrity(ctx)
+		}()
+	} else {
+		app.auditAllIntegrity(ctx)
+	}
 	app.wg.Add(3)
 	go func() {
 		defer app.wg.Done()
@@ -185,7 +235,6 @@ func NewApp(cfg Config) (*App, error) {
 		defer app.wg.Done()
 		app.clockPersistenceLoop(ctx, time.Second)
 	}()
-	rootsOpen = false
 	return app, nil
 }
 
@@ -198,7 +247,9 @@ func (a *App) Close() error {
 	clockErr := a.station.persistLogicalClock(persistContext)
 	cancel()
 	dbErr := a.db.Close()
-	for _, root := range []*os.Root{a.archiveRoot, a.metadataRoot, a.readerRoot, a.staticRoot} {
+	for _, root := range []*os.Root{
+		a.archiveRoot, a.metadataRoot, a.readerRoot, a.staticRoot, a.timedLyricsRoot,
+	} {
 		if root != nil {
 			_ = root.Close()
 		}
@@ -365,25 +416,11 @@ func methodIn(method string, allowed []string) bool {
 
 func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	checks := a.integritySnapshot()
-	select {
-	case a.healthProbes <- struct{}{}:
-		probeContext, cancel := context.WithTimeout(r.Context(), time.Second)
-		database, journal, writable := a.probeDatabaseHealth(probeContext)
-		cancel()
-		<-a.healthProbes
-		checks["database_runtime"] = database
-		checks["journal"] = journal
-		checks["writable"] = writable
-		a.integrityMu.Lock()
-		a.integrity["database_runtime"] = database
-		a.integrity["journal"] = journal
-		a.integrity["writable"] = writable
-		a.integrityMu.Unlock()
-	default:
+	probeContext, cancel := context.WithTimeout(r.Context(), 25*time.Millisecond)
+	if err := a.db.PingContext(probeContext); err != nil {
 		checks["database_runtime"] = false
-		checks["journal"] = false
-		checks["writable"] = false
 	}
+	cancel()
 	ok := true
 	for _, passed := range checks {
 		ok = ok && passed

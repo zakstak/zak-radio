@@ -5,6 +5,7 @@
 
 # Dependencies and local tool environments
 /node_modules/
+/vendor/
 /.venv/
 
 # Go build, test, and profiling output
@@ -30,9 +31,8 @@ __pycache__/
 /.coverage
 /htmlcov/
 
-# Generated Apphost release packages
-/.apphost-package/
-/.apphost-packages/
+# Generated Kiln packages
+/.kiln-packages/
 
 # Logs, editor state, and operating-system metadata
 *.log

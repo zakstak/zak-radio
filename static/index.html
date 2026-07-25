@@ -4,30 +4,48 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#09090b" />
-    <meta name="description" content="Original music, private previews, and source readings in one persistent player." />
+    <meta
+      name="description"
+      content="Original music, private previews, and source readings in one persistent player."
+    />
     <title>Zak Radio</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 fill=%22%23f5f5f5%22/><path d=%22M17 37V27h5v10zm9 9V18h5v28zm9-5V23h5v18zm9-8v-2h5v2z%22 fill=%22%2309090b%22/></svg>" />
-    <link rel="stylesheet" href="/static/styles.css?v=15" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 fill=%22%23f5f5f5%22/><path d=%22M17 37V27h5v10zm9 9V18h5v28zm9-5V23h5v18zm9-8v-2h5v2z%22 fill=%22%2309090b%22/></svg>"
+    />
+    <link rel="stylesheet" href="/static/styles.css?v=16" />
   </head>
   <body>
     <a id="skipToContent" class="skip-link" href="#title">Skip to content</a>
     <main class="app-shell">
-      <aside class="app-rail" aria-label="Application navigation">
+      <header class="app-rail" aria-label="Application navigation">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <div class="brand-mark" aria-hidden="true">
+            <i></i><i></i><i></i><i></i>
+          </div>
           <div class="brand-copy">
             <h1 class="brand-title">Zak Radio</h1>
             <p id="shellContext" class="brand-subtitle">Shared listening</p>
           </div>
-          <div id="connection" class="connection" title="Station connection" role="status" aria-live="polite">
+          <div
+            id="connection"
+            class="connection"
+            title="Station connection"
+            role="status"
+            aria-live="polite"
+          >
             <span id="connectionDot" class="connection-dot"></span>
             <span id="connectionText">Connecting</span>
           </div>
         </div>
         <nav class="primary-nav" aria-label="Zak audio">
           <a class="primary-nav-link" data-route="/" href="/">Radio</a>
-          <a class="primary-nav-link" data-route="/library" href="/library">Library</a>
-          <a class="primary-nav-link" data-route="/reader" href="/reader">Reader</a>
+          <a class="primary-nav-link" data-route="/library" href="/library"
+            >Library</a
+          >
+          <a class="primary-nav-link" data-route="/reader" href="/reader"
+            >Reader</a
+          >
         </nav>
         <section id="stationCard" class="station-card" aria-label="Station">
           <div class="station-card-head">
@@ -35,135 +53,661 @@
             <strong id="stationMode" tabindex="-1">Shared station</strong>
           </div>
           <div class="station-actions">
-            <button id="mainStation" class="station-action" type="button" hidden>Go shared</button>
-            <button id="shareStation" class="station-action" type="button" hidden>Share</button>
-            <button id="createStation" class="station-action station-action-primary" type="button" disabled>New private station</button>
+            <button
+              id="mainStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Go shared
+            </button>
+            <button
+              id="shareStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Share
+            </button>
+            <button
+              id="createStation"
+              class="station-action station-action-primary"
+              type="button"
+              disabled
+            >
+              New private station
+            </button>
           </div>
-          <p id="stationAccess" class="station-note">Everyone here can turn the dial.</p>
+          <p id="stationAccess" class="station-note">
+            Everyone here can turn the dial.
+          </p>
           <div id="stationShareFallback" class="station-share-fallback" hidden>
             <label for="stationShareLink">Listen-only station link</label>
             <div>
               <input id="stationShareLink" type="text" readonly />
-              <button id="stationShareClose" class="station-action" type="button">Close</button>
+              <button
+                id="stationShareClose"
+                class="station-action"
+                type="button"
+              >
+                Close
+              </button>
             </div>
           </div>
         </section>
-      </aside>
+      </header>
 
       <section id="radioView" class="radio-stage view-panel" data-view="/">
         <div class="now-playing">
           <div class="cover-frame">
             <img id="cover" class="cover-image" alt="" />
-            <div id="emptyCover" class="cover-fallback hidden" aria-hidden="true">S</div>
+            <div
+              id="emptyCover"
+              class="cover-fallback hidden"
+              aria-hidden="true"
+            >
+              <svg class="no-artwork-icon" viewBox="0 0 96 96">
+                <rect x="18" y="39" width="10" height="18" rx="5"></rect>
+                <rect x="34" y="25" width="10" height="46" rx="5"></rect>
+                <rect x="50" y="16" width="10" height="64" rx="5"></rect>
+                <rect x="66" y="31" width="10" height="34" rx="5"></rect>
+              </svg>
+              <span>No artwork</span>
+            </div>
           </div>
           <div class="now-playing-copy">
-            <div class="live-status"><span id="livePulse" class="live-dot"></span><span id="stationStatus">Station paused</span></div>
-            <div id="nowPlayingAnnouncement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+            <div class="live-status">
+              <span id="livePulse" class="live-dot"></span
+              ><span id="stationStatus">Station paused</span>
+            </div>
+            <div
+              id="nowPlayingAnnouncement"
+              class="sr-only"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            ></div>
             <div class="track-source" id="source">Personal broadcast</div>
             <h2 id="title" class="track-title" tabindex="-1">Select a track</h2>
-            <p id="details" class="track-details">Original music, live from the archive.</p>
-            <button id="radioRetry" class="button" type="button" hidden>Retry station</button>
+            <p id="details" class="track-details">
+              Original music, live from the archive.
+            </p>
+            <button id="radioRetry" class="button" type="button" hidden>
+              Retry station
+            </button>
             <div class="range-row station-progress">
               <span id="currentTime">0:00</span>
               <div class="range-track">
                 <div id="progressFill" class="range-fill"></div>
                 <div id="progressThumb" class="range-thumb"></div>
-                <input id="progress" class="range-input" type="range" min="0" max="0" value="0" step="0.1" aria-label="Song position" disabled />
+                <input
+                  id="progress"
+                  class="range-input"
+                  type="range"
+                  min="0"
+                  max="0"
+                  value="0"
+                  step="0.1"
+                  aria-label="Song position"
+                  disabled
+                />
               </div>
               <span id="duration" class="range-end">0:00</span>
             </div>
             <div class="transport" aria-label="Station controls">
-              <button id="random" class="icon-button" title="Shuffle: off" aria-label="Shuffle: off" aria-pressed="false" disabled><svg viewBox="0 0 24 24"><path d="M4 7h3c4.5 0 5.5 10 10 10h3M17 4l3 3-3 3M4 17h3c1.4 0 2.5-1 3.5-2.4M17 14l3 3-3 3M13.5 9.4C14.5 8 15.5 7 17 7h3"></path></svg></button>
-              <button id="prev" class="icon-button" title="Previous track" aria-label="Previous track" disabled><svg viewBox="0 0 24 24"><path d="M6 5v14M19 6l-9 6 9 6z"></path></svg></button>
-              <button id="back10" class="icon-button" title="Skip 10 seconds back" aria-label="Skip 10 seconds back" disabled><span class="transport-seek-label">−10</span></button>
-              <button id="playPause" class="play-button" aria-label="Play" disabled><svg id="playIcon" class="playback-icon" viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"></path></svg><svg id="pauseIcon" class="pause-icon hidden" viewBox="0 0 24 24"><path d="M8 6v12M16 6v12"></path></svg><span class="sr-only">Play</span></button>
-              <button id="forward10" class="icon-button" title="Skip 10 seconds forward" aria-label="Skip 10 seconds forward" disabled><span class="transport-seek-label">+10</span></button>
-              <button id="next" class="icon-button" title="Next track" aria-label="Next track" disabled><svg viewBox="0 0 24 24"><path d="M18 5v14M5 6l9 6-9 6z"></path></svg></button>
-              <button id="repeatOne" class="icon-button" aria-pressed="false" title="Repeat this track" aria-label="Repeat this track" disabled><svg viewBox="0 0 24 24"><path d="m17 2 3 3-3 3M20 5H8a4 4 0 0 0-4 4v1M7 22l-3-3 3-3M4 19h12a4 4 0 0 0 4-4v-1"></path><text class="repeat-glyph" x="10" y="15">1</text></svg></button>
+              <button
+                id="random"
+                class="icon-button"
+                title="Shuffle: off"
+                aria-label="Shuffle: off"
+                aria-pressed="false"
+                disabled
+              >
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M4 7h3c4.5 0 5.5 10 10 10h3M17 4l3 3-3 3M4 17h3c1.4 0 2.5-1 3.5-2.4M17 14l3 3-3 3M13.5 9.4C14.5 8 15.5 7 17 7h3"
+                  ></path>
+                </svg>
+              </button>
+              <button
+                id="prev"
+                class="icon-button"
+                title="Previous track"
+                aria-label="Previous track"
+                disabled
+              >
+                <svg viewBox="0 0 24 24">
+                  <path d="M6 5v14M19 6l-9 6 9 6z"></path>
+                </svg>
+              </button>
+              <button
+                id="back10"
+                class="icon-button"
+                title="Skip 10 seconds back"
+                aria-label="Skip 10 seconds back"
+                disabled
+              >
+                <span class="transport-seek-label">−10</span>
+              </button>
+              <button
+                id="playPause"
+                class="play-button"
+                aria-label="Play"
+                disabled
+              >
+                <svg id="playIcon" class="playback-icon" viewBox="0 0 24 24">
+                  <path d="m9 7 8 5-8 5z"></path></svg
+                ><svg
+                  id="pauseIcon"
+                  class="pause-icon hidden"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M8 6v12M16 6v12"></path></svg
+                ><span class="sr-only">Play</span>
+              </button>
+              <button
+                id="forward10"
+                class="icon-button"
+                title="Skip 10 seconds forward"
+                aria-label="Skip 10 seconds forward"
+                disabled
+              >
+                <span class="transport-seek-label">+10</span>
+              </button>
+              <button
+                id="next"
+                class="icon-button"
+                title="Next track"
+                aria-label="Next track"
+                disabled
+              >
+                <svg viewBox="0 0 24 24">
+                  <path d="M18 5v14M5 6l9 6-9 6z"></path>
+                </svg>
+              </button>
+              <button
+                id="repeatOne"
+                class="icon-button"
+                aria-pressed="false"
+                title="Repeat this track"
+                aria-label="Repeat this track"
+                disabled
+              >
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="m17 2 3 3-3 3M20 5H8a4 4 0 0 0-4 4v1M7 22l-3-3 3-3M4 19h12a4 4 0 0 0 4-4v-1"
+                  ></path>
+                  <text class="repeat-glyph" x="10" y="15">1</text>
+                </svg>
+              </button>
             </div>
             <div class="track-actions">
-              <button id="like" class="button" aria-pressed="false" disabled><span aria-hidden="true">♡</span> Like</button>
-              <a id="download" class="button" aria-disabled="true"><span aria-hidden="true">↓</span> Download</a>
+              <button id="like" class="button" aria-pressed="false" disabled>
+                <span aria-hidden="true">♡</span> Like
+              </button>
+              <a id="download" class="button" aria-disabled="true"
+                ><span aria-hidden="true">↓</span> Download</a
+              >
               <span id="skipCount" class="skip-count">0 early skips</span>
+            </div>
+            <div id="radioQueue" class="radio-queue" aria-live="polite">
+              <span class="section-label">Up next</span>
+              <span id="radioQueueSummary">The station queue is empty.</span>
             </div>
           </div>
         </div>
         <div id="detailsPanels" class="details-panels">
           <section class="transcript">
-            <div class="transcript-head"><h3>Lyrics / transcript</h3><button id="toggleDetails" class="button-quiet" type="button" aria-expanded="false">View details</button></div>
-            <div id="lyricsViewport" class="transcript-viewport is-collapsed"><pre id="lyrics" class="transcript-copy"></pre><div id="lyricsFade" class="transcript-fade"></div></div>
-            <div id="lyricsMoreRow" class="transcript-more"><button id="toggleLyrics" class="button-quiet" type="button" aria-expanded="false">Show full lyrics</button></div>
+            <div class="transcript-head">
+              <div>
+                <h3>Lyrics / transcript</h3>
+                <span id="lyricsSyncStatus" class="lyrics-sync-status"></span>
+              </div>
+              <div class="transcript-head-actions">
+                <button
+                  id="lyricsFollow"
+                  class="button-quiet"
+                  type="button"
+                  hidden
+                >
+                  Follow song</button
+                ><button
+                  id="toggleDetails"
+                  class="button-quiet"
+                  type="button"
+                  aria-expanded="false"
+                >
+                  View details
+                </button>
+              </div>
+            </div>
+            <div id="lyricsViewport" class="transcript-viewport is-collapsed">
+              <div id="lyrics" class="transcript-copy"></div>
+              <div id="lyricsFade" class="transcript-fade"></div>
+            </div>
+            <div id="lyricsMoreRow" class="transcript-more">
+              <button
+                id="toggleLyrics"
+                class="button-quiet"
+                type="button"
+                aria-expanded="false"
+              >
+                Show full lyrics
+              </button>
+            </div>
           </section>
-          <section id="promptPanel" class="prompt-panel" hidden><div class="rule-heading"><h3>Prompt / production notes</h3></div><pre id="prompt" class="prompt-copy"></pre></section>
+          <section id="promptPanel" class="prompt-panel" hidden>
+            <div class="rule-heading"><h3>Prompt / production notes</h3></div>
+            <pre id="prompt" class="prompt-copy"></pre>
+          </section>
         </div>
-        <footer class="site-footer"><span>Zak Radio</span><span>Original tracks, always on.</span><span class="footer-shortcut">Space play · ←/→ seek</span></footer>
+        <footer class="site-footer">
+          <span>Zak Radio</span><span>Original tracks, always on.</span
+          ><span class="footer-shortcut">Space play · ←/→ seek</span>
+        </footer>
       </section>
 
-      <section id="libraryView" class="library-page view-panel" data-view="/library" hidden>
+      <section
+        id="libraryView"
+        class="library-page view-panel"
+        data-view="/library"
+        hidden
+      >
         <div id="libraryHero" class="library-hero">
           <div class="section-label library-eyebrow">The complete archive</div>
-          <h2 id="libraryViewTitle" tabindex="-1">Find your<br />next favorite.</h2>
-          <p>Search every original track, explore collections and preview anything locally. <strong>Previews never change the shared station.</strong></p>
+          <h2 id="libraryViewTitle" tabindex="-1">
+            Find your<br />next favorite.
+          </h2>
+          <p>
+            Search every original track, then choose what happens next.
+            <strong id="libraryStationTarget"
+              >Your picks will go to the shared station.</strong
+            >
+          </p>
         </div>
         <section aria-labelledby="libraryTitle">
           <div class="library-tools">
-            <label class="search-field"><span class="sr-only">Search the music library</span><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg><input id="librarySearch" type="search" placeholder="Search title, artist, lyrics, prompt…" autocomplete="off" /></label>
+            <label class="search-field"
+              ><span class="sr-only">Search the music library</span
+              ><svg aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="6.5"></circle>
+                <path d="m16 16 4 4"></path></svg
+              ><input
+                id="librarySearch"
+                type="search"
+                placeholder="Search title, artist, lyrics, prompt…"
+                autocomplete="off"
+            /></label>
             <label class="sr-only" for="librarySort">Sort tracks</label>
-            <select class="select-control library-sort" id="librarySort"><option value="archive">Archive order</option><option value="newest">Newest first</option><option value="title">Title A–Z</option><option value="duration">Longest first</option><option value="played">Most played</option></select>
-            <div class="view-switch" aria-label="Library view"><button type="button" data-library-view="grid" aria-pressed="true">Grid</button><button type="button" data-library-view="list" aria-pressed="false">List</button></div>
+            <select class="select-control library-sort" id="librarySort">
+              <option value="archive">Archive order</option>
+              <option value="newest">Newest first</option>
+              <option value="title">Title A–Z</option>
+              <option value="duration">Longest first</option>
+              <option value="played">Most played</option>
+            </select>
+            <div class="view-switch" aria-label="Library view">
+              <button
+                type="button"
+                data-library-view="grid"
+                aria-pressed="true"
+              >
+                Grid</button
+              ><button
+                type="button"
+                data-library-view="list"
+                aria-pressed="false"
+              >
+                List
+              </button>
+            </div>
           </div>
-          <div class="library-results-head"><h2 id="libraryTitle" tabindex="-1">All tracks</h2><p id="libraryCount" aria-live="polite">Loading the archive…</p></div>
+          <div class="library-results-head">
+            <h2 id="libraryTitle" tabindex="-1">All tracks</h2>
+            <p id="libraryCount" aria-live="polite">Loading the archive…</p>
+          </div>
           <div class="filter-row" role="group" aria-label="Track filters">
-            <button class="filter-chip" type="button" data-library-filter="all" aria-pressed="true">All</button><button class="filter-chip" type="button" data-library-filter="liked" aria-pressed="false">Liked</button><button class="filter-chip" type="button" data-library-filter="covers" aria-pressed="false">With artwork</button><button class="filter-chip" type="button" data-library-filter="recent" aria-pressed="false">Recent</button>
+            <button
+              class="filter-chip"
+              type="button"
+              data-library-filter="all"
+              aria-pressed="true"
+            >
+              All</button
+            ><button
+              class="filter-chip"
+              type="button"
+              data-library-filter="liked"
+              aria-pressed="false"
+            >
+              Liked</button
+            ><button
+              class="filter-chip"
+              type="button"
+              data-library-filter="covers"
+              aria-pressed="false"
+            >
+              With artwork</button
+            ><button
+              class="filter-chip"
+              type="button"
+              data-library-filter="recent"
+              aria-pressed="false"
+            >
+              Recent
+            </button>
           </div>
           <div class="track-grid" id="libraryTracks" aria-busy="true"></div>
         </section>
-        <aside class="preview-dock" id="libraryPreviewDock" aria-label="Local audio preview" hidden inert>
+        <aside
+          class="preview-dock"
+          id="libraryPreviewDock"
+          aria-label="Local audio preview"
+          hidden
+          inert
+        >
           <div class="dock-cover" id="libraryDockCover"></div>
-          <div class="dock-copy"><div class="dock-kicker">Private preview</div><div class="dock-title" id="libraryDockTitle">Select a track</div></div>
-          <div class="range-row dock-progress"><span id="libraryCurrentTime">0:00</span><div class="range-track"><div id="libraryProgressFill" class="range-fill"></div><div id="libraryProgressThumb" class="range-thumb"></div><input class="range-input" id="libraryProgress" type="range" min="0" max="0" value="0" step="0.1" aria-label="Preview position" disabled /></div><span id="libraryDuration">0:00</span></div>
-          <div class="dock-actions"><button class="dock-action" id="libraryBack" type="button" aria-label="Back 10 seconds" disabled>−10</button><button class="play-button preview-play" id="libraryPlayPause" type="button" aria-label="Play preview" disabled><svg class="playback-icon" data-icon="play" viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"></path></svg><svg class="pause-icon hidden" data-icon="pause" viewBox="0 0 24 24"><path d="M8 6v12M16 6v12"></path></svg></button><button class="dock-action" id="libraryForward" type="button" aria-label="Forward 10 seconds" disabled>+10</button><a class="dock-action dock-download" id="libraryDownload" download aria-label="Download track" tabindex="-1">↓</a><button class="button dock-return-live" id="libraryReturnLive" type="button">Return live</button></div>
+          <div class="dock-copy">
+            <div class="dock-kicker">Private preview</div>
+            <div class="dock-title" id="libraryDockTitle">Select a track</div>
+          </div>
+          <div class="range-row dock-progress">
+            <span id="libraryCurrentTime">0:00</span>
+            <div class="range-track">
+              <div id="libraryProgressFill" class="range-fill"></div>
+              <div id="libraryProgressThumb" class="range-thumb"></div>
+              <input
+                class="range-input"
+                id="libraryProgress"
+                type="range"
+                min="0"
+                max="0"
+                value="0"
+                step="0.1"
+                aria-label="Preview position"
+                disabled
+              />
+            </div>
+            <span id="libraryDuration">0:00</span>
+          </div>
+          <div class="dock-actions">
+            <button
+              class="dock-action"
+              id="libraryBack"
+              type="button"
+              aria-label="Back 10 seconds"
+              disabled
+            >
+              −10</button
+            ><button
+              class="play-button preview-play"
+              id="libraryPlayPause"
+              type="button"
+              aria-label="Play preview"
+              disabled
+            >
+              <svg class="playback-icon" data-icon="play" viewBox="0 0 24 24">
+                <path d="m9 7 8 5-8 5z"></path></svg
+              ><svg
+                class="pause-icon hidden"
+                data-icon="pause"
+                viewBox="0 0 24 24"
+              >
+                <path d="M8 6v12M16 6v12"></path>
+              </svg></button
+            ><button
+              class="dock-action"
+              id="libraryForward"
+              type="button"
+              aria-label="Forward 10 seconds"
+              disabled
+            >
+              +10</button
+            ><a
+              class="dock-action dock-download"
+              id="libraryDownload"
+              download
+              aria-label="Download track"
+              tabindex="-1"
+              >↓</a
+            ><button
+              class="button dock-return-live"
+              id="libraryReturnLive"
+              type="button"
+            >
+              Return live
+            </button>
+          </div>
         </aside>
       </section>
 
-      <section id="readerView" class="reader-view view-panel" data-view="/reader" hidden>
-        <aside class="reader-index" aria-label="Reader index">
-          <div class="rule-heading"><strong>Reader index</strong><span id="readerCount" class="reader-count" role="status" aria-live="polite" aria-atomic="true">Loading</span></div>
-          <label class="search-field reader-search"><span class="sr-only">Search Reader items</span><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg><input id="readerSearch" type="search" placeholder="Search reader items" autocomplete="off" /></label>
-          <div id="readerItems" class="reader-list" aria-busy="true"></div>
-        </aside>
-        <div class="reader-main">
-          <header class="reader-head">
-            <div id="readerMeta" class="section-label" role="status" aria-live="polite">Reader</div>
-            <h2 id="readerTitle" class="reader-title" tabindex="-1">Select a reader item</h2>
-            <p id="readerDetails" class="reader-details">Generated audio follows the source text and highlights the current segment.</p>
-            <div class="reader-controls">
-              <button id="readerBack" class="reader-skip" type="button" aria-label="Back 10 seconds" disabled>−10</button>
-              <button id="readerPlayPause" class="play-button reader-play" type="button" aria-label="Play" disabled><svg id="readerPlayIcon" class="playback-icon" viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"></path></svg><svg id="readerPauseIcon" class="pause-icon hidden" viewBox="0 0 24 24"><path d="M8 6v12M16 6v12"></path></svg></button>
-              <button id="readerForward" class="reader-skip" type="button" aria-label="Forward 10 seconds" disabled>+10</button>
-              <label class="speed-control">Speed <select id="readerSpeed"><option value="1">1.0×</option><option value="1.15" selected>1.15×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2.0×</option></select></label>
-              <a id="readerSource" class="source-link" target="_blank" rel="noopener" aria-disabled="true" tabindex="-1">Source</a>
+      <section
+        id="readerView"
+        class="reader-view view-panel"
+        data-view="/reader"
+        hidden
+      >
+        <div id="readerHero" class="reader-hero">
+          <div class="section-label">The reading room</div>
+          <h2 id="readerLibraryTitle" tabindex="-1">
+            Stories deserve<br />the whole page.
+          </h2>
+          <p>
+            Read the preserved source while its narration follows along. Pick up
+            where you left off, or browse everything saved to Reader.
+          </p>
+          <div class="reader-browser">
+            <label class="search-field reader-search"
+              ><span class="sr-only">Search Reader items</span
+              ><svg aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="6.5"></circle>
+                <path d="m16 16 4 4"></path></svg
+              ><input
+                id="readerSearch"
+                type="search"
+                placeholder="Search titles and sources"
+                autocomplete="off"
+            /></label>
+            <label class="sr-only" for="readerSort">Sort Reader items</label>
+            <select class="select-control reader-sort" id="readerSort">
+              <option value="newest">Newest first</option>
+              <option value="title">Title A–Z</option>
+              <option value="duration">Longest first</option>
+            </select>
+          </div>
+          <div class="reader-filter-row">
+            <div class="filter-chips" aria-label="Filter Reader library">
+              <button
+                class="filter-chip"
+                type="button"
+                data-reader-filter="all"
+                aria-pressed="true"
+              >
+                All
+              </button>
+              <button
+                class="filter-chip"
+                type="button"
+                data-reader-filter="ready"
+                aria-pressed="false"
+              >
+                Ready
+              </button>
+              <button
+                class="filter-chip"
+                type="button"
+                data-reader-filter="processing"
+                aria-pressed="false"
+              >
+                Processing
+              </button>
             </div>
-            <div class="range-row reader-progress"><span id="readerTime">0:00</span><div class="range-track"><div id="readerProgressFill" class="range-fill"></div><div id="readerProgressThumb" class="range-thumb"></div><input id="readerProgress" class="range-input" type="range" min="0" value="0" step="0.1" aria-label="Reader position" disabled /></div><span id="readerDuration" class="range-end">0:00</span></div>
+            <span
+              id="readerCount"
+              class="reader-count"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              >Loading Reader…</span
+            >
+          </div>
+          <div
+            id="readerItems"
+            class="reader-library-grid"
+            aria-busy="true"
+          ></div>
+        </div>
+        <div id="readerMain" class="reader-main" hidden>
+          <header class="reader-head">
+            <a
+              class="reader-library-back"
+              id="readerLibraryBack"
+              href="/reader"
+              hidden
+              >← All Reader items</a
+            >
+            <div
+              id="readerMeta"
+              class="section-label"
+              role="status"
+              aria-live="polite"
+            >
+              Reader
+            </div>
+            <h2 id="readerTitle" class="reader-title" tabindex="-1">
+              Select a reader item
+            </h2>
+            <p id="readerDetails" class="reader-details">
+              Generated audio follows the source text and highlights the current
+              segment.
+            </p>
+            <div class="reader-controls">
+              <button
+                id="readerBack"
+                class="reader-skip"
+                type="button"
+                aria-label="Back 10 seconds"
+                disabled
+              >
+                −10
+              </button>
+              <button
+                id="readerPlayPause"
+                class="play-button reader-play"
+                type="button"
+                aria-label="Play"
+                disabled
+              >
+                <svg
+                  id="readerPlayIcon"
+                  class="playback-icon"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="m9 7 8 5-8 5z"></path></svg
+                ><svg
+                  id="readerPauseIcon"
+                  class="pause-icon hidden"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M8 6v12M16 6v12"></path>
+                </svg>
+              </button>
+              <button
+                id="readerForward"
+                class="reader-skip"
+                type="button"
+                aria-label="Forward 10 seconds"
+                disabled
+              >
+                +10
+              </button>
+              <label class="speed-control"
+                >Speed
+                <select id="readerSpeed">
+                  <option value="1">1.0×</option>
+                  <option value="1.15" selected>1.15×</option>
+                  <option value="1.25">1.25×</option>
+                  <option value="1.5">1.5×</option>
+                  <option value="1.75">1.75×</option>
+                  <option value="2">2.0×</option>
+                </select></label
+              >
+              <a
+                id="readerSource"
+                class="source-link"
+                target="_blank"
+                rel="noopener"
+                aria-disabled="true"
+                tabindex="-1"
+                >Source</a
+              >
+            </div>
+            <div class="range-row reader-progress">
+              <span id="readerTime">0:00</span>
+              <div class="range-track">
+                <div id="readerProgressFill" class="range-fill"></div>
+                <div id="readerProgressThumb" class="range-thumb"></div>
+                <input
+                  id="readerProgress"
+                  class="range-input"
+                  type="range"
+                  min="0"
+                  value="0"
+                  step="0.1"
+                  aria-label="Reader position"
+                  disabled
+                />
+              </div>
+              <span id="readerDuration" class="range-end">0:00</span>
+            </div>
           </header>
-          <article id="readerText" class="reader-text" aria-busy="false"><div class="reader-empty"><strong>The reading room is quiet.</strong>Choose a saved item from the Reader index.</div></article>
+          <article id="readerText" class="reader-text" aria-busy="false">
+            <div class="reader-empty">
+              <strong>The reading room is quiet.</strong>Saved documents will
+              appear here when they are ready.
+            </div>
+          </article>
         </div>
       </section>
     </main>
 
     <audio id="audio" preload="metadata"></audio>
-    <aside id="audioOwnerBar" class="audio-owner-bar" aria-label="Local audio player" hidden>
-      <div><span id="audioOwnerKicker" class="section-label">Listening locally</span><strong id="audioOwnerLabel">Private preview</strong></div>
+    <aside
+      id="audioOwnerBar"
+      class="audio-owner-bar"
+      aria-label="Local audio player"
+      hidden
+    >
+      <div>
+        <span id="audioOwnerKicker" class="section-label"
+          >Listening locally</span
+        ><strong id="audioOwnerLabel">Private preview</strong>
+      </div>
       <div class="audio-owner-actions">
-        <button id="audioOwnerPlayPause" class="button" type="button" aria-label="Pause local audio">Pause</button>
-        <button id="returnLive" class="button" type="button">Return to live</button>
+        <button
+          id="audioOwnerPlayPause"
+          class="button"
+          type="button"
+          aria-label="Pause local audio"
+        >
+          Pause
+        </button>
+        <button id="returnLive" class="button" type="button">
+          Return to live
+        </button>
       </div>
     </aside>
-    <div id="audioOwnerAnnouncement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div
+      id="audioOwnerAnnouncement"
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script src="/static/platform.js?v=1"></script>
-    <script src="/static/app.js?v=27"></script>
-    <script src="/static/library.js?v=21"></script>
-    <script src="/static/reader.js?v=24"></script>
+    <script src="/static/app.js?v=30"></script>
+    <script src="/static/library.js?v=23"></script>
+    <script src="/static/reader.js?v=26"></script>
   </body>
 </html>

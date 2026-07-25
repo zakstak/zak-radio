@@ -72,7 +72,7 @@ func validateVolume(ctx context.Context, root string) error {
 	}
 	defer readerRoot.Close()
 
-	catalog, err := loadCatalog(cfg, archiveRoot, metadataRoot)
+	catalog, err := loadCatalog(cfg, archiveRoot, metadataRoot, nil)
 	if err != nil {
 		return err
 	}
@@ -196,7 +196,7 @@ func validateMigrationSourceVolume(ctx context.Context, root string) error {
 		return fmt.Errorf("open Reader library: %w", err)
 	}
 	defer readerRoot.Close()
-	catalog, err := loadCatalog(cfg, archiveRoot, metadataRoot)
+	catalog, err := loadCatalog(cfg, archiveRoot, metadataRoot, nil)
 	if err != nil {
 		return err
 	}
@@ -349,6 +349,7 @@ func validateCanonicalSchema(ctx context.Context, db *sql.DB) error {
 		"reader_segments":       {"id", "item_id", "segment_index", "heading_path", "kind", "text", "char_start", "char_end", "audio_path", "duration", "audio_bytes", "status", "audio_sha256"},
 		"skip_counts":           {"track_id", "skip_count"},
 		"station_creation_keys": {"key_hash", "station_id", "owner_hash", "created_at"},
+		"station_queue":         {"station_id", "position", "track_id"},
 		"stations":              {"id", "kind", "owner_hash", "track_id", "position", "playing", "repeat_one", "shuffle", "created_at", "updated_at", "track_changed_at", "expires_at", "revision", "creator_bucket"},
 	}
 	expectedTableSQL := map[string]string{
@@ -400,6 +401,12 @@ func validateCanonicalSchema(ctx context.Context, db *sql.DB) error {
 			owner_hash text not null
 				check(length(owner_hash)=64 and owner_hash not glob '*[^0-9a-f]*'),
 			created_at real not null
+		)`,
+		"station_queue": `create table station_queue (
+			station_id text not null references stations(id) on delete cascade,
+			position integer not null check(position between 0 and 99),
+			track_id text not null,
+			primary key(station_id, position)
 		)`,
 		"stations": `create table stations (
 			id text primary key,

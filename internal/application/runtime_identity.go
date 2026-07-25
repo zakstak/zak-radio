@@ -1,10 +1,13 @@
 package application
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -16,7 +19,29 @@ const runtimeIdentity = 65532
 func prepareRuntimeIdentity(cfg Config) error {
 	enforce := os.Getenv("ZAK_RADIO_DROP_PRIVILEGES") == "1"
 	if os.Geteuid() == 0 && !enforce {
-		return fmt.Errorf("refusing to run the network service as root without enforced privilege drop")
+		if os.Getenv("ZAK_RADIO_ALLOW_ROOTLESS_CONTAINER") != "1" {
+			return fmt.Errorf("refusing to run the network service as root without enforced privilege drop")
+		}
+		uidMap, err := os.Open("/proc/self/uid_map")
+		if err != nil {
+			return fmt.Errorf("inspect container user namespace: %w", err)
+		}
+		isRootless, mapErr := namespaceRootMapsToUnprivileged(uidMap)
+		closeErr := uidMap.Close()
+		if mapErr != nil {
+			return fmt.Errorf("inspect container user namespace: %w", mapErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close container user namespace map: %w", closeErr)
+		}
+		if !isRootless {
+			return fmt.Errorf("refusing root runtime outside an unprivileged user namespace")
+		}
+		normalized, err := cfg.Normalized()
+		if err != nil {
+			return err
+		}
+		return validateDataPaths(normalized)
 	}
 	if !enforce {
 		return nil
@@ -81,4 +106,32 @@ func prepareRuntimeIdentity(cfg Config) error {
 			strconv.Itoa(os.Geteuid()), strconv.Itoa(os.Getegid()), runtimeIdentity, runtimeIdentity)
 	}
 	return nil
+}
+
+func namespaceRootMapsToUnprivileged(source io.Reader) (bool, error) {
+	scanner := bufio.NewScanner(source)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) != 3 {
+			return false, fmt.Errorf("invalid uid_map entry")
+		}
+		inside, err := strconv.ParseUint(fields[0], 10, 64)
+		if err != nil {
+			return false, fmt.Errorf("parse uid_map container ID: %w", err)
+		}
+		outside, err := strconv.ParseUint(fields[1], 10, 64)
+		if err != nil {
+			return false, fmt.Errorf("parse uid_map host ID: %w", err)
+		}
+		if _, err := strconv.ParseUint(fields[2], 10, 64); err != nil {
+			return false, fmt.Errorf("parse uid_map range: %w", err)
+		}
+		if inside == 0 {
+			return outside != 0, nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return false, err
+	}
+	return false, fmt.Errorf("uid_map does not map container root")
 }

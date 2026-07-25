@@ -42,6 +42,7 @@ from reader_items order by id`)
 	var items []readerStorageItem
 	itemIndex := map[string]int{}
 	destinations := map[string]string{}
+	pathsChanged := false
 	for rows.Next() {
 		var item readerStorageItem
 		if err := rows.Scan(&item.id, &item.status, &item.oldStorage, &item.source, &item.normalized, &item.manifest); err != nil {
@@ -77,18 +78,26 @@ from reader_items order by id`)
 			return fmt.Errorf("Reader items %q and %q map to the same storage directory", existing, item.id)
 		}
 		destinations[destinationKey] = item.id
+		oldSource, oldNormalized, oldManifest := item.source, item.normalized, item.manifest
 		var pathErr error
-		item.source, pathErr = relocateReaderPath(item.oldStorage, item.storage, item.source)
+		item.source, pathErr = relocateReaderItemPath(
+			item.id, item.oldStorage, item.storage, item.source)
 		if pathErr == nil {
-			item.normalized, pathErr = relocateReaderPath(item.oldStorage, item.storage, item.normalized)
+			item.normalized, pathErr = relocateReaderItemPath(
+				item.id, item.oldStorage, item.storage, item.normalized)
 		}
 		if pathErr == nil {
-			item.manifest, pathErr = relocateReaderPath(item.oldStorage, item.storage, item.manifest)
+			item.manifest, pathErr = relocateReaderItemPath(
+				item.id, item.oldStorage, item.storage, item.manifest)
 		}
 		if pathErr != nil || !containedPath(item.storage, root) {
 			rows.Close()
 			return fmt.Errorf("Reader item %q cannot be safely rebased: %w", item.id, pathErr)
 		}
+		pathsChanged = pathsChanged ||
+			item.source != oldSource ||
+			item.normalized != oldNormalized ||
+			item.manifest != oldManifest
 		if !regularFile(item.source) {
 			rows.Close()
 			return fmt.Errorf("Reader item %q source is missing after rebase", item.id)
@@ -122,11 +131,14 @@ from reader_segments order by item_id, segment_index`)
 		}
 		item := &items[index]
 		if segment.audio != "" {
-			segment.audio, err = relocateReaderPath(item.oldStorage, item.storage, segment.audio)
+			oldAudio := segment.audio
+			segment.audio, err = relocateReaderItemPath(
+				item.id, item.oldStorage, item.storage, segment.audio)
 			if err != nil || !containedPath(segment.audio, root) {
 				rows.Close()
 				return fmt.Errorf("Reader segment %d cannot be safely rebased: %w", segment.id, err)
 			}
+			pathsChanged = pathsChanged || segment.audio != oldAudio
 		}
 		if segment.status == "ready" {
 			if !supportedAudioPath(segment.audio) {
@@ -161,7 +173,8 @@ from reader_segments order by item_id, segment_index`)
 		return fmt.Errorf("inspect Reader audio: %w", err)
 	}
 
-	changed := metadataErr != nil || filepath.Clean(storedRoot) != filepath.Clean(root)
+	changed := pathsChanged || metadataErr != nil ||
+		filepath.Clean(storedRoot) != filepath.Clean(root)
 	for _, item := range items {
 		changed = changed || filepath.Clean(item.oldStorage) != filepath.Clean(item.storage)
 	}
@@ -239,6 +252,19 @@ func relocateReaderPath(oldStorage, newStorage, path string) (string, error) {
 		return "", fmt.Errorf("path %q escapes rebased storage_dir", path)
 	}
 	return result, nil
+}
+
+func relocateReaderItemPath(itemID, oldStorage, newStorage, path string) (string, error) {
+	result, err := relocateReaderPath(oldStorage, newStorage, path)
+	if err == nil || path == "" {
+		return result, err
+	}
+	legacyRoot, inferErr := inferLegacyReaderRoot(itemID, path)
+	if inferErr != nil {
+		return "", err
+	}
+	legacyStorage := filepath.Join(legacyRoot, itemID)
+	return relocateReaderPath(legacyStorage, newStorage, path)
 }
 
 func fileSHA256(path string) (string, error) {

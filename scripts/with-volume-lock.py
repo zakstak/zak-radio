@@ -64,9 +64,7 @@ try:
     lock_flags = os.O_RDWR | os.O_CREAT | os.O_CLOEXEC
     if hasattr(os, "O_NOFOLLOW"):
         lock_flags |= os.O_NOFOLLOW
-    lock_fd = os.open(
-        ".zak-radio-volume.lock", lock_flags, 0o640, dir_fd=root_fd
-    )
+    lock_fd = os.open(".zak-radio-volume.lock", lock_flags, 0o640, dir_fd=root_fd)
 except OSError as error:
     fail(f"open retained-volume lifecycle lock: {error}")
 

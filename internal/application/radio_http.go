@@ -2,12 +2,14 @@ package application
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -270,6 +272,8 @@ func stationError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, ErrCapacity):
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
+	case errors.Is(err, ErrQueueFull):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrInvalidCommand):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
@@ -500,6 +504,10 @@ func (a *App) apiTrackText(w http.ResponseWriter, r *http.Request) {
 	if kind == "" {
 		kind = "lyrics"
 	}
+	if kind == "timed_lyrics" {
+		a.writeTimedLyrics(w, track)
+		return
+	}
 	path := track.LyricsPath
 	if kind == "prompt" {
 		path = track.PromptPath
@@ -508,6 +516,39 @@ func (a *App) apiTrackText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"id": id, kind: a.readTrackText(path)})
+}
+
+func (a *App) writeTimedLyrics(w http.ResponseWriter, track *Track) {
+	if track.TimedLyricsPath == "" {
+		writeJSON(w, map[string]any{
+			"id": track.ID, "timed_lyrics": nil,
+		})
+		return
+	}
+	data, err := readRootBytes(
+		func() *os.Root {
+			if track.TimedLyricsBundled {
+				return a.timedLyricsRoot
+			}
+			return a.archiveRoot
+		}(),
+		func() string {
+			if track.TimedLyricsBundled {
+				return a.cfg.TimedLyricsRoot
+			}
+			return a.cfg.Archive
+		}(),
+		track.TimedLyricsPath, maxTimedLyricsBytes,
+	)
+	if err != nil ||
+		fmt.Sprintf("%x", sha256.Sum256(data)) != track.TimedLyricsSHA256 {
+		internalError(w)
+		return
+	}
+	var payload json.RawMessage = data
+	writeJSON(w, map[string]any{
+		"id": track.ID, "timed_lyrics": &payload,
+	})
 }
 
 func (a *App) readTrackText(path string) string {

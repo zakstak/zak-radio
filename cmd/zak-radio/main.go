@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"zak-radio-apphost/internal/application"
+	"zak-radio/internal/application"
 )
 
 func main() {

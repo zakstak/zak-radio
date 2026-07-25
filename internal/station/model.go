@@ -32,6 +32,7 @@ type Snapshot struct {
 	ExpiresAt       *float64 `json:"expires_at,omitempty"`
 	Revision        int64    `json:"revision"`
 	CanControl      *bool    `json:"can_control,omitempty"`
+	Queue           []string `json:"queue"`
 }
 
 type Command struct {
@@ -46,6 +47,7 @@ type RandomIndex func(int) int
 var (
 	ErrForbidden      = errors.New("this station is listen-only")
 	ErrCapacity       = errors.New("temporary station capacity reached")
+	ErrQueueFull      = errors.New("this station queue is full")
 	ErrInvalidCommand = errors.New("invalid station command")
 )
 
