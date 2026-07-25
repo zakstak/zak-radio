@@ -262,25 +262,6 @@
               </button>
               <span id="skipCount" class="skip-count">0 early skips</span>
             </div>
-            <fieldset id="radioProgramming" class="radio-programming">
-              <legend class="section-label">Station programming</legend>
-              <label>
-                Random order
-                <select id="stationRandomMode" class="select-control">
-                  <option value="deck">Shuffled list · no repeats</option>
-                  <option value="true_random">True random · repeats can happen</option>
-                </select>
-              </label>
-              <label class="station-check">
-                <input id="stationSkipDisliked" type="checkbox" />
-                Skip disliked songs
-              </label>
-            </fieldset>
-            <div id="radioQueue" class="radio-queue" aria-live="polite">
-              <span class="section-label">Up next</span>
-              <span id="radioQueueSummary">The station queue is empty.</span>
-              <ol id="radioQueueTracks" class="radio-queue-tracks"></ol>
-            </div>
           </div>
         </div>
         <div id="detailsPanels" class="details-panels">
@@ -327,6 +308,29 @@
             <div class="rule-heading"><h3>Prompt / production notes</h3></div>
             <pre id="prompt" class="prompt-copy"></pre>
           </section>
+        </div>
+        <div class="radio-programming-panel">
+          <fieldset id="radioProgramming" class="radio-programming">
+            <legend class="section-label">Station programming</legend>
+            <label>
+              Random order
+              <select id="stationRandomMode" class="select-control">
+                <option value="deck">Shuffled list · no repeats</option>
+                <option value="true_random">
+                  True random · repeats can happen
+                </option>
+              </select>
+            </label>
+            <label class="station-check">
+              <input id="stationSkipDisliked" type="checkbox" />
+              Skip disliked songs
+            </label>
+          </fieldset>
+          <div id="radioQueue" class="radio-queue" aria-live="polite">
+            <span class="section-label">Up next</span>
+            <span id="radioQueueSummary">The station queue is empty.</span>
+            <ol id="radioQueueTracks" class="radio-queue-tracks"></ol>
+          </div>
         </div>
         <footer class="site-footer">
           <span>Zak Radio</span><span>Original tracks, always on.</span

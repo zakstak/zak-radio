@@ -1060,6 +1060,15 @@
     @apply mt-5 grid max-w-[760px] gap-3 border border-radio-line bg-radio-panel p-4 sm:grid-cols-[minmax(220px,1fr)_auto] sm:items-end;
   }
 
+  .radio-programming-panel {
+    @apply grid gap-5 py-7 lg:grid-cols-[minmax(300px,1fr)_minmax(0,1fr)] lg:items-start;
+  }
+
+  .radio-programming-panel .radio-programming,
+  .radio-programming-panel .radio-queue {
+    @apply mt-0 max-w-none;
+  }
+
   .radio-programming legend {
     @apply px-1;
   }

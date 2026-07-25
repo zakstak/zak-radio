@@ -223,12 +223,26 @@ test("timed lyrics follow radio playback, yield to scrolling, and seek the stati
   await expect(page.getByText("Verse", { exact: true })).toHaveCount(0);
   await expect(page.locator("#lyricsSyncStatus")).toHaveText("Following the song");
   await expect(page.locator("#lyricsViewport")).toHaveClass(/has-synced-lyrics/);
+  await expect.poll(() => page.locator("#detailsPanels").evaluate((lyrics) => {
+    const programming = document.getElementById("radioProgramming");
+    return Boolean(
+      lyrics.compareDocumentPosition(programming)
+      & Node.DOCUMENT_POSITION_FOLLOWING
+    );
+  })).toBe(true);
+  await page.locator("#lyricsViewport").evaluate((viewport) => {
+    viewport.style.height = "40px";
+    viewport.style.maxHeight = "40px";
+  });
   await page.locator("#audio").evaluate((audio) => {
     audio.currentTime = 0.7;
     audio.dispatchEvent(new Event("timeupdate"));
   });
   await expect(page.getByRole("button", { name: /Second line/ }))
     .toHaveAttribute("aria-current", "true");
+  await expect.poll(() => page.locator("#lyricsViewport").evaluate(
+    (viewport) => viewport.scrollTop,
+  )).toBeGreaterThan(0);
 
   await page.locator("#lyricsViewport").dispatchEvent("wheel");
   await expect(page.getByRole("button", { name: "Follow song" })).toBeVisible();
