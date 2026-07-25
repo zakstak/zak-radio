@@ -312,18 +312,50 @@
         <div class="radio-programming-panel">
           <fieldset id="radioProgramming" class="radio-programming">
             <legend class="section-label">Station programming</legend>
-            <label>
-              Random order
-              <select id="stationRandomMode" class="select-control">
-                <option value="deck">Shuffled list · no repeats</option>
-                <option value="true_random">
-                  True random · repeats can happen
-                </option>
-              </select>
-            </label>
-            <label class="station-check">
+            <div class="station-programming-field">
+              <span id="stationRandomModeLabel" class="programming-label"
+                >Playback order</span
+              >
+              <div
+                id="stationRandomMode"
+                class="random-mode-options"
+                role="radiogroup"
+                aria-labelledby="stationRandomModeLabel"
+              >
+                <label class="random-mode-option">
+                  <input
+                    type="radio"
+                    name="stationRandomMode"
+                    value="deck"
+                    checked
+                  />
+                  <span class="random-mode-card">
+                    <strong>No repeats</strong>
+                    <small>Shuffle every song once</small>
+                  </span>
+                </label>
+                <label class="random-mode-option">
+                  <input
+                    type="radio"
+                    name="stationRandomMode"
+                    value="true_random"
+                  />
+                  <span class="random-mode-card">
+                    <strong>True random</strong>
+                    <small>Repeats can happen</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+            <label class="station-toggle">
+              <span class="station-toggle-copy">
+                <strong>Skip disliked</strong>
+                <small>Keep them out of rotation</small>
+              </span>
               <input id="stationSkipDisliked" type="checkbox" />
-              Skip disliked songs
+              <span class="station-toggle-switch" aria-hidden="true"
+                ><span></span
+              ></span>
             </label>
           </fieldset>
           <div id="radioQueue" class="radio-queue" aria-live="polite">
@@ -369,8 +401,8 @@
                 <div class="section-label">Saved radio</div>
                 <h2 id="stationManagerTitle">Your stations</h2>
                 <p>
-                  Save this Library view as a live filter, or build a hand-picked
-                  list.
+                  Save this Library view as a live filter, or build a
+                  hand-picked list.
                 </p>
               </div>
               <div class="station-manager-actions">
@@ -396,20 +428,57 @@
                     autocomplete="off"
                   />
                 </label>
-                <label>
-                  Random order
-                  <select id="stationEditorRandom" class="select-control">
-                    <option value="deck">Shuffled list · no repeats</option>
-                    <option value="true_random">True random · repeats can happen</option>
-                  </select>
-                </label>
-                <label class="station-check">
+                <div class="station-programming-field">
+                  <span id="stationEditorRandomLabel" class="programming-label"
+                    >Playback order</span
+                  >
+                  <div
+                    id="stationEditorRandom"
+                    class="random-mode-options"
+                    role="radiogroup"
+                    aria-labelledby="stationEditorRandomLabel"
+                  >
+                    <label class="random-mode-option">
+                      <input
+                        type="radio"
+                        name="stationEditorRandom"
+                        value="deck"
+                        checked
+                      />
+                      <span class="random-mode-card">
+                        <strong>No repeats</strong>
+                        <small>Shuffle every song once</small>
+                      </span>
+                    </label>
+                    <label class="random-mode-option">
+                      <input
+                        type="radio"
+                        name="stationEditorRandom"
+                        value="true_random"
+                      />
+                      <span class="random-mode-card">
+                        <strong>True random</strong>
+                        <small>Repeats can happen</small>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                <label class="station-toggle">
+                  <span class="station-toggle-copy">
+                    <strong>Skip disliked</strong>
+                    <small>Keep them out of rotation</small>
+                  </span>
                   <input id="stationEditorSkip" type="checkbox" />
-                  Skip disliked songs
+                  <span class="station-toggle-switch" aria-hidden="true"
+                    ><span></span
+                  ></span>
                 </label>
               </div>
               <p id="stationEditorSummary" class="station-editor-summary"></p>
-              <div id="stationEditorMembers" class="station-editor-members"></div>
+              <div
+                id="stationEditorMembers"
+                class="station-editor-members"
+              ></div>
               <div class="station-manager-actions">
                 <button class="button" type="submit">Save station</button>
                 <button id="stationEditorCancel" class="button" type="button">

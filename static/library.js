@@ -55,6 +55,16 @@
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  function radioGroupValue(group) {
+    return group.querySelector('input[type="radio"]:checked')?.value || "";
+  }
+
+  function setRadioGroupValue(group, value) {
+    group.querySelectorAll('input[type="radio"]').forEach((input) => {
+      input.checked = input.value === value;
+    });
+  }
+
   function timeLabel(seconds) {
     const value = number(seconds);
     if (value <= 0) return "0:00";
@@ -176,7 +186,10 @@
     els.stationEditorName.value =
       definition?.name ||
       (sourceType === "list" ? "My station" : currentFilterDescription());
-    els.stationEditorRandom.value = definition?.random_mode || "deck";
+    setRadioGroupValue(
+      els.stationEditorRandom,
+      definition?.random_mode || "deck",
+    );
     els.stationEditorSkip.checked = Boolean(definition?.skip_disliked);
     els.stationEditorStatus.textContent = "";
     if (definition) {
@@ -288,9 +301,7 @@
             `/api/stations/${encodeURIComponent(station.station_id)}`,
             { method: "DELETE", body: { owner_token: ownerToken } },
           );
-          window.ZakStorage.remove(
-            `zak-radio-owner:${station.station_id}`,
-          );
+          window.ZakStorage.remove(`zak-radio-owner:${station.station_id}`);
           await window.ZakStations.reload();
           renderSavedStations();
         } catch {
@@ -314,7 +325,7 @@
     els.stationEditorStatus.textContent = "Saving…";
     const body = {
       name: els.stationEditorName.value.trim(),
-      random_mode: els.stationEditorRandom.value,
+      random_mode: radioGroupValue(els.stationEditorRandom),
       skip_disliked: els.stationEditorSkip.checked,
     };
     try {
@@ -331,8 +342,7 @@
         Object.assign(body, {
           source_type: sourceType,
           filter_mode: sourceType === "filter" ? state.filter : "all",
-          filter_query:
-            sourceType === "filter" ? els.search.value.trim() : "",
+          filter_query: sourceType === "filter" ? els.search.value.trim() : "",
           track_ids: [],
           ...attempt,
         });

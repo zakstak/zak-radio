@@ -125,6 +125,22 @@ function setText(element, value) {
   if (element.textContent !== value) element.textContent = value;
 }
 
+function radioGroupValue(group) {
+  return group.querySelector('input[type="radio"]:checked')?.value || "";
+}
+
+function setRadioGroupValue(group, value) {
+  group.querySelectorAll('input[type="radio"]').forEach((input) => {
+    input.checked = input.value === value;
+  });
+}
+
+function setRadioGroupDisabled(group, disabled) {
+  group.querySelectorAll('input[type="radio"]').forEach((input) => {
+    input.disabled = disabled;
+  });
+}
+
 function timeLabel(seconds) {
   const n = Number(seconds);
   if (!Number.isFinite(n) || n < 0) return "0:00";
@@ -749,18 +765,12 @@ function renderStationPicker() {
 }
 
 async function updateSavedStation(stationId, changes) {
-  const ownerToken = window.ZakStorage.get(
-    `zak-radio-owner:${stationId}`,
-    "",
-  );
+  const ownerToken = window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
   if (!ownerToken) throw new Error("This station is listen-only.");
-  const result = await api(
-    `/api/stations/${encodeURIComponent(stationId)}`,
-    {
-      method: "PATCH",
-      body: { owner_token: ownerToken, ...changes },
-    },
-  );
+  const result = await api(`/api/stations/${encodeURIComponent(stationId)}`, {
+    method: "PATCH",
+    body: { owner_token: ownerToken, ...changes },
+  });
   await loadStations();
   return result.station;
 }
@@ -1198,7 +1208,8 @@ function renderStation() {
   const station = state.station;
   if (!track || !station) return;
   const playing = Boolean(station.playing);
-  const emptyRadio = Boolean(station.saved) && Number(station.eligible || 0) === 0;
+  const emptyRadio =
+    Boolean(station.saved) && Number(station.eligible || 0) === 0;
   const repeatOne = Boolean(station.repeat_one);
   const shuffle = Boolean(station.shuffle);
   const needsLocalJoin =
@@ -1209,10 +1220,10 @@ function renderStation() {
   els.stationStatus.textContent = emptyRadio
     ? "No songs match this station"
     : needsLocalJoin
-    ? "Live now · tap Join live to hear"
-    : playing
-      ? "Live now"
-      : "Station paused";
+      ? "Live now · tap Join live to hear"
+      : playing
+        ? "Live now"
+        : "Station paused";
   els.livePulse.classList.toggle("is-live", playing);
   const playLabel = needsLocalJoin ? "Join live" : playing ? "Pause" : "Play";
   els.playPause.querySelector(".sr-only").textContent = playLabel;
@@ -1294,8 +1305,8 @@ function renderStation() {
   els.transport.classList.toggle("is-radio", !temporary);
   els.radioProgramming.hidden = !radio;
   els.addCurrentToStation.hidden = !radio;
-  els.stationRandomMode.value = station.random_mode || "deck";
-  els.stationRandomMode.disabled = !canControl;
+  setRadioGroupValue(els.stationRandomMode, station.random_mode || "deck");
+  setRadioGroupDisabled(els.stationRandomMode, !canControl);
   els.stationSkipDisliked.checked = Boolean(station.skip_disliked);
   els.stationSkipDisliked.disabled = !canControl;
   els.stationSelect.value = state.stationId;
@@ -2019,11 +2030,12 @@ els.stationSelect.addEventListener("change", async () => {
       : window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
   await switchStation(stationId, ownerToken);
 });
-els.stationRandomMode.addEventListener("change", () =>
+els.stationRandomMode.addEventListener("change", (event) => {
+  if (!event.target.matches('input[type="radio"]')) return;
   postControl("set_station_random_mode", {
-    random_mode: els.stationRandomMode.value,
-  }),
-);
+    random_mode: radioGroupValue(els.stationRandomMode),
+  });
+});
 els.stationSkipDisliked.addEventListener("change", () =>
   postControl("set_station_skip_disliked", {
     skip_disliked: els.stationSkipDisliked.checked,

@@ -124,11 +124,17 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   await expect(page.locator("#download")).toBeVisible();
   await expect(page.locator("#radioProgramming")).toBeVisible();
   await expect(page.locator("#radioQueue")).toBeVisible();
-  await page.locator("#stationRandomMode").selectOption("true_random");
+  const trueRandom = page.getByRole("radio", { name: /True random/ });
+  const noRepeats = page.getByRole("radio", { name: /No repeats/ });
+  const skipDisliked = page.getByRole("checkbox", {
+    name: /Skip disliked/,
+  });
+  await trueRandom.check();
+  await expect(trueRandom).toBeChecked();
   await expect(page.locator("#radioQueueSummary")).toContainText(
     "repeats can happen",
   );
-  await page.locator("#stationSkipDisliked").check();
+  await skipDisliked.check();
   await expect.poll(() => page.evaluate(async () =>
     (await (await fetch("/api/station")).json()).skip_disliked)).toBe(true);
 
@@ -143,8 +149,9 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   await expect(page.locator("#dislike")).toHaveText(
     `Dislike · ${before.dislikes + 1}`,
   );
-  await page.locator("#stationSkipDisliked").uncheck();
-  await page.locator("#stationRandomMode").selectOption("deck");
+  await skipDisliked.uncheck();
+  await noRepeats.check();
+  await expect(noRepeats).toBeChecked();
 
   await page.locator("#createStation").click();
   await expect(page).toHaveURL(/\/library$/);
