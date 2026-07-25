@@ -28,6 +28,7 @@ const (
 	maxTempStations        = 100
 	maxCreatorStations     = 5
 	maxStationQueue        = 100
+	stationUpcomingPreview = 100
 	maxNormalizeSteps      = 10000
 	maxShuffleCatchUpSteps = 64
 	maxRetainedTimestamp   = 1e11
@@ -39,8 +40,31 @@ const (
 type Station = stationmodel.Station
 type Snapshot = stationmodel.Snapshot
 type Command = stationmodel.Command
+type StationDefinition = stationmodel.Definition
 type Clock = stationmodel.Clock
 type RandomIndex = stationmodel.RandomIndex
+
+type SavedStationInput struct {
+	Name         string
+	SourceType   string
+	FilterMode   string
+	FilterQuery  string
+	RandomMode   string
+	SkipDisliked bool
+	TrackIDs     []string
+}
+
+type SavedStationUpdate struct {
+	Name          *string
+	SourceType    *string
+	FilterMode    *string
+	FilterQuery   *string
+	RandomMode    *string
+	SkipDisliked  *bool
+	TrackIDs      *[]string
+	AddTrackID    string
+	RemoveTrackID string
+}
 
 type StationService struct {
 	db          *sql.DB
@@ -118,6 +142,14 @@ where id=? and (repeat_one<>0 or shuffle<>1) and revision<?`,
 		"delete from station_queue where station_id=?", mainStationID); err != nil {
 		return err
 	}
+	if _, err := s.db.ExecContext(ctx, `
+insert into station_definitions
+	(station_id, name, source_type, filter_mode, filter_query, random_mode,
+	 skip_disliked, created_at, updated_at)
+values (?, 'All songs', 'filter', 'all', '', 'deck', 0, ?, ?)
+on conflict(station_id) do nothing`, mainStationID, now, now); err != nil {
+		return err
+	}
 	rows, err := s.db.QueryContext(ctx, "select id, kind, track_id from stations")
 	if err != nil {
 		return err
@@ -163,7 +195,26 @@ update stations set track_id=?, position=0, playing=0, updated_at=?,
 			return err
 		}
 	}
-	return s.reconcileCatalogStatistics(ctx)
+	if err := s.reconcileCatalogStatistics(ctx); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	row, err := readStation(ctx, tx, mainStationID, now)
+	if err != nil {
+		return err
+	}
+	definition, err := readStationDefinition(ctx, tx, mainStationID)
+	if err != nil {
+		return err
+	}
+	if err := s.ensureStationRotation(ctx, tx, row, definition); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *StationService) Snapshot(ctx context.Context, stationID string) (Snapshot, error) {
@@ -260,7 +311,7 @@ select count(*) from stations where kind='temporary' and creator_bucket=?`,
 	if err != nil {
 		return "", "", 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	_, err = tx.ExecContext(ctx, `
 insert into stations
 	(id, kind, owner_hash, track_id, position, playing, repeat_one, shuffle,
@@ -282,6 +333,387 @@ values (?, ?, ?, ?)`, keyHash, id, ownerHash, now); err != nil {
 		return "", "", 0, err
 	}
 	return id, ownerToken, expires, nil
+}
+
+func (s *StationService) CreateSavedIdempotent(
+	ctx context.Context, input SavedStationInput, creatorBucket, idempotencyKey,
+	ownerToken string,
+) (StationDefinition, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	input, err := s.validateSavedStationInput(input)
+	if err != nil {
+		return StationDefinition{}, "", err
+	}
+	if !validCreateSecret(idempotencyKey, 32, 128) ||
+		!validCreateSecret(ownerToken, 48, 48) {
+		return StationDefinition{}, "", fmt.Errorf(
+			"%w: idempotency_key and owner_token must be bounded lowercase hex",
+			ErrInvalidCommand)
+	}
+	if creatorBucket == "" {
+		return StationDefinition{}, "", fmt.Errorf(
+			"%w: creator identity is required", ErrInvalidCommand)
+	}
+	now := s.logicalNow()
+	if err := validateStationWriteTime(now, true); err != nil {
+		return StationDefinition{}, "", err
+	}
+	if err := s.deleteExpired(ctx, now); err != nil {
+		return StationDefinition{}, "", err
+	}
+	ownerHash := tokenHash(ownerToken)
+	keyHash := tokenHash(idempotencyKey)
+	var existingID, existingOwnerHash string
+	err = s.db.QueryRowContext(ctx, `
+select k.station_id, k.owner_hash
+from station_creation_keys k join stations s on s.id=k.station_id
+where k.key_hash=?`, keyHash).Scan(&existingID, &existingOwnerHash)
+	if err == nil {
+		if subtle.ConstantTimeCompare([]byte(existingOwnerHash), []byte(ownerHash)) != 1 {
+			return StationDefinition{}, "", fmt.Errorf(
+				"%w: idempotency key was reused", ErrInvalidCommand)
+		}
+		definition, readErr := readStationDefinition(ctx, s.db, existingID)
+		return definition, ownerToken, readErr
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return StationDefinition{}, "", err
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx,
+		"select count(*) from stations where kind='temporary'").Scan(&count); err != nil {
+		return StationDefinition{}, "", err
+	}
+	if count >= maxTempStations {
+		return StationDefinition{}, "", ErrCapacity
+	}
+	if err := s.db.QueryRowContext(ctx, `
+select count(*) from stations where kind='temporary' and creator_bucket=?`,
+		creatorBucket).Scan(&count); err != nil {
+		return StationDefinition{}, "", err
+	}
+	if count >= maxCreatorStations {
+		return StationDefinition{}, "", ErrCapacity
+	}
+	id, err := randomHex(16)
+	if err != nil {
+		return StationDefinition{}, "", err
+	}
+	trackID := s.catalog.Tracks[0].ID
+	if eligible, eligibleErr := s.eligibleTracksForInput(ctx, s.db, input); eligibleErr != nil {
+		return StationDefinition{}, "", eligibleErr
+	} else if len(eligible) > 0 {
+		trackID = eligible[0]
+	}
+	expires := now + tempStationLife.Seconds()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return StationDefinition{}, "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.ExecContext(ctx, `
+insert into stations
+	(id, kind, owner_hash, track_id, position, playing, repeat_one, shuffle,
+	 created_at, updated_at, track_changed_at, expires_at, revision, creator_bucket)
+values (?, 'temporary', ?, ?, 0, 0, 0, 1, ?, ?, ?, ?, 1, ?)`,
+		id, ownerHash, trackID, now, now, now, expires, creatorBucket)
+	if err != nil && strings.Contains(err.Error(), "temporary station capacity reached") {
+		err = ErrCapacity
+	}
+	if err != nil {
+		return StationDefinition{}, "", err
+	}
+	if _, err := tx.ExecContext(ctx, `
+insert into station_creation_keys(key_hash, station_id, owner_hash, created_at)
+values (?, ?, ?, ?)`, keyHash, id, ownerHash, now); err != nil {
+		return StationDefinition{}, "", err
+	}
+	if err := insertStationDefinition(ctx, tx, id, input, now); err != nil {
+		return StationDefinition{}, "", err
+	}
+	if err := replaceStationTracks(ctx, tx, id, input.TrackIDs); err != nil {
+		return StationDefinition{}, "", err
+	}
+	row, err := readStation(ctx, tx, id, now)
+	if err != nil {
+		return StationDefinition{}, "", err
+	}
+	definition, err := readStationDefinition(ctx, tx, id)
+	if err != nil {
+		return StationDefinition{}, "", err
+	}
+	if err := s.ensureStationRotation(ctx, tx, row, definition); err != nil {
+		return StationDefinition{}, "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return StationDefinition{}, "", err
+	}
+	return definition, ownerToken, nil
+}
+
+func (s *StationService) ListSaved(ctx context.Context) ([]StationDefinition, error) {
+	rows, err := s.db.QueryContext(ctx, `
+select station_id from station_definitions
+order by case when station_id='main' then 0 else 1 end, lower(name), station_id`)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	definitions := make([]StationDefinition, 0, len(ids))
+	for _, id := range ids {
+		definition, err := readStationDefinition(ctx, s.db, id)
+		if err != nil {
+			return nil, err
+		}
+		var remaining int
+		if err := s.db.QueryRowContext(ctx,
+			"select count(*) from station_rotation where station_id=?", id).
+			Scan(&remaining); err != nil {
+			return nil, err
+		}
+		eligible, err := s.eligibleStationTracks(ctx, s.db, definition)
+		if err != nil {
+			return nil, err
+		}
+		definition.BuiltIn = id == mainStationID
+		definition.EligibleCount = len(eligible)
+		definition.RemainingCount = remaining
+		definitions = append(definitions, definition)
+	}
+	return definitions, nil
+}
+
+func (s *StationService) UpdateSaved(
+	ctx context.Context, stationID, ownerToken string, update SavedStationUpdate,
+) (StationDefinition, error) {
+	stationID = normalizedStationID(stationID)
+	if !validStationID(stationID) || stationID == mainStationID {
+		return StationDefinition{}, ErrForbidden
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.logicalNow()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return StationDefinition{}, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	row, err := readStation(ctx, tx, stationID, now)
+	if err != nil {
+		return StationDefinition{}, err
+	}
+	if !row.Saved {
+		return StationDefinition{}, sql.ErrNoRows
+	}
+	if !canControl(row, ownerToken) {
+		return StationDefinition{}, ErrForbidden
+	}
+	definition, err := readStationDefinition(ctx, tx, stationID)
+	if err != nil {
+		return StationDefinition{}, err
+	}
+	input := SavedStationInput{
+		Name: definition.Name, SourceType: definition.SourceType,
+		FilterMode: definition.FilterMode, FilterQuery: definition.FilterQuery,
+		RandomMode: definition.RandomMode, SkipDisliked: definition.SkipDisliked,
+		TrackIDs: append([]string(nil), definition.TrackIDs...),
+	}
+	if update.Name != nil {
+		input.Name = *update.Name
+	}
+	if update.SourceType != nil {
+		input.SourceType = *update.SourceType
+	}
+	if update.FilterMode != nil {
+		input.FilterMode = *update.FilterMode
+	}
+	if update.FilterQuery != nil {
+		input.FilterQuery = *update.FilterQuery
+	}
+	if update.RandomMode != nil {
+		input.RandomMode = *update.RandomMode
+	}
+	if update.SkipDisliked != nil {
+		input.SkipDisliked = *update.SkipDisliked
+	}
+	if update.TrackIDs != nil {
+		input.TrackIDs = append([]string(nil), (*update.TrackIDs)...)
+	}
+	if update.AddTrackID != "" {
+		input.SourceType, input.FilterMode, input.FilterQuery = "list", "all", ""
+		input.TrackIDs = append(input.TrackIDs, update.AddTrackID)
+	}
+	if update.RemoveTrackID != "" {
+		filtered := input.TrackIDs[:0]
+		for _, trackID := range input.TrackIDs {
+			if trackID != update.RemoveTrackID {
+				filtered = append(filtered, trackID)
+			}
+		}
+		input.TrackIDs = filtered
+	}
+	input, err = s.validateSavedStationInput(input)
+	if err != nil {
+		return StationDefinition{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+update station_definitions set
+	name=?, source_type=?, filter_mode=?, filter_query=?, random_mode=?,
+	skip_disliked=?, updated_at=?
+where station_id=?`,
+		input.Name, input.SourceType, input.FilterMode, input.FilterQuery,
+		input.RandomMode, boolInt(input.SkipDisliked), now, stationID); err != nil {
+		return StationDefinition{}, err
+	}
+	if err := replaceStationTracks(ctx, tx, stationID, input.TrackIDs); err != nil {
+		return StationDefinition{}, err
+	}
+	if err := s.replaceStationRotation(ctx, tx, stationID, nil); err != nil {
+		return StationDefinition{}, err
+	}
+	definition, err = readStationDefinition(ctx, tx, stationID)
+	if err != nil {
+		return StationDefinition{}, err
+	}
+	eligible, err := s.eligibleStationTracks(ctx, tx, definition)
+	if err != nil {
+		return StationDefinition{}, err
+	}
+	if len(eligible) > 0 && !containsTrack(eligible, row.TrackID) {
+		if err := s.setTrack(&row, eligible[0], now); err != nil {
+			return StationDefinition{}, err
+		}
+	}
+	if err := s.ensureStationRotation(ctx, tx, row, definition); err != nil {
+		return StationDefinition{}, err
+	}
+	if err := incrementStationRevision(&row); err != nil {
+		return StationDefinition{}, err
+	}
+	row.UpdatedAt = now
+	if err := updateStation(ctx, tx, row); err != nil {
+		return StationDefinition{}, err
+	}
+	snapshot, err := s.snapshot(ctx, tx, row, now)
+	if err != nil {
+		return StationDefinition{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return StationDefinition{}, err
+	}
+	s.events.PublishValue(stationID, snapshot)
+	return definition, nil
+}
+
+func (s *StationService) DeleteSaved(
+	ctx context.Context, stationID, ownerToken string,
+) error {
+	stationID = normalizedStationID(stationID)
+	if !validStationID(stationID) || stationID == mainStationID {
+		return ErrForbidden
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.logicalNow()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	row, err := readStation(ctx, tx, stationID, now)
+	if err != nil {
+		return err
+	}
+	if !row.Saved {
+		return sql.ErrNoRows
+	}
+	if !canControl(row, ownerToken) {
+		return ErrForbidden
+	}
+	if _, err := tx.ExecContext(ctx, "delete from stations where id=?", stationID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.events.PublishValue(stationID, map[string]any{"expired": true})
+	s.events.Forget(stationID)
+	return nil
+}
+
+func (s *StationService) validateSavedStationInput(
+	input SavedStationInput,
+) (SavedStationInput, error) {
+	input.Name = strings.TrimSpace(input.Name)
+	input.FilterQuery = strings.TrimSpace(input.FilterQuery)
+	if input.Name == "" || len([]byte(input.Name)) > 80 ||
+		strings.ContainsRune(input.Name, 0) {
+		return SavedStationInput{}, fmt.Errorf(
+			"%w: station name must be 1 to 80 characters", ErrInvalidCommand)
+	}
+	if input.SourceType != "filter" && input.SourceType != "list" {
+		return SavedStationInput{}, fmt.Errorf(
+			"%w: source_type must be filter or list", ErrInvalidCommand)
+	}
+	if input.RandomMode == "" {
+		input.RandomMode = "deck"
+	}
+	if input.RandomMode != "true_random" && input.RandomMode != "deck" {
+		return SavedStationInput{}, fmt.Errorf(
+			"%w: random_mode must be true_random or deck", ErrInvalidCommand)
+	}
+	if input.SourceType == "list" {
+		input.FilterMode, input.FilterQuery = "all", ""
+	} else {
+		if input.FilterMode == "" {
+			input.FilterMode = "all"
+		}
+		if input.FilterMode != "all" && input.FilterMode != "liked" &&
+			input.FilterMode != "covers" && input.FilterMode != "recent" {
+			return SavedStationInput{}, fmt.Errorf(
+				"%w: unsupported station filter", ErrInvalidCommand)
+		}
+		if len([]byte(input.FilterQuery)) > 160 ||
+			strings.ContainsRune(input.FilterQuery, 0) {
+			return SavedStationInput{}, fmt.Errorf(
+				"%w: station search is too long", ErrInvalidCommand)
+		}
+		input.TrackIDs = nil
+	}
+	unique := make([]string, 0, len(input.TrackIDs))
+	seen := make(map[string]bool, len(input.TrackIDs))
+	for _, trackID := range input.TrackIDs {
+		if s.catalog.ByID[trackID] == nil {
+			return SavedStationInput{}, fmt.Errorf(
+				"%w: unknown station track", ErrInvalidCommand)
+		}
+		if !seen[trackID] {
+			seen[trackID] = true
+			unique = append(unique, trackID)
+		}
+	}
+	if len(unique) > maxCatalogTracks {
+		return SavedStationInput{}, fmt.Errorf(
+			"%w: station track list is too large", ErrInvalidCommand)
+	}
+	input.TrackIDs = unique
+	return input, nil
 }
 
 func validCreateSecret(value string, minimum, maximum int) bool {
@@ -316,7 +748,7 @@ func (s *StationService) Execute(ctx context.Context, command Command) (Snapshot
 		_ = tx.Rollback()
 		return Snapshot{}, ErrForbidden
 	}
-	if err := validateStationWriteTime(now, row.Kind == "temporary"); err != nil {
+	if err := validateStationWriteTime(now, row.Kind == "temporary" && !row.Saved); err != nil {
 		_ = tx.Rollback()
 		return Snapshot{}, err
 	}
@@ -340,7 +772,7 @@ func (s *StationService) Execute(ctx context.Context, command Command) (Snapshot
 		return Snapshot{}, err
 	}
 	row.UpdatedAt = now
-	if row.Kind == "temporary" {
+	if row.Kind == "temporary" && !row.Saved {
 		expires := now + tempStationLife.Seconds()
 		row.ExpiresAt = &expires
 	}
@@ -372,7 +804,10 @@ func (s *StationService) Advance(ctx context.Context) error {
 	}
 	rows, err := s.db.QueryContext(ctx, `
 select id from stations
-where playing=1 and (kind='shared' or expires_at>?)`, now)
+where playing=1 and (
+	kind='shared' or expires_at>? or
+	exists (select 1 from station_definitions d where d.station_id=stations.id)
+)`, now)
 	if err != nil {
 		return err
 	}
@@ -451,8 +886,12 @@ func (s *StationService) reconcileCatalogStatistics(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	for _, table := range []string{"likes", "skip_counts", "station_queue"} {
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	for _, table := range []string{
+		"likes", "skip_counts", "station_queue", "station_tracks", "station_rotation",
+	} {
 		rows, err := tx.QueryContext(ctx, "select track_id from "+table)
 		if err != nil {
 			return err
@@ -483,7 +922,10 @@ func (s *StationService) reconcileCatalogStatistics(ctx context.Context) error {
 
 func (s *StationService) deleteExpired(ctx context.Context, now float64) error {
 	rows, err := s.db.QueryContext(ctx,
-		"select id from stations where kind='temporary' and expires_at<=?", now)
+		`select id from stations where kind='temporary' and expires_at<=?
+		 and not exists (
+			select 1 from station_definitions d where d.station_id=stations.id
+		 )`, now)
 	if err != nil {
 		return err
 	}
@@ -500,7 +942,10 @@ func (s *StationService) deleteExpired(ctx context.Context, now float64) error {
 		return err
 	}
 	if _, err := s.db.ExecContext(ctx,
-		"delete from stations where kind='temporary' and expires_at<=?", now); err != nil {
+		`delete from stations where kind='temporary' and expires_at<=?
+		 and not exists (
+			select 1 from station_definitions d where d.station_id=stations.id
+		 )`, now); err != nil {
 		return err
 	}
 	for _, id := range ids {
@@ -614,10 +1059,12 @@ func (s *StationService) normalizeElapsedWithQueue(
 			}
 			steps++
 			if row.Shuffle && steps >= maxShuffleCatchUpSteps {
-				// Unobserved shuffle history has no deterministic sequence worth
-				// replaying. Collapse very old state to one bounded random choice.
-				row.TrackID = s.randomTrack(row.TrackID)
-				duration = s.duration(row.TrackID)
+				// Unobserved shuffle history has no useful exact playhead.
+				// Bound catch-up while preserving the radio deck already consumed.
+				if !row.Saved {
+					row.TrackID = s.randomTrack(row.TrackID)
+					duration = s.duration(row.TrackID)
+				}
 				elapsed = math.Mod(elapsed, duration)
 				break
 			}
@@ -697,9 +1144,79 @@ func (s *StationService) applyCommand(ctx context.Context, tx *sql.Tx, row *Stat
 		row.Position = clamp(current)
 		row.Shuffle = *command.Shuffle
 	case "play_next":
+		if row.Saved {
+			return fmt.Errorf("%w: radio does not accept queued tracks", ErrInvalidCommand)
+		}
 		return s.enqueueTrack(ctx, tx, row.ID, command.TrackID, true)
 	case "add_to_queue":
+		if row.Saved {
+			return fmt.Errorf("%w: radio does not accept queued tracks", ErrInvalidCommand)
+		}
 		return s.enqueueTrack(ctx, tx, row.ID, command.TrackID, false)
+	case "set_station_random_mode":
+		if !row.Saved ||
+			(command.RandomMode != "true_random" && command.RandomMode != "deck") {
+			return fmt.Errorf("%w: station random mode must be true_random or deck",
+				ErrInvalidCommand)
+		}
+		if _, err := tx.ExecContext(ctx, `
+update station_definitions set random_mode=?, updated_at=? where station_id=?`,
+			command.RandomMode, now, row.ID); err != nil {
+			return err
+		}
+		if err := s.replaceStationRotation(ctx, tx, row.ID, nil); err != nil {
+			return err
+		}
+		definition, err := readStationDefinition(ctx, tx, row.ID)
+		if err != nil {
+			return err
+		}
+		eligible, err := s.eligibleStationTracks(ctx, tx, definition)
+		if err != nil {
+			return err
+		}
+		if len(eligible) == 0 {
+			row.Playing = false
+			row.Position = clamp(current)
+		} else if !containsTrack(eligible, row.TrackID) {
+			if err := s.setTrack(row, eligible[0], now); err != nil {
+				return err
+			}
+		}
+		if err := s.ensureStationRotation(ctx, tx, *row, definition); err != nil {
+			return err
+		}
+	case "set_station_skip_disliked":
+		if !row.Saved || command.SkipDisliked == nil {
+			return fmt.Errorf("%w: station disliked filter is required", ErrInvalidCommand)
+		}
+		if _, err := tx.ExecContext(ctx, `
+update station_definitions set skip_disliked=?, updated_at=? where station_id=?`,
+			boolInt(*command.SkipDisliked), now, row.ID); err != nil {
+			return err
+		}
+		if err := s.replaceStationRotation(ctx, tx, row.ID, nil); err != nil {
+			return err
+		}
+		definition, err := readStationDefinition(ctx, tx, row.ID)
+		if err != nil {
+			return err
+		}
+		eligible, err := s.eligibleStationTracks(ctx, tx, definition)
+		if err != nil {
+			return err
+		}
+		if len(eligible) == 0 {
+			row.Playing = false
+			row.Position = clamp(current)
+		} else if !containsTrack(eligible, row.TrackID) {
+			if err := s.setTrack(row, eligible[0], now); err != nil {
+				return err
+			}
+		}
+		if err := s.ensureStationRotation(ctx, tx, *row, definition); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("%w: unsupported action", ErrInvalidCommand)
 	}
@@ -779,6 +1296,9 @@ func (s *StationService) enqueueTrack(
 func (s *StationService) nextQueuedOrCatalog(
 	ctx context.Context, tx *sql.Tx, row Station,
 ) (string, error) {
+	if row.Saved {
+		return s.nextStationTrack(ctx, tx, row)
+	}
 	tracks, err := s.queueTracks(ctx, tx, row.ID)
 	if err != nil {
 		return "", err
@@ -790,6 +1310,310 @@ func (s *StationService) nextQueuedOrCatalog(
 		return "", err
 	}
 	return tracks[0], nil
+}
+
+func readStationDefinition(
+	ctx context.Context, q queryer, stationID string,
+) (StationDefinition, error) {
+	var definition StationDefinition
+	var skip int
+	if err := q.QueryRowContext(ctx, `
+select station_id, name, source_type, filter_mode, filter_query, random_mode,
+	skip_disliked, created_at, updated_at
+from station_definitions where station_id=?`, stationID).Scan(
+		&definition.StationID, &definition.Name, &definition.SourceType,
+		&definition.FilterMode, &definition.FilterQuery, &definition.RandomMode,
+		&skip, &definition.CreatedAt, &definition.UpdatedAt,
+	); err != nil {
+		return StationDefinition{}, err
+	}
+	definition.SkipDisliked = skip != 0
+	definition.BuiltIn = stationID == mainStationID
+	rows, err := q.QueryContext(ctx, `
+select track_id from station_tracks where station_id=? order by position`, stationID)
+	if err != nil {
+		return StationDefinition{}, err
+	}
+	defer rows.Close()
+	definition.TrackIDs = make([]string, 0)
+	for rows.Next() {
+		var trackID string
+		if err := rows.Scan(&trackID); err != nil {
+			return StationDefinition{}, err
+		}
+		definition.TrackIDs = append(definition.TrackIDs, trackID)
+	}
+	return definition, rows.Err()
+}
+
+func insertStationDefinition(
+	ctx context.Context, tx *sql.Tx, stationID string, input SavedStationInput,
+	now float64,
+) error {
+	_, err := tx.ExecContext(ctx, `
+insert into station_definitions
+	(station_id, name, source_type, filter_mode, filter_query, random_mode,
+	 skip_disliked, created_at, updated_at)
+values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		stationID, input.Name, input.SourceType, input.FilterMode,
+		input.FilterQuery, input.RandomMode, boolInt(input.SkipDisliked), now, now)
+	return err
+}
+
+func replaceStationTracks(
+	ctx context.Context, tx *sql.Tx, stationID string, tracks []string,
+) error {
+	if len(tracks) > maxCatalogTracks {
+		return fmt.Errorf("%w: station track list is too large", ErrInvalidCommand)
+	}
+	if _, err := tx.ExecContext(ctx,
+		"delete from station_tracks where station_id=?", stationID); err != nil {
+		return err
+	}
+	for position, trackID := range tracks {
+		if _, err := tx.ExecContext(ctx, `
+insert into station_tracks(station_id, position, track_id) values (?, ?, ?)`,
+			stationID, position, trackID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *StationService) eligibleTracksForInput(
+	ctx context.Context, q queryer, input SavedStationInput,
+) ([]string, error) {
+	return s.eligibleStationTracks(ctx, q, StationDefinition{
+		SourceType: input.SourceType, FilterMode: input.FilterMode,
+		FilterQuery: input.FilterQuery, RandomMode: input.RandomMode,
+		SkipDisliked: input.SkipDisliked, TrackIDs: input.TrackIDs,
+	})
+}
+
+func (s *StationService) eligibleStationTracks(
+	ctx context.Context, q queryer, definition StationDefinition,
+) ([]string, error) {
+	liked, disliked := make(map[string]bool), make(map[string]bool)
+	if definition.FilterMode == "liked" || definition.SkipDisliked {
+		rows, err := q.QueryContext(ctx,
+			"select track_id, liked, disliked from likes where liked>0 or disliked>0")
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var trackID string
+			var likeCount, dislikeCount int
+			if err := rows.Scan(&trackID, &likeCount, &dislikeCount); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			liked[trackID], disliked[trackID] = likeCount > 0, dislikeCount > 0
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+	}
+	source := definition.TrackIDs
+	if definition.SourceType == "filter" {
+		source = make([]string, 0, len(s.catalog.Tracks))
+		for _, track := range s.catalog.Tracks {
+			source = append(source, track.ID)
+		}
+	}
+	newest := time.Time{}
+	if definition.SourceType == "filter" && definition.FilterMode == "recent" {
+		for _, track := range s.catalog.Tracks {
+			if parsed := parseCatalogTime(track.CreatedAt); parsed.After(newest) {
+				newest = parsed
+			}
+		}
+	}
+	query := strings.ToLower(definition.FilterQuery)
+	eligible := make([]string, 0, len(source))
+	for _, trackID := range source {
+		track := s.catalog.ByID[trackID]
+		if track == nil || (definition.SkipDisliked && disliked[trackID]) {
+			continue
+		}
+		switch definition.FilterMode {
+		case "liked":
+			if !liked[trackID] {
+				continue
+			}
+		case "covers":
+			if !track.HasCover {
+				continue
+			}
+		case "recent":
+			created := parseCatalogTime(track.CreatedAt)
+			if newest.IsZero() || created.IsZero() ||
+				created.Before(newest.AddDate(0, 0, -180)) {
+				continue
+			}
+		}
+		if query != "" {
+			search := strings.ToLower(strings.Join([]string{
+				track.Title, track.Artist, track.Source, track.Group,
+				track.Summary, track.SearchText,
+			}, " "))
+			if !strings.Contains(search, query) {
+				continue
+			}
+		}
+		eligible = append(eligible, trackID)
+	}
+	return eligible, nil
+}
+
+func parseCatalogTime(value string) time.Time {
+	for _, layout := range []string{
+		time.RFC3339Nano, time.RFC3339, "2006-01-02",
+	} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
+}
+
+func containsTrack(tracks []string, trackID string) bool {
+	for _, candidate := range tracks {
+		if candidate == trackID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *StationService) stationRotationTracks(
+	ctx context.Context, q queryer, stationID string, limit int,
+) ([]string, int, error) {
+	var remaining int
+	if err := q.QueryRowContext(ctx,
+		"select count(*) from station_rotation where station_id=?", stationID).
+		Scan(&remaining); err != nil {
+		return nil, 0, err
+	}
+	query := "select track_id from station_rotation where station_id=? order by position"
+	args := []any{stationID}
+	if limit > 0 {
+		query += " limit ?"
+		args = append(args, limit)
+	}
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	tracks := make([]string, 0, min(remaining, max(0, limit)))
+	for rows.Next() {
+		var trackID string
+		if err := rows.Scan(&trackID); err != nil {
+			return nil, 0, err
+		}
+		tracks = append(tracks, trackID)
+	}
+	return tracks, remaining, rows.Err()
+}
+
+func (s *StationService) replaceStationRotation(
+	ctx context.Context, tx *sql.Tx, stationID string, tracks []string,
+) error {
+	if len(tracks) > maxCatalogTracks {
+		return errors.New("station rotation exceeds catalog capacity")
+	}
+	if _, err := tx.ExecContext(ctx,
+		"delete from station_rotation where station_id=?", stationID); err != nil {
+		return err
+	}
+	for position, trackID := range tracks {
+		if _, err := tx.ExecContext(ctx, `
+insert into station_rotation(station_id, position, track_id) values (?, ?, ?)`,
+			stationID, position, trackID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *StationService) shuffledStationTracks(tracks []string) []string {
+	shuffled := append([]string(nil), tracks...)
+	for index := len(shuffled) - 1; index > 0; index-- {
+		swap := s.randomIndex(index + 1)
+		shuffled[index], shuffled[swap] = shuffled[swap], shuffled[index]
+	}
+	return shuffled
+}
+
+func (s *StationService) ensureStationRotation(
+	ctx context.Context, tx *sql.Tx, row Station, definition StationDefinition,
+) error {
+	if definition.RandomMode != "deck" {
+		return s.replaceStationRotation(ctx, tx, row.ID, nil)
+	}
+	rotation, _, err := s.stationRotationTracks(ctx, tx, row.ID, 0)
+	if err != nil {
+		return err
+	}
+	eligible, err := s.eligibleStationTracks(ctx, tx, definition)
+	if err != nil {
+		return err
+	}
+	allowed := make(map[string]bool, len(eligible))
+	for _, trackID := range eligible {
+		allowed[trackID] = true
+	}
+	filtered := make([]string, 0, len(rotation))
+	for _, trackID := range rotation {
+		if allowed[trackID] && trackID != row.TrackID {
+			filtered = append(filtered, trackID)
+		}
+	}
+	if len(filtered) == 0 {
+		for _, trackID := range eligible {
+			if trackID != row.TrackID {
+				filtered = append(filtered, trackID)
+			}
+		}
+		filtered = s.shuffledStationTracks(filtered)
+	}
+	return s.replaceStationRotation(ctx, tx, row.ID, filtered)
+}
+
+func (s *StationService) nextStationTrack(
+	ctx context.Context, tx *sql.Tx, row Station,
+) (string, error) {
+	definition, err := readStationDefinition(ctx, tx, row.ID)
+	if err != nil {
+		return "", err
+	}
+	eligible, err := s.eligibleStationTracks(ctx, tx, definition)
+	if err != nil {
+		return "", err
+	}
+	if len(eligible) == 0 {
+		return row.TrackID, nil
+	}
+	if definition.RandomMode == "true_random" {
+		if err := s.replaceStationRotation(ctx, tx, row.ID, nil); err != nil {
+			return "", err
+		}
+		return eligible[s.randomIndex(len(eligible))], nil
+	}
+	if err := s.ensureStationRotation(ctx, tx, row, definition); err != nil {
+		return "", err
+	}
+	rotation, _, err := s.stationRotationTracks(ctx, tx, row.ID, 0)
+	if err != nil {
+		return "", err
+	}
+	if len(rotation) == 0 {
+		return row.TrackID, nil
+	}
+	if err := s.replaceStationRotation(ctx, tx, row.ID, rotation[1:]); err != nil {
+		return "", err
+	}
+	return rotation[0], nil
 }
 
 func (s *StationService) changeTrack(ctx context.Context, tx *sql.Tx, row *Station, trackID string, now float64) error {
@@ -812,7 +1636,7 @@ func (s *StationService) setTrack(row *Station, trackID string, now float64) err
 func (s *StationService) recordEarly(ctx context.Context, tx *sql.Tx, row Station, now float64) error {
 	duration := s.duration(row.TrackID)
 	elapsed := stationPosition(row, now, duration)
-	if row.ID != mainStationID || elapsed >= duration || elapsed > earlySkipSeconds {
+	if !row.Saved || elapsed >= duration || elapsed > earlySkipSeconds {
 		return nil
 	}
 	result, err := tx.ExecContext(ctx, `
@@ -900,7 +1724,7 @@ select
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{
+	snapshot := Snapshot{
 		StationID: row.ID, CatalogRevision: s.catalog.Revision,
 		Kind: row.Kind, TrackID: row.TrackID,
 		Position: stationPosition(row, now, s.duration(row.TrackID)), Playing: row.Playing,
@@ -909,8 +1733,36 @@ select
 		Liked: liked != 0, Disliked: disliked != 0,
 		LikeCount: liked, DislikeCount: disliked,
 		SkipCount: skipCount, ExpiresAt: row.ExpiresAt, Revision: row.Revision,
-		Queue: queue,
-	}, nil
+		Queue: queue, Saved: row.Saved,
+	}
+	if row.Saved {
+		snapshot.ExpiresAt = nil
+	}
+	if row.Saved {
+		definition, err := readStationDefinition(ctx, q, row.ID)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		eligible, err := s.eligibleStationTracks(ctx, q, definition)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		upNext, remaining, err := s.stationRotationTracks(
+			ctx, q, row.ID, stationUpcomingPreview)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		snapshot.StationName = definition.Name
+		snapshot.SourceType = definition.SourceType
+		snapshot.FilterMode = definition.FilterMode
+		snapshot.FilterQuery = definition.FilterQuery
+		snapshot.RandomMode = definition.RandomMode
+		snapshot.SkipDisliked = definition.SkipDisliked
+		snapshot.UpNext = upNext
+		snapshot.Remaining = remaining
+		snapshot.Eligible = len(eligible)
+	}
+	return snapshot, nil
 }
 
 func stationPosition(row Station, now, duration float64) float64 {

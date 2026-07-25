@@ -286,6 +286,9 @@ func hostName(host string) string {
 }
 
 func writeRateRule(path string) (rateRule, bool) {
+	if strings.HasPrefix(path, "/api/stations/") {
+		return rateRule{limit: 120, window: time.Minute}, true
+	}
 	switch path {
 	case "/api/stations":
 		return rateRule{limit: 20, window: time.Hour}, true

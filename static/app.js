@@ -27,6 +27,7 @@ const state = {
   invalidStationLink: false,
   stationCapacityRetryAt: 0,
   stationCreatePending: false,
+  stations: [],
   renderedPath: "",
   syncedLyrics: null,
   activeLyricCue: -1,
@@ -83,6 +84,7 @@ const els = {
   toggleDetails: document.getElementById("toggleDetails"),
   toast: document.getElementById("toast"),
   stationMode: document.getElementById("stationMode"),
+  stationSelect: document.getElementById("stationSelect"),
   stationAccess: document.getElementById("stationAccess"),
   mainStation: document.getElementById("mainStation"),
   shareStation: document.getElementById("shareStation"),
@@ -100,6 +102,16 @@ const els = {
   radioRetry: document.getElementById("radioRetry"),
   radioQueue: document.getElementById("radioQueue"),
   radioQueueSummary: document.getElementById("radioQueueSummary"),
+  radioQueueTracks: document.getElementById("radioQueueTracks"),
+  radioProgramming: document.getElementById("radioProgramming"),
+  stationRandomMode: document.getElementById("stationRandomMode"),
+  stationSkipDisliked: document.getElementById("stationSkipDisliked"),
+  addCurrentToStation: document.getElementById("addCurrentToStation"),
+  addToStationDialog: document.getElementById("addToStationDialog"),
+  addToStationTrack: document.getElementById("addToStationTrack"),
+  addToStationSelect: document.getElementById("addToStationSelect"),
+  addToStationStatus: document.getElementById("addToStationStatus"),
+  confirmAddToStation: document.getElementById("confirmAddToStation"),
 };
 
 let toastTimer;
@@ -694,6 +706,100 @@ function stationQuery() {
   return params.toString();
 }
 
+function stationDefinition(stationId = state.stationId) {
+  return state.stations.find((station) => station.station_id === stationId);
+}
+
+function ownedSavedStations() {
+  return state.stations.filter(
+    (station) =>
+      !station.built_in &&
+      Boolean(
+        window.ZakStorage.get(`zak-radio-owner:${station.station_id}`, ""),
+      ),
+  );
+}
+
+async function loadStations() {
+  const result = await api("/api/stations");
+  state.stations = Array.isArray(result.stations) ? result.stations : [];
+  renderStationPicker();
+  window.dispatchEvent(
+    new CustomEvent("zak-stations", { detail: state.stations }),
+  );
+  return state.stations;
+}
+
+function renderStationPicker() {
+  if (!els.stationSelect) return;
+  const stations = state.stations.length
+    ? state.stations
+    : [{ station_id: "main", name: "All songs", built_in: true }];
+  els.stationSelect.replaceChildren(
+    ...stations.map((station) => {
+      const option = document.createElement("option");
+      option.value = station.station_id;
+      option.textContent = station.name;
+      return option;
+    }),
+  );
+  if (stations.some((station) => station.station_id === state.stationId)) {
+    els.stationSelect.value = state.stationId;
+  }
+}
+
+async function updateSavedStation(stationId, changes) {
+  const ownerToken = window.ZakStorage.get(
+    `zak-radio-owner:${stationId}`,
+    "",
+  );
+  if (!ownerToken) throw new Error("This station is listen-only.");
+  const result = await api(
+    `/api/stations/${encodeURIComponent(stationId)}`,
+    {
+      method: "PATCH",
+      body: { owner_token: ownerToken, ...changes },
+    },
+  );
+  await loadStations();
+  return result.station;
+}
+
+let addToStationTrack = null;
+
+function openAddToStation(track) {
+  const stations = ownedSavedStations().filter(
+    (station) => station.source_type === "list",
+  );
+  if (!stations.length) {
+    showToast("Create a list station in Library first.");
+    navigate("/library");
+    window.dispatchEvent(new CustomEvent("zak-new-list-station"));
+    return false;
+  }
+  addToStationTrack = track;
+  els.addToStationTrack.textContent = window.ZakTrackDisplayTitle(track);
+  els.addToStationStatus.textContent = "";
+  els.addToStationSelect.replaceChildren(
+    ...stations.map((station) => {
+      const option = document.createElement("option");
+      option.value = station.station_id;
+      option.textContent = station.name;
+      return option;
+    }),
+  );
+  els.addToStationDialog.showModal();
+  return true;
+}
+
+window.ZakStations = {
+  list: () => state.stations.map((station) => ({ ...station })),
+  owned: () => ownedSavedStations().map((station) => ({ ...station })),
+  reload: loadStations,
+  update: updateSavedStation,
+  addTrack: openAddToStation,
+};
+
 function canControlStation() {
   return (
     Boolean(state.station) &&
@@ -702,13 +808,18 @@ function canControlStation() {
 }
 
 function stationView() {
-  const temporary = state.stationId !== "main";
+  const saved = Boolean(state.station?.saved);
+  const definition = stationDefinition();
   return {
     stationId: state.stationId,
-    kind: temporary ? "private" : "shared",
-    label: temporary ? "your private station" : "the shared station",
+    kind: saved ? "radio" : "private",
+    label:
+      definition?.name ||
+      state.station?.station_name ||
+      (saved ? "All songs" : "your private station"),
     canControl: canControlStation(),
-    supportsQueue: temporary,
+    supportsQueue: !saved,
+    saved,
     queue: Array.isArray(state.station?.queue) ? [...state.station.queue] : [],
   };
 }
@@ -789,10 +900,10 @@ function setStationLoading() {
 }
 
 function renderStationIdentityActions() {
-  const temporary = state.stationId !== "main";
-  els.mainStation.hidden = !temporary;
-  els.shareStation.hidden = !temporary;
-  els.createStation.hidden = temporary;
+  const custom = state.stationId !== "main";
+  els.mainStation.hidden = !custom;
+  els.shareStation.hidden = !custom;
+  els.createStation.hidden = false;
 }
 
 function focusAfterStationAction(preferred) {
@@ -874,6 +985,10 @@ async function loadTrackTextKind(track, kind, element) {
     const value = await fetchText(track, kind);
     if (state.current?.id !== track.id) return;
     element.textContent = value.trim() || `No ${kind} found.`;
+    if (kind === "lyrics" && track.lyrics_quality_status === "warning") {
+      els.lyricsSyncStatus.textContent =
+        "Auto-generated lyrics · timing may be off";
+    }
   } catch {
     if (state.current?.id !== track.id) return;
     const retry = document.createElement("button");
@@ -909,33 +1024,11 @@ function renderTimedLyrics(timedLyrics) {
   els.lyricsMoreRow.hidden = true;
   els.toggleLyrics.hidden = true;
   els.lyricsFollow.hidden = true;
-  const coverage = Math.round(
-    Number(timedLyrics.quality?.line_coverage || 0) * 100,
-  );
-  els.lyricsSyncStatus.textContent =
-    coverage >= 100
-      ? "Following the song"
-      : `Following the song · ${coverage}% of written lines matched`;
+  els.lyricsSyncStatus.textContent = syncedLyricsStatus(timedLyrics);
 
   const root = document.createElement("div");
   root.className = "synced-lyrics";
-  let section = null;
-  let sectionBody = root;
   timedLyrics.cues.forEach((cue, index) => {
-    const nextSection = String(cue.section || "");
-    if (nextSection !== section) {
-      section = nextSection;
-      const group = document.createElement("section");
-      group.className = "synced-lyrics-section";
-      if (section) {
-        const heading = document.createElement("h4");
-        heading.className = "synced-lyrics-heading";
-        heading.textContent = section;
-        group.append(heading);
-      }
-      root.append(group);
-      sectionBody = group;
-    }
     const line = document.createElement("button");
     line.type = "button";
     line.className = "synced-lyric-cue";
@@ -957,10 +1050,22 @@ function renderTimedLyrics(timedLyrics) {
       }
       postControl("seek", { position: Number(cue.start || 0) });
     });
-    sectionBody.append(line);
+    root.append(line);
   });
   els.lyrics.replaceChildren(root);
   updateSyncedLyrics();
+}
+
+function syncedLyricsStatus(timedLyrics) {
+  if (timedLyrics?.quality?.status === "warning") {
+    return "Auto-generated lyrics · timing may be off";
+  }
+  const coverage = Math.round(
+    Number(timedLyrics?.quality?.line_coverage || 0) * 100,
+  );
+  return coverage >= 100
+    ? "Following the song"
+    : `Following the song · ${coverage}% of written lines matched`;
 }
 
 function lyricCueAt(position) {
@@ -1093,6 +1198,7 @@ function renderStation() {
   const station = state.station;
   if (!track || !station) return;
   const playing = Boolean(station.playing);
+  const emptyRadio = Boolean(station.saved) && Number(station.eligible || 0) === 0;
   const repeatOne = Boolean(station.repeat_one);
   const shuffle = Boolean(station.shuffle);
   const needsLocalJoin =
@@ -1100,7 +1206,9 @@ function renderStation() {
     (!audioController.is("radio") ||
       els.audio.paused ||
       state.localRadioSuspended);
-  els.stationStatus.textContent = needsLocalJoin
+  els.stationStatus.textContent = emptyRadio
+    ? "No songs match this station"
+    : needsLocalJoin
     ? "Live now · tap Join live to hear"
     : playing
       ? "Live now"
@@ -1131,20 +1239,46 @@ function renderStation() {
   const skips = Number(station.skip_count || 0);
   els.skipCount.textContent = `${skips} early ${skips === 1 ? "skip" : "skips"}`;
   const queue = Array.isArray(station.queue) ? station.queue : [];
-  const nextTrack = state.tracks.find((item) => item.id === queue[0]);
-  els.radioQueueSummary.textContent = queue.length
-    ? `${nextTrack ? trackDisplayTitle(nextTrack) : "A queued track"} is next${queue.length > 1 ? ` · ${queue.length} total` : ""}.`
-    : "The station queue is empty.";
-  const temporary = state.stationId !== "main";
+  const radio = Boolean(station.saved);
+  const nextIDs = radio
+    ? Array.isArray(station.up_next)
+      ? station.up_next
+      : []
+    : queue;
+  const nextTrack = state.tracks.find((item) => item.id === nextIDs[0]);
+  if (radio && station.random_mode === "true_random") {
+    els.radioQueueSummary.textContent = `${Number(station.eligible || 0)} songs in the pool. Every pick is independent, so repeats can happen.`;
+  } else if (radio) {
+    els.radioQueueSummary.textContent = nextIDs.length
+      ? `${nextTrack ? trackDisplayTitle(nextTrack) : "A song"} is next · ${Number(station.remaining || nextIDs.length)} left before reshuffle.`
+      : "The shuffled list will refill on the next song.";
+  } else {
+    els.radioQueueSummary.textContent = queue.length
+      ? `${nextTrack ? trackDisplayTitle(nextTrack) : "A queued track"} is next${queue.length > 1 ? ` · ${queue.length} total` : ""}.`
+      : "The private queue is empty.";
+  }
+  els.radioQueueTracks.replaceChildren(
+    ...nextIDs.slice(0, 8).map((trackID) => {
+      const item = document.createElement("li");
+      const queuedTrack = state.tracks.find((track) => track.id === trackID);
+      item.textContent = queuedTrack
+        ? trackDisplayTitle(queuedTrack)
+        : "Unknown song";
+      return item;
+    }),
+  );
+  const temporary = !radio;
   const canControl = canControlStation();
-  els.stationMode.textContent = temporary
-    ? "Private station"
-    : "Shared station";
+  els.stationMode.textContent = radio
+    ? station.station_name || stationDefinition()?.name || "Radio station"
+    : "Private queue";
   els.stationAccess.textContent = temporary
     ? canControl
       ? "Only this browser can turn this dial. The share link is listen-only."
       : "Listen-only. The creator controls this dial."
-    : "Always random. Everyone can react or skip to the next song.";
+    : canControl
+      ? "A persistent radio station. Changes to its programming are saved."
+      : "Listen-only. The station owner controls its programming.";
   els.footerShortcut.textContent = temporary
     ? "Space play · ←/→ seek"
     : "Space play · live radio";
@@ -1155,9 +1289,16 @@ function renderStation() {
   els.forward10.hidden = !temporary;
   els.repeatOne.hidden = !temporary;
   els.stationProgress.hidden = !temporary;
-  els.radioQueue.hidden = !temporary;
+  els.radioQueue.hidden = false;
   els.skipCount.hidden = !temporary;
   els.transport.classList.toggle("is-radio", !temporary);
+  els.radioProgramming.hidden = !radio;
+  els.addCurrentToStation.hidden = !radio;
+  els.stationRandomMode.value = station.random_mode || "deck";
+  els.stationRandomMode.disabled = !canControl;
+  els.stationSkipDisliked.checked = Boolean(station.skip_disliked);
+  els.stationSkipDisliked.disabled = !canControl;
+  els.stationSelect.value = state.stationId;
   els.lyrics.querySelectorAll(".synced-lyric-cue").forEach((cue) => {
     cue.disabled = !temporary || !canControl;
   });
@@ -1176,6 +1317,10 @@ function renderStation() {
   const canPauseLocally =
     playing && audioController.is("radio") && !els.audio.paused;
   els.playPause.disabled = !canControl && !needsLocalJoin && !canPauseLocally;
+  if (emptyRadio) {
+    els.playPause.disabled = true;
+    els.next.disabled = true;
+  }
   els.like.disabled = false;
   els.dislike.disabled = false;
   els.createStation.disabled =
@@ -1466,7 +1611,7 @@ async function refreshStation(force = false, required = false) {
       window.clearTimeout(state.eventReconnectTimer);
       state.eventReconnectTimer = window.setTimeout(connectStationEvents, 500);
       if (error.status === 404 && state.stationId !== "main") {
-        showToast("That temporary station expired.", {
+        showToast("That station is no longer available.", {
           priority: 10,
           duration: 4000,
         });
@@ -1517,7 +1662,7 @@ function connectStationEvents() {
   });
   source.addEventListener("expired", async () => {
     if (source !== state.eventSource) return;
-    showToast("That temporary station expired.", {
+    showToast("That station is no longer available.", {
       priority: 10,
       duration: 4000,
     });
@@ -1631,92 +1776,6 @@ async function switchStation(stationId, ownerToken) {
     setStationUnavailable("Station unavailable");
   }
   return loaded;
-}
-
-async function createTemporaryStation() {
-  if (state.stationCreatePending) return;
-  const restoreFocus = document.activeElement === els.createStation;
-  state.stationCreatePending = true;
-  els.createStation.disabled = true;
-  let focusTarget = els.createStation;
-  try {
-    let attempt;
-    try {
-      attempt = JSON.parse(
-        window.ZakStorage.get("zak-radio-create-attempt", "null"),
-      );
-    } catch {}
-    if (!attempt?.idempotency_key || !attempt?.owner_token) {
-      attempt = {
-        idempotency_key: randomBrowserHex(16),
-        owner_token: randomBrowserHex(24),
-      };
-      window.ZakStorage.set(
-        "zak-radio-create-attempt",
-        JSON.stringify(attempt),
-      );
-    }
-    const created = await api("/api/stations", {
-      method: "POST",
-      body: {
-        track_id: currentTrack()?.id || state.tracks[0]?.id,
-        idempotency_key: attempt.idempotency_key,
-        owner_token: attempt.owner_token,
-      },
-    });
-    window.ZakStorage.remove("zak-radio-create-attempt");
-    const ownerPersisted = window.ZakStorage.set(
-      `zak-radio-owner:${created.station_id}`,
-      created.owner_token,
-    );
-    const loaded = await switchStation(created.station_id, created.owner_token);
-    if (loaded) {
-      focusTarget = els.mainStation;
-      showToast(
-        ownerPersisted
-          ? "Private station created for 24 hours."
-          : "Private station created. This browser cannot save ownership after reload.",
-        {
-          priority: ownerPersisted ? 0 : 10,
-          duration: ownerPersisted ? 2200 : 5000,
-        },
-      );
-    } else {
-      showToast(
-        "Private station created, but its state could not be loaded. Retry the station.",
-        { priority: 10, duration: 5000 },
-      );
-    }
-  } catch (error) {
-    if (error.status === 429 && /capacity/i.test(error.detail || "")) {
-      state.stationCapacityRetryAt = performance.now() + 5000;
-      els.createStation.disabled = true;
-      window.setTimeout(() => {
-        if (performance.now() >= state.stationCapacityRetryAt) renderStation();
-      }, 5100);
-      showToast(
-        "All private-station slots are in use. Try again after one expires.",
-        { priority: 10, duration: 5000 },
-      );
-      focusTarget = els.stationMode;
-    } else {
-      if (error.status === 400)
-        window.ZakStorage.remove("zak-radio-create-attempt");
-      showToast("Couldn’t create a private station.");
-    }
-  } finally {
-    state.stationCreatePending = false;
-    if (state.station) renderStation();
-    if (restoreFocus) focusAfterStationAction(focusTarget);
-  }
-}
-
-function randomBrowserHex(bytes) {
-  const values = new Uint8Array(bytes);
-  crypto.getRandomValues(values);
-  return Array.from(values, (value) =>
-    value.toString(16).padStart(2, "0"),
-  ).join("");
 }
 
 async function copyStationLink() {
@@ -1871,6 +1930,7 @@ async function boot(forceCatalog = false) {
       : window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
   try {
     await loadCatalog(forceCatalog);
+    await loadStations();
   } catch (error) {
     els.shellContext.textContent = "Library unavailable";
     setConnected(false);
@@ -1931,13 +1991,7 @@ els.toggleLyrics.addEventListener("click", () => {
 els.lyricsFollow.addEventListener("click", () => {
   state.lyricFollowPausedUntil = 0;
   els.lyricsFollow.hidden = true;
-  const coverage = Math.round(
-    Number(state.syncedLyrics?.quality?.line_coverage || 0) * 100,
-  );
-  els.lyricsSyncStatus.textContent =
-    coverage >= 100
-      ? "Following the song"
-      : `Following the song · ${coverage}% of written lines matched`;
+  els.lyricsSyncStatus.textContent = syncedLyricsStatus(state.syncedLyrics);
   state.activeLyricCue = -1;
   updateSyncedLyrics();
 });
@@ -1953,7 +2007,49 @@ if ("ResizeObserver" in window) {
 } else {
   window.addEventListener("resize", updateLyricsOverflow);
 }
-els.createStation.addEventListener("click", createTemporaryStation);
+els.createStation.addEventListener("click", () => {
+  navigate("/library");
+  window.dispatchEvent(new CustomEvent("zak-new-station"));
+});
+els.stationSelect.addEventListener("change", async () => {
+  const stationId = els.stationSelect.value;
+  const ownerToken =
+    stationId === "main"
+      ? ""
+      : window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
+  await switchStation(stationId, ownerToken);
+});
+els.stationRandomMode.addEventListener("change", () =>
+  postControl("set_station_random_mode", {
+    random_mode: els.stationRandomMode.value,
+  }),
+);
+els.stationSkipDisliked.addEventListener("change", () =>
+  postControl("set_station_skip_disliked", {
+    skip_disliked: els.stationSkipDisliked.checked,
+  }),
+);
+els.addCurrentToStation.addEventListener("click", () => {
+  const track = currentTrack();
+  if (track) openAddToStation(track);
+});
+els.confirmAddToStation.addEventListener("click", async () => {
+  if (!addToStationTrack || !els.addToStationSelect.value) return;
+  els.confirmAddToStation.disabled = true;
+  els.addToStationStatus.textContent = "Adding…";
+  try {
+    await updateSavedStation(els.addToStationSelect.value, {
+      add_track_id: addToStationTrack.id,
+    });
+    els.addToStationDialog.close();
+    showToast("Song added to station.");
+  } catch (error) {
+    els.addToStationStatus.textContent =
+      error.detail || error.message || "Couldn’t update the station.";
+  } finally {
+    els.confirmAddToStation.disabled = false;
+  }
+});
 els.mainStation.addEventListener("click", async () => {
   const restoreFocus = document.activeElement === els.mainStation;
   await switchStation("main", "");

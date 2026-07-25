@@ -15,24 +15,30 @@ const (
 	maxTimedLyricWords  = 500
 	maxTimedLyricText   = 4096
 	maxTimedSectionText = 160
+	maxTimedDisplayText = 1 << 20
 )
 
 type TimedLyrics struct {
-	Version     int                `json:"version"`
-	TrackID     string             `json:"track_id"`
-	AudioSHA256 string             `json:"audio_sha256"`
-	Duration    float64            `json:"duration"`
-	Language    string             `json:"language,omitempty"`
-	Generator   map[string]any     `json:"generator,omitempty"`
-	Quality     TimedLyricsQuality `json:"quality"`
-	Cues        []TimedLyricCue    `json:"cues"`
+	Version      int                `json:"version"`
+	TrackID      string             `json:"track_id"`
+	AudioSHA256  string             `json:"audio_sha256"`
+	Duration     float64            `json:"duration"`
+	Language     string             `json:"language,omitempty"`
+	DisplayText  string             `json:"display_text,omitempty"`
+	Origin       string             `json:"origin,omitempty"`
+	SourceSHA256 string             `json:"source_lyrics_sha256,omitempty"`
+	Generator    map[string]any     `json:"generator,omitempty"`
+	Quality      TimedLyricsQuality `json:"quality"`
+	Cues         []TimedLyricCue    `json:"cues"`
 }
 
 type TimedLyricsQuality struct {
+	Status         string   `json:"status,omitempty"`
 	CandidateLines int      `json:"candidate_lines"`
 	AlignedLines   int      `json:"aligned_lines"`
 	LineCoverage   float64  `json:"line_coverage"`
 	WordCoverage   float64  `json:"word_coverage"`
+	TimingCoverage float64  `json:"timing_coverage,omitempty"`
 	MeanConfidence float64  `json:"mean_confidence"`
 	Warnings       []string `json:"warnings,omitempty"`
 }
@@ -81,8 +87,8 @@ func validateTimedLyrics(
 	trackID, audioSHA256 string,
 	duration float64,
 ) error {
-	if lyrics.Version != 1 {
-		return fmt.Errorf("timed lyrics version is %d, want 1", lyrics.Version)
+	if lyrics.Version != 1 && lyrics.Version != 2 {
+		return fmt.Errorf("timed lyrics version is %d, want 1 or 2", lyrics.Version)
 	}
 	if lyrics.TrackID != trackID {
 		return fmt.Errorf("timed lyrics track_id does not match catalog")
@@ -93,13 +99,33 @@ func validateTimedLyrics(
 	if !finiteNumber(lyrics.Duration) || math.Abs(lyrics.Duration-duration) > 0.5 {
 		return fmt.Errorf("timed lyrics duration does not match catalog")
 	}
-	if len(lyrics.Cues) == 0 || len(lyrics.Cues) > maxTimedLyricCues {
+	if len(lyrics.Cues) > maxTimedLyricCues ||
+		(lyrics.Version == 1 && len(lyrics.Cues) == 0) {
 		return fmt.Errorf("timed lyrics cue count is outside the supported range")
+	}
+	if lyrics.Version == 2 {
+		if lyrics.DisplayText == "" || len(lyrics.DisplayText) > maxTimedDisplayText {
+			return fmt.Errorf("timed lyrics display_text is invalid")
+		}
+		if lyrics.Origin != "provided" && lyrics.Origin != "reconciled" &&
+			lyrics.Origin != "transcribed" {
+			return fmt.Errorf("timed lyrics origin is invalid")
+		}
+		if lyrics.Quality.Status != "verified" && lyrics.Quality.Status != "warning" {
+			return fmt.Errorf("timed lyrics quality status is invalid")
+		}
+		if lyrics.Quality.Status == "verified" && len(lyrics.Cues) == 0 {
+			return fmt.Errorf("verified timed lyrics must contain cues")
+		}
+		if lyrics.SourceSHA256 != "" && !sha256Pattern.MatchString(lyrics.SourceSHA256) {
+			return fmt.Errorf("timed lyrics source_lyrics_sha256 is invalid")
+		}
 	}
 	if lyrics.Quality.CandidateLines < len(lyrics.Cues) ||
 		lyrics.Quality.AlignedLines != len(lyrics.Cues) ||
 		!unitInterval(lyrics.Quality.LineCoverage) ||
 		!unitInterval(lyrics.Quality.WordCoverage) ||
+		(lyrics.Version == 2 && !unitInterval(lyrics.Quality.TimingCoverage)) ||
 		!unitInterval(lyrics.Quality.MeanConfidence) {
 		return fmt.Errorf("timed lyrics quality summary is invalid")
 	}
@@ -108,6 +134,9 @@ func validateTimedLyrics(
 		if cue.Text == "" || len(cue.Text) > maxTimedLyricText ||
 			len(cue.Section) > maxTimedSectionText {
 			return fmt.Errorf("timed lyric cue %d has invalid text", cueIndex)
+		}
+		if lyrics.Version == 2 && cue.Section != "" {
+			return fmt.Errorf("timed lyric cue %d exposes a section label", cueIndex)
 		}
 		if !finiteNumber(cue.Start) || !finiteNumber(cue.End) ||
 			cue.Start < 0 || cue.End <= cue.Start ||

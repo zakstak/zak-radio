@@ -349,7 +349,10 @@ func validateCanonicalSchema(ctx context.Context, db *sql.DB) error {
 		"reader_segments":       {"id", "item_id", "segment_index", "heading_path", "kind", "text", "char_start", "char_end", "audio_path", "duration", "audio_bytes", "status", "audio_sha256"},
 		"skip_counts":           {"track_id", "skip_count"},
 		"station_creation_keys": {"key_hash", "station_id", "owner_hash", "created_at"},
+		"station_definitions":   {"station_id", "name", "source_type", "filter_mode", "filter_query", "random_mode", "skip_disliked", "created_at", "updated_at"},
 		"station_queue":         {"station_id", "position", "track_id"},
+		"station_rotation":      {"station_id", "position", "track_id"},
+		"station_tracks":        {"station_id", "position", "track_id"},
 		"stations":              {"id", "kind", "owner_hash", "track_id", "position", "playing", "repeat_one", "shuffle", "created_at", "updated_at", "track_changed_at", "expires_at", "revision", "creator_bucket"},
 	}
 	expectedTableSQL := map[string]string{
@@ -403,11 +406,39 @@ func validateCanonicalSchema(ctx context.Context, db *sql.DB) error {
 				check(length(owner_hash)=64 and owner_hash not glob '*[^0-9a-f]*'),
 			created_at real not null
 		)`,
+		"station_definitions": `create table station_definitions (
+			station_id text primary key references stations(id) on delete cascade,
+			name text not null check(length(name) between 1 and 80),
+			source_type text not null check(source_type in ('filter', 'list')),
+			filter_mode text not null default 'all'
+				check(filter_mode in ('all', 'liked', 'covers', 'recent')),
+			filter_query text not null default '' check(length(filter_query)<=160),
+			random_mode text not null default 'deck'
+				check(random_mode in ('true_random', 'deck')),
+			skip_disliked integer not null default 0 check(skip_disliked in (0,1)),
+			created_at real not null,
+			updated_at real not null,
+			check(source_type='filter' or (filter_mode='all' and filter_query=''))
+		)`,
 		"station_queue": `create table station_queue (
 			station_id text not null references stations(id) on delete cascade,
 			position integer not null check(position between 0 and 99),
 			track_id text not null,
 			primary key(station_id, position)
+		)`,
+		"station_rotation": `create table station_rotation (
+			station_id text not null references station_definitions(station_id) on delete cascade,
+			position integer not null check(position between 0 and 4999),
+			track_id text not null,
+			primary key(station_id, position),
+			unique(station_id, track_id)
+		)`,
+		"station_tracks": `create table station_tracks (
+			station_id text not null references station_definitions(station_id) on delete cascade,
+			position integer not null check(position between 0 and 4999),
+			track_id text not null,
+			primary key(station_id, position),
+			unique(station_id, track_id)
 		)`,
 		"stations": `create table stations (
 			id text primary key,

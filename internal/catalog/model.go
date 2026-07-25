@@ -52,6 +52,8 @@ type Track struct {
 	TimedLyricsBundled bool   `json:"-"`
 	TimedLyricsSHA256  string `json:"lyrics_timing_sha256,omitempty"`
 	HasSyncedLyrics    bool   `json:"has_synced_lyrics,omitempty"`
+	LyricsQuality      string `json:"lyrics_quality_status,omitempty"`
+	CleanLyrics        string `json:"-"`
 	PromptPath         string `json:"-"`
 	Liked              bool   `json:"liked,omitempty"`
 	Disliked           bool   `json:"disliked,omitempty"`

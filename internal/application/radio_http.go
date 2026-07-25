@@ -222,15 +222,40 @@ func (a *App) apiStation(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) createStation(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		TrackID        string `json:"track_id"`
-		IdempotencyKey string `json:"idempotency_key"`
-		OwnerToken     string `json:"owner_token"`
+		TrackID        string   `json:"track_id"`
+		IdempotencyKey string   `json:"idempotency_key"`
+		OwnerToken     string   `json:"owner_token"`
+		Name           string   `json:"name"`
+		SourceType     string   `json:"source_type"`
+		FilterMode     string   `json:"filter_mode"`
+		FilterQuery    string   `json:"filter_query"`
+		RandomMode     string   `json:"random_mode"`
+		SkipDisliked   bool     `json:"skip_disliked"`
+		TrackIDs       []string `json:"track_ids"`
 	}
 	if !decodeJSON(w, r, &request, true) {
 		return
 	}
 	creator := tokenHash(clientAddressWithPrefix(
 		r, a.cfg.TrustedProxies, a.cfg.ClientIPv6Prefix))
+	if request.Name != "" || request.SourceType != "" {
+		definition, token, err := a.station.CreateSavedIdempotent(
+			r.Context(), SavedStationInput{
+				Name: request.Name, SourceType: request.SourceType,
+				FilterMode: request.FilterMode, FilterQuery: request.FilterQuery,
+				RandomMode: request.RandomMode, SkipDisliked: request.SkipDisliked,
+				TrackIDs: request.TrackIDs,
+			}, creator, request.IdempotencyKey, request.OwnerToken)
+		if err != nil {
+			stationError(w, err)
+			return
+		}
+		writeJSONStatus(w, http.StatusCreated, map[string]any{
+			"station": definition, "station_id": definition.StationID,
+			"owner_token": token,
+		})
+		return
+	}
 	id, token, expires, err := a.station.CreateIdempotent(
 		r.Context(), request.TrackID, creator, request.IdempotencyKey, request.OwnerToken)
 	if err != nil {
@@ -242,15 +267,79 @@ func (a *App) createStation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *App) listStations(w http.ResponseWriter, r *http.Request) {
+	stations, err := a.station.ListSaved(r.Context())
+	if err != nil {
+		internalError(w)
+		return
+	}
+	writeJSON(w, map[string]any{"stations": stations})
+}
+
+func (a *App) savedStation(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/stations/")
+	if !validStationID(id) || id == mainStationID {
+		http.Error(w, "invalid saved station id", http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodPatch:
+		var request struct {
+			OwnerToken    string    `json:"owner_token"`
+			Name          *string   `json:"name"`
+			SourceType    *string   `json:"source_type"`
+			FilterMode    *string   `json:"filter_mode"`
+			FilterQuery   *string   `json:"filter_query"`
+			RandomMode    *string   `json:"random_mode"`
+			SkipDisliked  *bool     `json:"skip_disliked"`
+			TrackIDs      *[]string `json:"track_ids"`
+			AddTrackID    string    `json:"add_track_id"`
+			RemoveTrackID string    `json:"remove_track_id"`
+		}
+		if !decodeJSON(w, r, &request, false) {
+			return
+		}
+		definition, err := a.station.UpdateSaved(r.Context(), id, request.OwnerToken,
+			SavedStationUpdate{
+				Name: request.Name, SourceType: request.SourceType,
+				FilterMode: request.FilterMode, FilterQuery: request.FilterQuery,
+				RandomMode: request.RandomMode, SkipDisliked: request.SkipDisliked,
+				TrackIDs: request.TrackIDs, AddTrackID: request.AddTrackID,
+				RemoveTrackID: request.RemoveTrackID,
+			})
+		if err != nil {
+			stationError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"station": definition})
+	case http.MethodDelete:
+		var request struct {
+			OwnerToken string `json:"owner_token"`
+		}
+		if !decodeJSON(w, r, &request, false) {
+			return
+		}
+		if err := a.station.DeleteSaved(r.Context(), id, request.OwnerToken); err != nil {
+			stationError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"deleted": true, "station_id": id})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func (a *App) apiControl(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		StationID  string   `json:"station_id"`
-		OwnerToken string   `json:"owner_token"`
-		Action     string   `json:"action"`
-		TrackID    string   `json:"track_id"`
-		Position   *float64 `json:"position"`
-		RepeatOne  *bool    `json:"repeat_one"`
-		Shuffle    *bool    `json:"shuffle"`
+		StationID    string   `json:"station_id"`
+		OwnerToken   string   `json:"owner_token"`
+		Action       string   `json:"action"`
+		TrackID      string   `json:"track_id"`
+		Position     *float64 `json:"position"`
+		RepeatOne    *bool    `json:"repeat_one"`
+		Shuffle      *bool    `json:"shuffle"`
+		RandomMode   string   `json:"random_mode"`
+		SkipDisliked *bool    `json:"skip_disliked"`
 	}
 	if !decodeJSON(w, r, &request, false) {
 		return
@@ -259,6 +348,7 @@ func (a *App) apiControl(w http.ResponseWriter, r *http.Request) {
 		StationID: request.StationID, OwnerToken: request.OwnerToken, Action: request.Action,
 		TrackID: request.TrackID, Position: request.Position,
 		RepeatOne: request.RepeatOne, Shuffle: request.Shuffle,
+		RandomMode: request.RandomMode, SkipDisliked: request.SkipDisliked,
 	})
 	if err != nil {
 		stationError(w, err)
@@ -481,6 +571,16 @@ returning liked, disliked`, column, column, column)
 		internalError(w)
 		return
 	}
+	if request.Reaction == "dislike" {
+		if _, err := tx.ExecContext(r.Context(), `
+delete from station_rotation
+where track_id=? and station_id in (
+	select station_id from station_definitions where skip_disliked=1
+)`, request.TrackID); err != nil {
+			internalError(w)
+			return
+		}
+	}
 	var skips int
 	if err := tx.QueryRowContext(r.Context(), "select coalesce((select skip_count from skip_counts where track_id=?), 0)", request.TrackID).Scan(&skips); err != nil {
 		internalError(w)
@@ -551,6 +651,10 @@ func (a *App) apiTrackText(w http.ResponseWriter, r *http.Request) {
 		path = track.PromptPath
 	} else if kind != "lyrics" {
 		http.Error(w, "unsupported text kind", http.StatusBadRequest)
+		return
+	}
+	if kind == "lyrics" && track.CleanLyrics != "" {
+		writeJSON(w, map[string]any{"id": id, kind: track.CleanLyrics})
 		return
 	}
 	writeJSON(w, map[string]any{"id": id, kind: a.readTrackText(path)})

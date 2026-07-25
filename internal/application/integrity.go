@@ -448,6 +448,50 @@ select
 	if invalid != 0 {
 		return fmt.Errorf("retained auxiliary tables exceed type, field, or cardinality budgets")
 	}
+	if err := q.QueryRowContext(ctx, `
+select
+	(select count(*) from station_definitions where
+		typeof(station_id)<>'text' or length(cast(station_id as blob))>64 or
+		instr(station_id,char(0))>0 or
+		typeof(name)<>'text' or length(cast(name as blob))<1 or
+		length(cast(name as blob))>80 or instr(name,char(0))>0 or
+		typeof(source_type)<>'text' or source_type not in ('filter','list') or
+		typeof(filter_mode)<>'text' or filter_mode not in ('all','liked','covers','recent') or
+		typeof(filter_query)<>'text' or length(cast(filter_query as blob))>160 or
+		instr(filter_query,char(0))>0 or
+		typeof(random_mode)<>'text' or random_mode not in ('true_random','deck') or
+		typeof(skip_disliked)<>'integer' or skip_disliked not in (0,1) or
+		typeof(created_at) not in ('integer','real') or created_at<0 or created_at>? or
+		typeof(updated_at) not in ('integer','real') or updated_at<0 or updated_at>? or
+		not exists (select 1 from stations where id=station_id)) +
+	(case when (select count(*) from station_definitions)>? then 1 else 0 end) +
+	(select count(*) from station_tracks where
+		typeof(station_id)<>'text' or length(cast(station_id as blob))>64 or
+		instr(station_id,char(0))>0 or
+		typeof(position)<>'integer' or position<0 or position>=? or
+		typeof(track_id)<>'text' or length(cast(track_id as blob))>? or
+		instr(track_id,char(0))>0 or
+		not exists (select 1 from station_definitions d
+			where d.station_id=station_tracks.station_id and d.source_type='list')) +
+	(case when (select count(*) from station_tracks)>? then 1 else 0 end) +
+	(select count(*) from station_rotation where
+		typeof(station_id)<>'text' or length(cast(station_id as blob))>64 or
+		instr(station_id,char(0))>0 or
+		typeof(position)<>'integer' or position<0 or position>=? or
+		typeof(track_id)<>'text' or length(cast(track_id as blob))>? or
+		instr(track_id,char(0))>0 or
+		not exists (select 1 from station_definitions d
+			where d.station_id=station_rotation.station_id and d.random_mode='deck')) +
+	(case when (select count(*) from station_rotation)>? then 1 else 0 end)
+`, maxRetainedTimestamp, maxRetainedTimestamp, maxTempStations+1,
+		maxCatalogTracks, maxRouteIDBytes, maxCatalogTracks*maxTempStations,
+		maxCatalogTracks, maxRouteIDBytes,
+		maxCatalogTracks*(maxTempStations+1)).Scan(&invalid); err != nil {
+		return err
+	}
+	if invalid != 0 {
+		return fmt.Errorf("retained station programming exceeds type, value, or cardinality budgets")
+	}
 	if _, err := readTrackStatsRevision(ctx, q); err != nil {
 		return fmt.Errorf("retained track-stat revision: %w", err)
 	}

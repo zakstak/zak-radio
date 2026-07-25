@@ -327,6 +327,8 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 			})
 		case path == "/api/tracks":
 			a.apiTracks(w, r)
+		case path == "/api/stations":
+			a.listStations(w, r)
 		case path == "/api/station":
 			a.apiStation(w, r)
 		case path == "/api/station/events":
@@ -358,6 +360,11 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.NotFound(w, r)
 		}
+		return
+	}
+	if strings.HasPrefix(path, "/api/stations/") &&
+		(r.Method == http.MethodPatch || r.Method == http.MethodDelete) {
+		a.savedStation(w, r)
 		return
 	}
 	if r.Method == http.MethodPost {
@@ -398,7 +405,11 @@ func routeAllowedMethods(path string) []string {
 		strings.HasPrefix(path, "/api/track/") ||
 		strings.HasPrefix(path, "/api/reader/items/"):
 		return []string{http.MethodGet}
-	case path == "/api/stations" || path == "/api/control" ||
+	case path == "/api/stations":
+		return []string{http.MethodGet, http.MethodPost}
+	case strings.HasPrefix(path, "/api/stations/"):
+		return []string{http.MethodPatch, http.MethodDelete}
+	case path == "/api/control" ||
 		path == "/api/like" || path == "/api/reaction":
 		return []string{http.MethodPost}
 	case path == "/api/reader/playback":

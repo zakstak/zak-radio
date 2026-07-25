@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const currentSchemaVersion = 16
+const currentSchemaVersion = 18
 
 type migration struct {
 	version int
@@ -131,6 +131,10 @@ func preflightDatabaseMode(
 		"app_metadata": maxReaderItems, "likes": maxCatalogTracks,
 		"reader_items": maxReaderItems, "reader_playback": maxReaderItems,
 		"reader_segments": maxReaderSegments, "skip_counts": maxCatalogTracks,
+		"radio_rotation":        maxCatalogTracks,
+		"station_definitions":   maxTempStations + 1,
+		"station_rotation":      maxCatalogTracks * (maxTempStations + 1),
+		"station_tracks":        maxCatalogTracks * maxTempStations,
 		"station_creation_keys": maxTempStations,
 		"station_queue":         maxStationQueue * (maxTempStations + 1),
 		"stations":              maxTempStations + 1,
@@ -340,6 +344,8 @@ select count(*) from sqlite_master where type='table' and name not like 'sqlite_
 		{14, addStationCreationIdempotency},
 		{15, addStationQueue},
 		{16, addDislikeCounts},
+		{17, addRadioProgramming},
+		{18, addPersistentStations},
 	}
 	for _, item := range migrations {
 		if item.version <= version {
@@ -362,6 +368,67 @@ select count(*) from sqlite_master where type='table' and name not like 'sqlite_
 		}
 	}
 	return nil
+}
+
+func addPersistentStations(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+drop table if exists radio_rotation;
+delete from app_metadata where key in ('radio_random_mode', 'radio_skip_disliked');
+drop table if exists station_rotation;
+drop table if exists station_tracks;
+drop table if exists station_definitions;
+create table station_definitions (
+	station_id text primary key references stations(id) on delete cascade,
+	name text not null check(length(name) between 1 and 80),
+	source_type text not null check(source_type in ('filter', 'list')),
+	filter_mode text not null default 'all'
+		check(filter_mode in ('all', 'liked', 'covers', 'recent')),
+	filter_query text not null default '' check(length(filter_query)<=160),
+	random_mode text not null default 'deck'
+		check(random_mode in ('true_random', 'deck')),
+	skip_disliked integer not null default 0 check(skip_disliked in (0,1)),
+	created_at real not null,
+	updated_at real not null,
+	check(source_type='filter' or (filter_mode='all' and filter_query=''))
+);
+create table station_tracks (
+	station_id text not null references station_definitions(station_id) on delete cascade,
+	position integer not null check(position between 0 and 4999),
+	track_id text not null,
+	primary key(station_id, position),
+	unique(station_id, track_id)
+);
+create table station_rotation (
+	station_id text not null references station_definitions(station_id) on delete cascade,
+	position integer not null check(position between 0 and 4999),
+	track_id text not null,
+	primary key(station_id, position),
+	unique(station_id, track_id)
+);
+insert into station_definitions
+	(station_id, name, source_type, filter_mode, filter_query, random_mode,
+	 skip_disliked, created_at, updated_at)
+select id,
+	case when id='main' then 'All songs' else 'Saved station ' || substr(id, 1, 6) end,
+	case when id='main' then 'filter' else 'list' end,
+	'all', '', 'deck', 0, created_at, updated_at
+from stations;
+insert into station_tracks(station_id, position, track_id)
+select id, 0, track_id from stations where id<>'main';`)
+	return err
+}
+
+func addRadioProgramming(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+create table if not exists radio_rotation (
+	position integer primary key check(position between 0 and 4999),
+	track_id text not null unique
+);
+insert into app_metadata(key, value) values ('radio_random_mode', 'deck')
+	on conflict(key) do nothing;
+insert into app_metadata(key, value) values ('radio_skip_disliked', '0')
+	on conflict(key) do nothing;`)
+	return err
 }
 
 func addDislikeCounts(ctx context.Context, tx *sql.Tx) error {

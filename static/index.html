@@ -13,7 +13,7 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 fill=%22%23f5f5f5%22/><path d=%22M17 37V27h5v10zm9 9V18h5v28zm9-5V23h5v18zm9-8v-2h5v2z%22 fill=%22%2309090b%22/></svg>"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=17" />
+    <link rel="stylesheet" href="/static/styles.css?v=18" />
   </head>
   <body>
     <a id="skipToContent" class="skip-link" href="#title">Skip to content</a>
@@ -52,6 +52,12 @@
             <span class="section-label">Listening to</span>
             <strong id="stationMode" tabindex="-1">Shared station</strong>
           </div>
+          <label class="station-picker-label" for="stationSelect"
+            >Radio station</label
+          >
+          <select id="stationSelect" class="select-control station-picker">
+            <option value="main">All songs</option>
+          </select>
           <div class="station-actions">
             <button
               id="mainStation"
@@ -75,7 +81,7 @@
               type="button"
               disabled
             >
-              New private station
+              New station
             </button>
           </div>
           <p id="stationAccess" class="station-note">
@@ -251,11 +257,29 @@
               <a id="download" class="button" aria-disabled="true"
                 ><span aria-hidden="true">↓</span> Download</a
               >
+              <button id="addCurrentToStation" class="button" type="button">
+                Add to station
+              </button>
               <span id="skipCount" class="skip-count">0 early skips</span>
             </div>
+            <fieldset id="radioProgramming" class="radio-programming">
+              <legend class="section-label">Station programming</legend>
+              <label>
+                Random order
+                <select id="stationRandomMode" class="select-control">
+                  <option value="deck">Shuffled list · no repeats</option>
+                  <option value="true_random">True random · repeats can happen</option>
+                </select>
+              </label>
+              <label class="station-check">
+                <input id="stationSkipDisliked" type="checkbox" />
+                Skip disliked songs
+              </label>
+            </fieldset>
             <div id="radioQueue" class="radio-queue" aria-live="polite">
               <span class="section-label">Up next</span>
               <span id="radioQueueSummary">The station queue is empty.</span>
+              <ol id="radioQueueTracks" class="radio-queue-tracks"></ol>
             </div>
           </div>
         </div>
@@ -331,6 +355,67 @@
           </p>
         </div>
         <section aria-labelledby="libraryTitle">
+          <section
+            id="stationManager"
+            class="station-manager"
+            aria-labelledby="stationManagerTitle"
+          >
+            <div class="station-manager-head">
+              <div>
+                <div class="section-label">Saved radio</div>
+                <h2 id="stationManagerTitle">Your stations</h2>
+                <p>
+                  Save this Library view as a live filter, or build a hand-picked
+                  list.
+                </p>
+              </div>
+              <div class="station-manager-actions">
+                <button id="createFilterStation" class="button" type="button">
+                  Station from this filter
+                </button>
+                <button id="createListStation" class="button" type="button">
+                  New hand-picked station
+                </button>
+              </div>
+            </div>
+            <form id="stationEditor" class="station-editor" hidden>
+              <input id="stationEditorID" type="hidden" />
+              <input id="stationEditorSource" type="hidden" value="filter" />
+              <div class="station-editor-grid">
+                <label>
+                  Station name
+                  <input
+                    id="stationEditorName"
+                    type="text"
+                    maxlength="80"
+                    required
+                    autocomplete="off"
+                  />
+                </label>
+                <label>
+                  Random order
+                  <select id="stationEditorRandom" class="select-control">
+                    <option value="deck">Shuffled list · no repeats</option>
+                    <option value="true_random">True random · repeats can happen</option>
+                  </select>
+                </label>
+                <label class="station-check">
+                  <input id="stationEditorSkip" type="checkbox" />
+                  Skip disliked songs
+                </label>
+              </div>
+              <p id="stationEditorSummary" class="station-editor-summary"></p>
+              <div id="stationEditorMembers" class="station-editor-members"></div>
+              <div class="station-manager-actions">
+                <button class="button" type="submit">Save station</button>
+                <button id="stationEditorCancel" class="button" type="button">
+                  Cancel
+                </button>
+              </div>
+              <p id="stationEditorStatus" aria-live="polite"></p>
+            </form>
+            <div id="savedStationList" class="saved-station-list"></div>
+          </section>
           <div class="library-tools">
             <label class="search-field"
               ><span class="sr-only">Search the music library</span
@@ -485,6 +570,25 @@
           </div>
         </aside>
       </section>
+
+      <dialog id="addToStationDialog" class="station-dialog">
+        <form method="dialog">
+          <div class="section-label">Add song</div>
+          <h2>Add to station</h2>
+          <p id="addToStationTrack"></p>
+          <label>
+            Station
+            <select id="addToStationSelect" class="select-control"></select>
+          </label>
+          <p id="addToStationStatus" aria-live="polite"></p>
+          <div class="station-manager-actions">
+            <button id="confirmAddToStation" class="button" type="button">
+              Add song
+            </button>
+            <button class="button" value="cancel">Cancel</button>
+          </div>
+        </form>
+      </dialog>
 
       <section
         id="readerView"
@@ -711,8 +815,8 @@
     ></div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script src="/static/platform.js?v=1"></script>
-    <script src="/static/app.js?v=30"></script>
-    <script src="/static/library.js?v=23"></script>
+    <script src="/static/app.js?v=31"></script>
+    <script src="/static/library.js?v=24"></script>
     <script src="/static/reader.js?v=26"></script>
   </body>
 </html>

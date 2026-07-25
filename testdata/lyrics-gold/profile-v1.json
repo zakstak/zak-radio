@@ -1,0 +1,15 @@
+{
+  "language": "en",
+  "stable_model": "turbo",
+  "heart_model": "HeartMuLa/HeartTranscriptor-oss",
+  "heart_revision": "918f88917c17489c1f8dbae0165cd1019c4d5cd3",
+  "text_model": "gemma4:e4b",
+  "text_model_url": "http://127.0.0.1:11434/api/generate",
+  "window_lines": 1,
+  "line_initial_offset": 0.5,
+  "candidate_improvement": 0.05,
+  "minimum_anchor_score": 0.7,
+  "verified_line_coverage": 0.8,
+  "verified_word_coverage": 0.75,
+  "verified_confidence": 0.7
+}

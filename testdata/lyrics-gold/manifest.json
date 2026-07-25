@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "datasets": {
+    "hansen": {
+      "source": "https://music-ir.org/mirex/wiki/2017%3AAutomatic_Lyrics-to-Audio_Alignment",
+      "url": "https://www.dropbox.com/scl/fo/uqkjqv1waprklwgp5m409/AG47Q2qSaOEtb_Js148iP9k?rlkey=3v3feucje2zlnp3506qzib9a0&dl=1",
+      "archive": "hansen-half.zip",
+      "sha256": "69a945a181be3eaef297e8fabe09930d6986dc9b657349c0013b0d7f72f3effc",
+      "directory": "hansen-half",
+      "songs": [
+        {
+          "id": "rehab",
+          "split": "development",
+          "mix": "rehab.wav",
+          "vocals": "aCappella/rehab.wav",
+          "lyrics": "lyrics/rehab.txt",
+          "word_onsets": "wordonsets/rehab.wordonset.tsv"
+        },
+        {
+          "id": "trick_me",
+          "split": "held-out",
+          "mix": "trick_me.wav",
+          "vocals": "aCappella/trick_me.wav",
+          "lyrics": "lyrics/trick_me.txt",
+          "word_onsets": "wordonsets/trick_me.wordonset.tsv"
+        },
+        {
+          "id": "umbrella",
+          "split": "development",
+          "mix": "umbrella.wav",
+          "vocals": "aCappella/umbrella.wav",
+          "lyrics": "lyrics/umbrella.txt",
+          "word_onsets": "wordonsets/umbrella.wordonset.tsv"
+        },
+        {
+          "id": "viva_la_vida",
+          "split": "held-out",
+          "mix": "viva_la_vida.wav",
+          "vocals": "aCappella/viva_la_vida.wav",
+          "lyrics": "lyrics/viva_la_vida.txt",
+          "word_onsets": "wordonsets/viva_la_vida.wordonset.tsv"
+        },
+        {
+          "id": "this_afternoon",
+          "split": "held-out",
+          "mix": "this_afternoon.wav",
+          "vocals": "aCappella/this_afternoon.wav",
+          "lyrics": "lyrics/this_afternoon.txt",
+          "word_onsets": "wordonsets/this_afternoon.wordonset.tsv"
+        }
+      ]
+    },
+    "jamendo": {
+      "source": "https://huggingface.co/datasets/jamendolyrics/jamendolyrics",
+      "revision": "de188c963fd4539bc769b3feb83582e5a9595e36",
+      "base_url": "https://huggingface.co/datasets/jamendolyrics/jamendolyrics/resolve/de188c963fd4539bc769b3feb83582e5a9595e36",
+      "directory": "jamendolyrics-de188c96-en",
+      "metadata": "subsets/en/metadata.jsonl",
+      "language": "en",
+      "song_count": 20,
+      "assets": {
+        "LICENSE": "813dce6d4ec5987ec6aa8ff9548f18a6b6f43b1c7c362cbb4252e757123faa89",
+        "JamendoLyrics.csv": "a4649131242fa5f0750df547a5ceaaaa7c04329c249dd5287799e6d8ac69ed68",
+        "subsets/en/metadata.jsonl": "daedfe6f5f7445276f4742ebdd633816ecae7ab810baf853e8216ab03d89d705",
+        "subsets/en/mp3/Avercage_-_Embers.mp3": "82da58ddd265f00cc8c6cb137574a48e9512623814f74bdfdaded30a51ffe4eb",
+        "subsets/en/mp3/Color_Out_-_Falling_Star.mp3": "329370ace77af31c2f4174a25c2c1125c869cf087e8c0c51c982ddef04028321",
+        "subsets/en/mp3/Cortez_-_Feel__Stripped_.mp3": "beefa48e4520bb290e739faa7c0a91e4e7296fb239577966b2129934ccf86b31",
+        "subsets/en/mp3/Explosive_Ear_Candy_-_Like_The_Sun.mp3": "2172a564b8a695d566435344da37c18e37bae5da3a7ac6f5c9347288dfaa22f6",
+        "subsets/en/mp3/HILA_-_Give_Me_the_Same.mp3": "ebef56766822631b51bada37e403ddcf9ef08d9a902e74b5ec635f7589537c1c",
+        "subsets/en/mp3/JASON_MILLER_-_CROWD_PLEASER.mp3": "dcb3a02dd11827dab6d94da5f20091321288038cd533c7e25f0a0c6b353a9ad5",
+        "subsets/en/mp3/Kinematic_-_Peyote.mp3": "9a675e89bb3b4882a38c0571475eff6917db4bc1d96ec19e3e910995741ffe99",
+        "subsets/en/mp3/LUNABLIND_-_Vision__Radio_Edit_.mp3": "bbf602cca363f7055e36ab254b97b754518a680596b0d8502d1a2d11308423a2",
+        "subsets/en/mp3/Lower_Loveday_-_Is_It_Right_.mp3": "84e344829620711e39f9c189f15671f7ffd184946cf03e269c23c6061c05e1eb",
+        "subsets/en/mp3/Moon_I_Mean_-_Wrong_Concept.mp3": "fcd934d27f95c573d2e7d448d627ade1ade4b15667693b99b7e34b455332c9ac",
+        "subsets/en/mp3/Pure_Mids_-_The_Leader.mp3": "8a9a09fe45f8ed9dc55432722190d7a2cad21f869c14f141b507f98aa204cae9",
+        "subsets/en/mp3/Quentin_Hannappe_-_Keep_On.mp3": "80281dbb9a9c311222fa3da80f0765bff8efee46758ba3ab5238b487a16b28af",
+        "subsets/en/mp3/Ridgway_-_Fire_Inside.mp3": "9d51450a081eb62b1d5149ff5199eb5912ba258e51709a459914da121b3dab3e",
+        "subsets/en/mp3/Rxbyn_-_Bad_Side.mp3": "24090af9ca4886bb0551f7c1896c249af3311cce1c585092054ed5c428834d44",
+        "subsets/en/mp3/Slingshot_Miracle_-_Whistler.mp3": "ba61876b9680783d6cb75614835645e62918ff162688fc5bbd1d1075f41809b7",
+        "subsets/en/mp3/Songwriterz_-_Back_In_Time.mp3": "bcfeb4d28b618b7b25c2567b0465dee01b3bd4d2e4034dcacdb88804162d3f87",
+        "subsets/en/mp3/The.madpix.project_-_One_Way_Street.mp3": "380d1f7721374359c300f992f35f2aa44f9c68552d351a4671426accc77779d9",
+        "subsets/en/mp3/The_Rinn_-_Voices__2017_Version_.mp3": "5c1db42eb4d71604d7f5f668a876193103596e1fe64a069ece0d0eea031750d8",
+        "subsets/en/mp3/Tom_Orlando_-_The_One__feat._Tina_G_.mp3": "b5bbad56cf1f40dc36556b1f6bfa414a6c5fba6bd48058486c7600c25fb01a7d",
+        "subsets/en/mp3/Wordsmith_-_The_Statement.mp3": "c7da05309e6eb613601b427a019cd54d157df7ce93bea0924bdef906b5d99cee"
+      }
+    },
+    "musdb18": {
+      "source": "https://zenodo.org/records/1117372",
+      "audio_url": "https://zenodo.org/api/records/1117372/files/musdb18.zip/content",
+      "audio_md5": "af06762477334799bfc5abf237648207",
+      "annotations_source": "https://zenodo.org/records/15547046",
+      "annotations_api": "https://zenodo.org/api/records/15547046"
+    }
+  },
+  "thresholds": {
+    "alignment": {
+      "word_coverage": 0.99,
+      "median_onset_error": 0.1,
+      "p90_onset_error": 0.3,
+      "within_500ms": 0.97,
+      "beyond_1s": 0.005
+    },
+    "transcription": {
+      "word_coverage": 0.7,
+      "wer_vocals": 0.1,
+      "wer_mix": 0.2,
+      "median_onset_error": 0.15,
+      "p90_onset_error": 0.5,
+      "within_500ms": 0.9,
+      "beyond_1s": 0.02
+    }
+  }
+}

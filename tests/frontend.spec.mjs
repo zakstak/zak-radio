@@ -23,11 +23,11 @@ test("Library queues tracks only for private stations", async ({ page }) => {
     (await (await fetch("/api/station?station_id=main")).json()).queue)).toEqual(queueBefore);
 
   await expect(page.locator("#libraryStationTarget")).toContainText(
-    "Radio is always random",
+    "Radio stations use saved programming",
   );
   await expect(
     page.getByRole("button", { name: "Add Alpha Sunrise to queue" }),
-  ).toBeDisabled();
+  ).toBeHidden();
 
   const created = await page.request.post("/api/stations", {
     data: {
@@ -50,6 +50,60 @@ test("Library queues tracks only for private stations", async ({ page }) => {
   ).toBe(1);
 });
 
+test("Library completes saved station CRUD and list membership", async ({ page }) => {
+  await page.goto("/library");
+
+  await page.locator("#librarySearch").fill("Alpha");
+  await page.locator("#createFilterStation").click();
+  await page.locator("#stationEditorName").fill("Alpha filter");
+  await page.locator("#stationEditor").dispatchEvent("submit");
+  const filterRow = page.locator(".saved-station", { hasText: "Alpha filter" });
+  await expect(filterRow).toContainText("“Alpha”");
+  page.once("dialog", (dialog) => dialog.accept());
+  await filterRow.getByRole("button", { name: "Delete" }).click();
+  await expect(filterRow).toHaveCount(0);
+
+  await page.locator("#createListStation").click();
+  await page.locator("#stationEditorName").fill("Favorites deck");
+  await page.locator("#stationEditor").dispatchEvent("submit");
+  let listRow = page.locator(".saved-station", { hasText: "Favorites deck" });
+  await expect(listRow).toContainText("0 songs");
+
+  await page.getByRole("button", {
+    name: "Add Alpha Sunrise to a saved station",
+  }).click();
+  await expect(page.locator("#addToStationDialog")).toBeVisible();
+  await page.locator("#confirmAddToStation").click();
+  await expect(page.locator("#addToStationDialog")).toBeHidden();
+
+  listRow = page.locator(".saved-station", { hasText: "Favorites deck" });
+  await listRow.getByRole("button", { name: "Edit" }).click();
+  await expect(page.locator("#stationEditorMembers")).toContainText(
+    "Alpha Sunrise",
+  );
+  await page.locator("#stationEditorName").fill("Favorites renamed");
+  await page.locator("#stationEditorMembers").getByRole("button", {
+    name: "Remove",
+  }).click();
+  await page.locator("#stationEditor").dispatchEvent("submit");
+  listRow = page.locator(".saved-station", { hasText: "Favorites renamed" });
+  await expect(listRow).toContainText("0 songs");
+
+  const stationID = await listRow.getByRole("link", { name: "Listen" })
+    .getAttribute("href")
+    .then((href) => new URL(href, "http://localhost").searchParams.get("station"));
+  await page.goto("/");
+  await page.locator("#stationSelect").selectOption(stationID);
+  await expect(page).toHaveURL(new RegExp(`station=${stationID}`));
+  await expect(page.locator("#stationMode")).toHaveText("Favorites renamed");
+
+  await page.goto(`/library?station=${stationID}`);
+  listRow = page.locator(".saved-station", { hasText: "Favorites renamed" });
+  page.once("dialog", (dialog) => dialog.accept());
+  await listRow.getByRole("button", { name: "Delete" }).click();
+  await expect(listRow).toHaveCount(0);
+});
+
 test("Radio has cumulative reactions and a reduced transport", async ({ page }) => {
   await page.goto("/");
 
@@ -60,7 +114,6 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
     "#forward10",
     "#repeatOne",
     "#stationProgress",
-    "#radioQueue",
   ]) {
     await expect(page.locator(selector)).toBeHidden();
   }
@@ -69,6 +122,15 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   await expect(page.locator("#like")).toBeVisible();
   await expect(page.locator("#dislike")).toBeVisible();
   await expect(page.locator("#download")).toBeVisible();
+  await expect(page.locator("#radioProgramming")).toBeVisible();
+  await expect(page.locator("#radioQueue")).toBeVisible();
+  await page.locator("#stationRandomMode").selectOption("true_random");
+  await expect(page.locator("#radioQueueSummary")).toContainText(
+    "repeats can happen",
+  );
+  await page.locator("#stationSkipDisliked").check();
+  await expect.poll(() => page.evaluate(async () =>
+    (await (await fetch("/api/station")).json()).skip_disliked)).toBe(true);
 
   const before = await page.evaluate(() => ({
     likes: Number(window.ZakCatalog.tracks[0].like_count || 0),
@@ -81,15 +143,12 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   await expect(page.locator("#dislike")).toHaveText(
     `Dislike · ${before.dislikes + 1}`,
   );
+  await page.locator("#stationSkipDisliked").uncheck();
+  await page.locator("#stationRandomMode").selectOption("deck");
 
   await page.locator("#createStation").click();
-  await expect(page.locator("#random")).toBeVisible();
-  await expect(page.locator("#prev")).toBeVisible();
-  await expect(page.locator("#back10")).toBeVisible();
-  await expect(page.locator("#forward10")).toBeVisible();
-  await expect(page.locator("#repeatOne")).toBeVisible();
-  await expect(page.locator("#stationProgress")).toBeVisible();
-  await expect(page.locator("#radioQueue")).toBeVisible();
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(page.locator("#stationEditor")).toBeVisible();
 });
 
 test("weak track metadata falls back to its subject and deliberate no-artwork icon", async ({ page }) => {
@@ -160,6 +219,8 @@ test("timed lyrics follow radio playback, yield to scrolling, and seek the stati
 
   await page.goto("/");
   await expect(page.locator(".synced-lyric-cue")).toHaveCount(2);
+  await expect(page.locator(".synced-lyrics-heading")).toHaveCount(0);
+  await expect(page.getByText("Verse", { exact: true })).toHaveCount(0);
   await expect(page.locator("#lyricsSyncStatus")).toHaveText("Following the song");
   await expect(page.locator("#lyricsViewport")).toHaveClass(/has-synced-lyrics/);
   await page.locator("#audio").evaluate((audio) => {
@@ -177,10 +238,47 @@ test("timed lyrics follow radio playback, yield to scrolling, and seek the stati
 
   const firstLine = page.getByRole("button", { name: /Seek to .*First line/ });
   await expect(firstLine).toBeDisabled();
-  await page.locator("#createStation").click();
+  const created = await page.request.post("/api/stations", {
+    data: {
+      idempotency_key: "abababababababababababababababab",
+      owner_token: "cd".repeat(24),
+      track_id: "alpha",
+    },
+  });
+  const privateStation = await created.json();
+  await page.evaluate(({ id, token }) => {
+    localStorage.setItem(`zak-radio-owner:${id}`, token);
+  }, { id: privateStation.station_id, token: privateStation.owner_token });
+  await page.goto(`/?station=${privateStation.station_id}`);
   await expect(firstLine).toBeEnabled();
   await firstLine.click();
   await expect.poll(() => seekPosition).toBe(0.05);
+});
+
+test("warning lyrics stay readable without presenting uncertain timing as exact", async ({ page }) => {
+  const catalog = await (await page.request.get("/api/tracks")).json();
+  catalog.tracks[0].has_synced_lyrics = false;
+  catalog.tracks[0].lyrics_quality_status = "warning";
+  await page.route("**/api/tracks", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(catalog),
+  }));
+  await page.route("**/api/track/alpha?kind=lyrics", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      id: "alpha",
+      lyrics: "Clean generated line",
+    }),
+  }));
+
+  await page.goto("/");
+  await expect(page.locator("#lyrics")).toHaveText("Clean generated line");
+  await expect(page.locator("#lyricsSyncStatus")).toHaveText(
+    "Auto-generated lyrics · timing may be off",
+  );
+  await expect(page.locator("#lyricsViewport")).not.toHaveClass(
+    /has-synced-lyrics/,
+  );
 });
 
 test("switching stations retires an in-flight update from the prior station", async ({ page }) => {
@@ -258,9 +356,8 @@ test("switching stations retires an in-flight update from the prior station", as
   });
 });
 
-test("private-station creation is single-flight and preserves action focus", async ({ page }) => {
+test("saved-station creation is single-flight in the Library editor", async ({ page }) => {
   await page.goto("/");
-  const main = await (await page.request.get("/api/station")).json();
   let creates = 0;
   await page.route("**/api/stations", async (route) => {
     if (route.request().method() !== "POST") return route.fallback();
@@ -269,37 +366,31 @@ test("private-station creation is single-flight and preserves action focus", asy
     await route.fulfill({
       status: 201,
       contentType: "application/json",
-      body: JSON.stringify({ station_id: "abcdef123456", owner_token: "owner-token" }),
-    });
-  });
-  await page.route("**/api/station?station_id=abcdef123456", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
       body: JSON.stringify({
-        ...main,
-        station_id: "abcdef123456",
-        kind: "temporary",
-        can_control: true,
-        expires_at: Date.now() / 1000 + 3600,
+        station_id: "abcdef123456abcdef123456abcdef12",
+        owner_token: "ab".repeat(24),
+        station: {
+          station_id: "abcdef123456abcdef123456abcdef12",
+          name: "Test station",
+          source_type: "filter",
+        },
       }),
     });
   });
 
   const create = page.locator("#createStation");
-  await create.focus();
-  await create.dispatchEvent("click");
-  await create.dispatchEvent("click");
-  await expect(page.locator("#mainStation")).toBeVisible();
+  await create.click();
+  await page.locator("#stationEditorName").fill("Test station");
+  const editor = page.locator("#stationEditor");
+  await editor.dispatchEvent("submit");
+  await editor.dispatchEvent("submit");
+  await expect(editor).toBeHidden();
   expect(creates).toBe(1);
-  await expect(page.locator("#mainStation")).toBeFocused();
-
-  await page.locator("#mainStation").click();
-  await expect(page.locator("#createStation")).toBeFocused();
 });
 
-test("capacity failure moves focus to a visible station status", async ({ page }) => {
+test("saved-station capacity failure stays visible in the editor", async ({ page }) => {
   await page.route("**/api/stations", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
     await route.fulfill({
       status: 429,
       contentType: "text/plain",
@@ -307,10 +398,13 @@ test("capacity failure moves focus to a visible station status", async ({ page }
     });
   });
   await page.goto("/");
-  await page.locator("#createStation").focus();
   await page.locator("#createStation").click();
-  await expect(page.locator("#stationMode")).toBeFocused();
-  await expect(page.locator("#stationMode")).toBeVisible();
+  await page.locator("#stationEditorName").fill("At capacity");
+  await page.locator("#stationEditor").dispatchEvent("submit");
+  await expect(page.locator("#stationEditorStatus")).toContainText(
+    "temporary station capacity reached",
+  );
+  await expect(page.locator("#stationEditor")).toBeVisible();
 });
 
 test("preview dock remains inside the viewport at the former sm breakpoint", async ({ page }) => {
@@ -495,34 +589,24 @@ test("Share exposes a selectable fallback when Clipboard access is denied", asyn
       value: { writeText: () => Promise.reject(new DOMException("denied", "NotAllowedError")) },
     });
   });
-  const main = await (await page.request.get("/api/station")).json();
-  await page.route("**/api/stations", async (route) => {
-    await route.fulfill({
-      status: 201,
-      contentType: "application/json",
-      body: JSON.stringify({
-        station_id: "abcdef123456",
-        owner_token: "0123456789abcdef0123456789abcdef0123456789abcdef",
-      }),
-    });
+  const created = await page.request.post("/api/stations", {
+    data: {
+      idempotency_key: "ef".repeat(16),
+      owner_token: "12".repeat(24),
+      name: "Share me",
+      source_type: "list",
+      random_mode: "deck",
+      track_ids: ["alpha"],
+    },
   });
-  await page.route("**/api/station?station_id=abcdef123456", async (route) => {
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        ...main,
-        station_id: "abcdef123456",
-        kind: "temporary",
-        can_control: true,
-      }),
-    });
-  });
-  await page.goto("/");
-  await page.locator("#createStation").click();
+  const station = await created.json();
+  await page.goto(`/?station=${station.station_id}`);
   await page.locator("#shareStation").click();
   await expect(page.locator("#stationShareFallback")).toBeVisible();
   await expect(page.locator("#stationShareLink")).toBeFocused();
-  await expect(page.locator("#stationShareLink")).toHaveValue(/station=abcdef123456/);
+  await expect(page.locator("#stationShareLink")).toHaveValue(
+    new RegExp(`station=${station.station_id}`),
+  );
 });
 
 test("denied Web Storage does not block Library or Reader boot", async ({ page }) => {

@@ -10,9 +10,27 @@ type Station struct {
 	ID, Kind, OwnerHash, TrackID         string
 	Position                             float64
 	Playing, RepeatOne, Shuffle          bool
+	Saved                                bool
 	CreatedAt, UpdatedAt, TrackChangedAt float64
 	ExpiresAt                            *float64
 	Revision                             int64
+}
+
+type Definition struct {
+	StationID      string   `json:"station_id"`
+	Name           string   `json:"name"`
+	SourceType     string   `json:"source_type"`
+	FilterMode     string   `json:"filter_mode,omitempty"`
+	FilterQuery    string   `json:"filter_query,omitempty"`
+	RandomMode     string   `json:"random_mode"`
+	SkipDisliked   bool     `json:"skip_disliked"`
+	TrackIDs       []string `json:"track_ids"`
+	CreatedAt      float64  `json:"created_at"`
+	UpdatedAt      float64  `json:"updated_at"`
+	BuiltIn        bool     `json:"built_in"`
+	CanEdit        bool     `json:"can_edit,omitempty"`
+	EligibleCount  int      `json:"eligible_count,omitempty"`
+	RemainingCount int      `json:"remaining_count,omitempty"`
 }
 
 type Snapshot struct {
@@ -36,12 +54,24 @@ type Snapshot struct {
 	Revision        int64    `json:"revision"`
 	CanControl      *bool    `json:"can_control,omitempty"`
 	Queue           []string `json:"queue"`
+	Saved           bool     `json:"saved"`
+	StationName     string   `json:"station_name,omitempty"`
+	SourceType      string   `json:"source_type,omitempty"`
+	FilterMode      string   `json:"filter_mode,omitempty"`
+	FilterQuery     string   `json:"filter_query,omitempty"`
+	RandomMode      string   `json:"random_mode,omitempty"`
+	SkipDisliked    bool     `json:"skip_disliked,omitempty"`
+	UpNext          []string `json:"up_next,omitempty"`
+	Remaining       int      `json:"remaining,omitempty"`
+	Eligible        int      `json:"eligible,omitempty"`
 }
 
 type Command struct {
 	StationID, OwnerToken, Action, TrackID string
 	Position                               *float64
 	RepeatOne, Shuffle                     *bool
+	RandomMode                             string
+	SkipDisliked                           *bool
 }
 
 type Clock func() time.Time

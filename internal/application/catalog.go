@@ -183,6 +183,7 @@ func loadCatalog(
 			lyrics = ""
 		}
 		var timedLyricsSHA256 string
+		var timedLyricsPayload TimedLyrics
 		timedLyricsRootHandle := archiveRoot
 		timedLyricsRootPath := cfg.Archive
 		if !safeOptionalFile(timedLyrics, cfg.Archive) &&
@@ -196,7 +197,7 @@ func loadCatalog(
 			}
 		}
 		if safeOptionalFile(timedLyrics, timedLyricsRootPath) {
-			if _, _, timedLyricsSHA256, err = loadTimedLyrics(
+			if timedLyricsPayload, _, timedLyricsSHA256, err = loadTimedLyrics(
 				timedLyricsRootHandle, timedLyricsRootPath, timedLyrics, item.ID,
 				item.AudioSHA256, duration,
 			); err != nil {
@@ -214,9 +215,15 @@ func loadCatalog(
 		if len(parts) > 1 {
 			group = parts[1]
 		}
+		cleanLyrics := timedLyricsPayload.DisplayText
+		sourceLyrics := readRootTextMaybe(archiveRoot, cfg.Archive, lyrics)
+		searchLyrics := sourceLyrics
+		if cleanLyrics != "" {
+			searchLyrics = cleanLyrics
+		}
 		searchText := strings.Join([]string{
 			title, artist, item.Source, item.CreatedAt, c.Summary,
-			readRootTextMaybe(archiveRoot, cfg.Archive, lyrics),
+			searchLyrics,
 			readRootTextMaybe(archiveRoot, cfg.Archive, prompt),
 		}, "\n")
 		if len(searchText) > maxTrackTextBytes {
@@ -235,7 +242,10 @@ func loadCatalog(
 			CoverBytes: coverBytes, LyricsPath: lyrics,
 			TimedLyricsPath: timedLyrics, TimedLyricsSHA256: timedLyricsSHA256,
 			TimedLyricsBundled: timedLyricsBundled,
-			HasSyncedLyrics:    timedLyrics != "", PromptPath: prompt,
+			HasSyncedLyrics:    len(timedLyricsPayload.Cues) > 0,
+			LyricsQuality:      timedLyricsPayload.Quality.Status,
+			CleanLyrics:        cleanLyrics,
+			PromptPath:         prompt,
 		})
 	}
 	if len(tracks) == 0 {

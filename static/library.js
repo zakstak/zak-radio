@@ -11,6 +11,8 @@
     error: null,
     previewTriggerID: "",
     station: null,
+    editingStation: null,
+    stationSavePending: false,
   };
 
   const els = {
@@ -33,6 +35,19 @@
     forward: document.getElementById("libraryForward"),
     download: document.getElementById("libraryDownload"),
     stationTarget: document.getElementById("libraryStationTarget"),
+    createFilterStation: document.getElementById("createFilterStation"),
+    createListStation: document.getElementById("createListStation"),
+    stationEditor: document.getElementById("stationEditor"),
+    stationEditorID: document.getElementById("stationEditorID"),
+    stationEditorSource: document.getElementById("stationEditorSource"),
+    stationEditorName: document.getElementById("stationEditorName"),
+    stationEditorRandom: document.getElementById("stationEditorRandom"),
+    stationEditorSkip: document.getElementById("stationEditorSkip"),
+    stationEditorSummary: document.getElementById("stationEditorSummary"),
+    stationEditorMembers: document.getElementById("stationEditorMembers"),
+    stationEditorCancel: document.getElementById("stationEditorCancel"),
+    stationEditorStatus: document.getElementById("stationEditorStatus"),
+    savedStationList: document.getElementById("savedStationList"),
   };
 
   function number(value) {
@@ -96,11 +111,12 @@
       els.stationTarget.textContent = `Your picks will go to ${state.station.label}${count ? ` · ${count} already queued` : ""}.`;
     } else if (!state.station.supportsQueue) {
       els.stationTarget.textContent =
-        "Radio is always random. Create a private station to build a queue.";
+        "Radio stations use saved programming. Add songs to a list station or create one from this filter.";
     } else {
       els.stationTarget.textContent = `This is a listen-only private station. Its owner controls the queue.`;
     }
     document.querySelectorAll("[data-queue-action]").forEach((button) => {
+      button.hidden = !state.station.supportsQueue;
       button.disabled =
         !state.station.supportsQueue || !state.station.canControl;
       button.title =
@@ -108,7 +124,7 @@
           ? `Add to ${state.station.label}`
           : state.station.supportsQueue
             ? "This private station is listen-only"
-            : "Create a private station to build a queue";
+            : "Queue actions are only available in a private queue";
     });
   }
 
@@ -136,6 +152,218 @@
     }
     const current = window.ZakStation.current();
     button.disabled = !current.supportsQueue || !current.canControl;
+  }
+
+  function currentFilterDescription() {
+    const labels = {
+      all: "All songs",
+      liked: "Liked songs",
+      covers: "Songs with artwork",
+      recent: "Recent additions",
+    };
+    const query = els.search.value.trim();
+    return `${labels[state.filter] || "Library filter"}${query ? ` matching “${query}”` : ""}`;
+  }
+
+  function beginStationEditor(sourceType, definition = null) {
+    state.editingStation = definition
+      ? { ...definition, track_ids: [...(definition.track_ids || [])] }
+      : null;
+    els.stationEditor.hidden = false;
+    els.stationEditorID.value = definition?.station_id || "";
+    els.stationEditorSource.value =
+      definition?.source_type || sourceType || "filter";
+    els.stationEditorName.value =
+      definition?.name ||
+      (sourceType === "list" ? "My station" : currentFilterDescription());
+    els.stationEditorRandom.value = definition?.random_mode || "deck";
+    els.stationEditorSkip.checked = Boolean(definition?.skip_disliked);
+    els.stationEditorStatus.textContent = "";
+    if (definition) {
+      els.stationEditorSummary.textContent =
+        definition.source_type === "list"
+          ? `${definition.track_ids.length} saved songs.`
+          : `Live filter: ${definition.filter_mode}${definition.filter_query ? ` matching “${definition.filter_query}”` : ""}.`;
+    } else {
+      els.stationEditorSummary.textContent =
+        sourceType === "list"
+          ? "Start empty, then use Add to station on any song."
+          : `Live filter: ${currentFilterDescription()}. New matching songs join automatically.`;
+    }
+    renderEditorMembers();
+    els.stationEditorName.focus({ preventScroll: true });
+  }
+
+  function renderEditorMembers() {
+    els.stationEditorMembers.replaceChildren();
+    const editing = state.editingStation;
+    if (!editing || editing.source_type !== "list") return;
+    if (!editing.track_ids.length) {
+      const empty = document.createElement("p");
+      empty.className = "station-editor-summary";
+      empty.textContent = "This list station is empty.";
+      els.stationEditorMembers.append(empty);
+      return;
+    }
+    editing.track_ids.forEach((trackID) => {
+      const track = state.tracks.find((item) => item.id === trackID);
+      const row = document.createElement("div");
+      row.className = "station-editor-member";
+      const label = document.createElement("span");
+      label.textContent = track
+        ? window.ZakTrackDisplayTitle(track)
+        : "Unknown song";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "button";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", () => {
+        editing.track_ids = editing.track_ids.filter((id) => id !== trackID);
+        renderEditorMembers();
+      });
+      row.append(label, remove);
+      els.stationEditorMembers.append(row);
+    });
+  }
+
+  function stationSummary(station) {
+    if (station.source_type === "list") {
+      return `${station.track_ids.length} songs · ${station.random_mode === "deck" ? "no repeats" : "true random"}`;
+    }
+    const filter = {
+      all: "All songs",
+      liked: "Liked songs",
+      covers: "With artwork",
+      recent: "Recent additions",
+    }[station.filter_mode];
+    return `${filter || "Saved filter"}${station.filter_query ? ` · “${station.filter_query}”` : ""} · ${station.eligible_count || 0} eligible`;
+  }
+
+  function renderSavedStations() {
+    const stations = window.ZakStations?.owned?.() || [];
+    els.savedStationList.replaceChildren();
+    if (!stations.length) {
+      const empty = document.createElement("p");
+      empty.className = "station-editor-summary";
+      empty.textContent = "No saved stations in this browser yet.";
+      els.savedStationList.append(empty);
+      return;
+    }
+    stations.forEach((station) => {
+      const row = document.createElement("article");
+      row.className = "saved-station";
+      const copy = document.createElement("div");
+      copy.className = "saved-station-copy";
+      const name = document.createElement("strong");
+      name.textContent = station.name;
+      const summary = document.createElement("span");
+      summary.textContent = stationSummary(station);
+      copy.append(name, summary);
+      const actions = document.createElement("div");
+      actions.className = "station-manager-actions";
+      const listen = document.createElement("a");
+      listen.className = "button";
+      listen.href = `/?station=${encodeURIComponent(station.station_id)}`;
+      listen.textContent = "Listen";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "button";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () =>
+        beginStationEditor(station.source_type, station),
+      );
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "button";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        if (!window.confirm(`Delete “${station.name}”?`)) return;
+        remove.disabled = true;
+        try {
+          const ownerToken = window.ZakStorage.get(
+            `zak-radio-owner:${station.station_id}`,
+            "",
+          );
+          await window.ZakAPI(
+            `/api/stations/${encodeURIComponent(station.station_id)}`,
+            { method: "DELETE", body: { owner_token: ownerToken } },
+          );
+          window.ZakStorage.remove(
+            `zak-radio-owner:${station.station_id}`,
+          );
+          await window.ZakStations.reload();
+          renderSavedStations();
+        } catch {
+          remove.disabled = false;
+        }
+      });
+      actions.append(listen, edit, remove);
+      row.append(copy, actions);
+      els.savedStationList.append(row);
+    });
+  }
+
+  async function saveStation(event) {
+    event.preventDefault();
+    if (state.stationSavePending) return;
+    state.stationSavePending = true;
+    const submit = els.stationEditor.querySelector('[type="submit"]');
+    submit.disabled = true;
+    const id = els.stationEditorID.value;
+    const sourceType = els.stationEditorSource.value;
+    els.stationEditorStatus.textContent = "Saving…";
+    const body = {
+      name: els.stationEditorName.value.trim(),
+      random_mode: els.stationEditorRandom.value,
+      skip_disliked: els.stationEditorSkip.checked,
+    };
+    try {
+      if (id) {
+        if (state.editingStation?.source_type === "list") {
+          body.track_ids = state.editingStation.track_ids;
+        }
+        await window.ZakStations.update(id, body);
+      } else {
+        const attempt = {
+          idempotency_key: randomBrowserHex(16),
+          owner_token: randomBrowserHex(24),
+        };
+        Object.assign(body, {
+          source_type: sourceType,
+          filter_mode: sourceType === "filter" ? state.filter : "all",
+          filter_query:
+            sourceType === "filter" ? els.search.value.trim() : "",
+          track_ids: [],
+          ...attempt,
+        });
+        const created = await window.ZakAPI("/api/stations", {
+          method: "POST",
+          body,
+        });
+        window.ZakStorage.set(
+          `zak-radio-owner:${created.station_id}`,
+          created.owner_token,
+        );
+        await window.ZakStations.reload();
+      }
+      els.stationEditor.hidden = true;
+      state.editingStation = null;
+      renderSavedStations();
+    } catch (error) {
+      els.stationEditorStatus.textContent =
+        error.detail || error.message || "Couldn’t save this station.";
+    } finally {
+      state.stationSavePending = false;
+      submit.disabled = false;
+    }
+  }
+
+  function randomBrowserHex(bytes) {
+    const values = new Uint8Array(bytes);
+    crypto.getRandomValues(values);
+    return Array.from(values, (value) =>
+      value.toString(16).padStart(2, "0"),
+    ).join("");
   }
 
   function matchesFilter(track, newestTrackTime = 0) {
@@ -334,6 +562,14 @@
       addQueue.dataset.queueAction = "add_to_queue";
       addQueue.textContent = "Add to queue";
       addQueue.setAttribute("aria-label", `Add ${displayTitle} to queue`);
+      const addStation = document.createElement("button");
+      addStation.type = "button";
+      addStation.className = "track-queue-action";
+      addStation.textContent = "Add to station";
+      addStation.setAttribute(
+        "aria-label",
+        `Add ${displayTitle} to a saved station`,
+      );
       const preview = document.createElement("button");
       preview.type = "button";
       preview.className = "track-preview-action";
@@ -349,9 +585,14 @@
       addQueue.addEventListener("click", () =>
         queueTrack(track, "add_to_queue", addQueue, status),
       );
+      addStation.addEventListener("click", () =>
+        window.ZakStations?.addTrack(track),
+      );
       preview.addEventListener("click", () => toggleTrack(track));
-      coverButton.addEventListener("click", () => playNext.focus());
-      actions.append(playNext, addQueue, preview, status);
+      coverButton.addEventListener("click", () =>
+        (state.station?.supportsQueue ? playNext : addStation).focus(),
+      );
+      actions.append(playNext, addQueue, addStation, preview, status);
 
       card.append(coverButton, copy, actions);
       fragment.append(card);
@@ -547,6 +788,25 @@
   });
   window.addEventListener("zak-audio-owner", updatePlaybackUI);
   window.addEventListener("zak-station", updateStationTarget);
+  window.addEventListener("zak-stations", renderSavedStations);
+  window.addEventListener("zak-new-station", () =>
+    beginStationEditor("filter"),
+  );
+  window.addEventListener("zak-new-list-station", () =>
+    beginStationEditor("list"),
+  );
+  els.createFilterStation.addEventListener("click", () =>
+    beginStationEditor("filter"),
+  );
+  els.createListStation.addEventListener("click", () =>
+    beginStationEditor("list"),
+  );
+  els.stationEditor.addEventListener("submit", saveStation);
+  els.stationEditorCancel.addEventListener("click", () => {
+    els.stationEditor.hidden = true;
+    state.editingStation = null;
+    els.createFilterStation.focus();
+  });
 
   document.addEventListener("keydown", (event) => {
     const tag = document.activeElement?.tagName;
@@ -677,4 +937,5 @@
     });
   loadLibrary();
   updateStationTarget();
+  renderSavedStations();
 })();

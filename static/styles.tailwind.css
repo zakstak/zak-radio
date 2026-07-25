@@ -414,14 +414,6 @@
     @apply py-5;
   }
 
-  .synced-lyrics-section {
-    @apply mt-7 first:mt-0;
-  }
-
-  .synced-lyrics-heading {
-    @apply mb-2 px-3 text-[10px] font-bold tracking-[.13em] text-radio-muted uppercase;
-  }
-
   .synced-lyric-cue {
     @apply my-0.5 block w-full cursor-pointer scroll-my-24 border-0 border-l-[3px] border-transparent bg-transparent px-3 py-2.5 text-left text-[15px] leading-6 text-[#8f8f8a] transition-colors sm:text-base;
     font: inherit;
@@ -1052,6 +1044,118 @@
 
   .transport .play-button {
     @apply size-[54px] min-w-[54px];
+  }
+}
+
+@layer components {
+  .station-picker-label {
+    @apply sr-only;
+  }
+
+  .station-picker {
+    @apply mt-2 min-w-44 lg:mt-0;
+  }
+
+  .radio-programming {
+    @apply mt-5 grid max-w-[760px] gap-3 border border-radio-line bg-radio-panel p-4 sm:grid-cols-[minmax(220px,1fr)_auto] sm:items-end;
+  }
+
+  .radio-programming legend {
+    @apply px-1;
+  }
+
+  .radio-programming label:not(.station-check),
+  .station-editor label:not(.station-check),
+  .station-dialog label {
+    @apply grid gap-2 text-xs font-semibold text-radio-muted;
+  }
+
+  .station-check {
+    @apply flex min-h-10 cursor-pointer items-center gap-2 text-sm text-radio-fg;
+  }
+
+  .station-check input {
+    @apply size-4 accent-radio-accent;
+  }
+
+  .radio-queue {
+    @apply items-start;
+  }
+
+  .radio-queue-tracks {
+    @apply m-0 grid w-full list-decimal gap-1 pl-5 text-radio-fg;
+  }
+
+  .station-manager {
+    @apply mb-8 border border-radio-line bg-radio-panel p-4 sm:p-5;
+  }
+
+  .station-manager-head {
+    @apply flex flex-col gap-4 border-b border-radio-line pb-4 sm:flex-row sm:items-start sm:justify-between;
+  }
+
+  .station-manager-head h2,
+  .station-dialog h2 {
+    @apply mt-1 text-xl font-semibold;
+  }
+
+  .station-manager-head p,
+  .station-editor-summary,
+  .station-dialog p {
+    @apply mt-2 max-w-2xl text-sm leading-6 text-radio-muted;
+  }
+
+  .station-manager-actions {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .station-editor {
+    @apply mt-4 border border-radio-line bg-radio-soft p-4;
+  }
+
+  .station-editor-grid {
+    @apply grid gap-4 sm:grid-cols-[minmax(180px,1fr)_minmax(220px,1fr)_auto] sm:items-end;
+  }
+
+  .station-editor input[type="text"] {
+    @apply min-h-10 border border-radio-line bg-radio-bg px-3 text-radio-fg;
+  }
+
+  .station-editor-members {
+    @apply my-4 grid gap-2;
+  }
+
+  .station-editor-member,
+  .saved-station {
+    @apply flex items-center justify-between gap-3 border border-radio-line bg-radio-bg p-3;
+  }
+
+  .saved-station-list {
+    @apply mt-4 grid gap-2;
+  }
+
+  .saved-station-copy {
+    @apply min-w-0;
+  }
+
+  .saved-station-copy strong {
+    @apply block truncate text-sm;
+  }
+
+  .saved-station-copy span {
+    @apply mt-1 block text-xs text-radio-muted;
+  }
+
+  .station-dialog {
+    @apply m-auto w-[min(92vw,480px)] border border-radio-line bg-radio-panel p-5 text-radio-fg shadow-2xl;
+  }
+
+  .station-dialog::backdrop {
+    @apply bg-black/75 backdrop-blur-sm;
+  }
+
+  .station-dialog form {
+    @apply grid gap-4;
   }
 }
 

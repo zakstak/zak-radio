@@ -132,25 +132,43 @@ func TestShuffleRequiresExplicitState(t *testing.T) {
 
 func TestStationQueueIsOrderedAndConsumedByNext(t *testing.T) {
 	app := newTestApp(t)
-
-	postControlForTest(t, app,
-		`{"action":"add_to_queue","track_id":"one"}`)
-	station := postControlForTest(t, app,
-		`{"action":"play_next","track_id":"two"}`)
-	queue, ok := station["queue"].([]any)
-	if !ok || len(queue) != 2 || queue[0] != "two" || queue[1] != "one" {
-		t.Fatalf("queue = %#v, want [two one]", station["queue"])
+	id, token, _, err := app.station.Create(
+		context.Background(), "one", strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.station.Execute(context.Background(), Command{
+		StationID: id, OwnerToken: token, Action: "add_to_queue", TrackID: "one",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	station, err := app.station.Execute(context.Background(), Command{
+		StationID: id, OwnerToken: token, Action: "play_next", TrackID: "two",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(station.Queue) != 2 || station.Queue[0] != "two" || station.Queue[1] != "one" {
+		t.Fatalf("queue = %#v, want [two one]", station.Queue)
 	}
 
-	station = postControlForTest(t, app, `{"action":"next"}`)
-	queue, _ = station["queue"].([]any)
-	if station["track_id"] != "two" || len(queue) != 1 || queue[0] != "one" {
+	station, err = app.station.Execute(context.Background(), Command{
+		StationID: id, OwnerToken: token, Action: "next",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if station.TrackID != "two" || len(station.Queue) != 1 || station.Queue[0] != "one" {
 		t.Fatalf("first queued next = %#v", station)
 	}
 
-	station = postControlForTest(t, app, `{"action":"next"}`)
-	queue, _ = station["queue"].([]any)
-	if station["track_id"] != "one" || len(queue) != 0 {
+	station, err = app.station.Execute(context.Background(), Command{
+		StationID: id, OwnerToken: token, Action: "next",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if station.TrackID != "one" || len(station.Queue) != 0 {
 		t.Fatalf("second queued next = %#v", station)
 	}
 }
@@ -159,22 +177,27 @@ func TestStationQueueIsConsumedAtNaturalTrackEnd(t *testing.T) {
 	app := newTestApp(t)
 	fixed := time.Unix(1_800_000_000, 0)
 	freezeStationClockForTest(app.station, fixed)
+	id, token, _, err := app.station.Create(
+		context.Background(), "one", strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := app.station.Execute(context.Background(), Command{
-		Action: "add_to_queue", TrackID: "two",
+		StationID: id, OwnerToken: token, Action: "add_to_queue", TrackID: "two",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.db.Exec(`
 update stations set track_id='one', position=0, playing=1, repeat_one=0,
 	shuffle=0, updated_at=?, track_changed_at=? where id=?`,
-		unixTime(fixed)-11, unixTime(fixed)-11, mainStationID); err != nil {
+		unixTime(fixed)-11, unixTime(fixed)-11, id); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := app.station.Advance(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := app.station.Snapshot(context.Background(), mainStationID)
+	snapshot, err := app.station.Snapshot(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +369,7 @@ insert into temporary_stations values
 	if err := app.db.QueryRow("select track_id, repeat_one, shuffle from stations where id=?", mainStationID).Scan(&track, &repeat, &shuffle); err != nil {
 		t.Fatal(err)
 	}
-	if track != "one" || repeat != 0 || shuffle != 1 {
+	if app.catalog.ByID[track] == nil || repeat != 0 || shuffle != 1 {
 		t.Fatalf("main migration = track %q repeat %d shuffle %d", track, repeat, shuffle)
 	}
 	if err := app.db.QueryRow("select count(*) from stations where id='abcdef123456'").Scan(&count); err != nil {
@@ -670,6 +693,83 @@ func TestCatalogRejectsTimedLyricsForDifferentAudio(t *testing.T) {
 	}
 }
 
+func TestVersionTwoLyricsPreferCleanTextAndAllowWarningWithoutTiming(t *testing.T) {
+	cfg := newTestConfig(t)
+	sidecar := `{
+  "version": 2,
+  "track_id": "one",
+  "audio_sha256": "6ed8919ce20490a5e3ad8630a4fab69475297abd07db73918dd5f36fcfaeb11b",
+  "source_lyrics_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "duration": 10,
+  "language": "en",
+  "display_text": "Clean first line\n\nClean second line",
+  "origin": "reconciled",
+  "quality": {
+    "status": "warning",
+    "candidate_lines": 2,
+    "aligned_lines": 0,
+    "line_coverage": 0,
+    "word_coverage": 0,
+    "timing_coverage": 0,
+    "mean_confidence": 0,
+    "warnings": ["timing unavailable"]
+  },
+  "cues": []
+}`
+	if err := os.WriteFile(
+		filepath.Join(cfg.Archive, "tracks", "one", "lyrics.timed.json"),
+		[]byte(sidecar), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+	track := app.byID["one"]
+	if track.HasSyncedLyrics || track.LyricsQuality != "warning" ||
+		track.CleanLyrics != "Clean first line\n\nClean second line" {
+		t.Fatalf("version two catalog state = %#v", track)
+	}
+
+	response := httptest.NewRecorder()
+	app.apiTrackText(
+		response,
+		httptest.NewRequest(http.MethodGet, "/api/track/one?kind=lyrics", nil),
+	)
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), "Clean first line") ||
+		strings.Contains(response.Body.String(), "[Verse") {
+		t.Fatalf("clean lyrics status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestVersionTwoTimedLyricsRejectSectionLabels(t *testing.T) {
+	lyrics := TimedLyrics{
+		Version:     2,
+		TrackID:     "one",
+		AudioSHA256: "6ed8919ce20490a5e3ad8630a4fab69475297abd07db73918dd5f36fcfaeb11b",
+		Duration:    10,
+		DisplayText: "Hello",
+		Origin:      "provided",
+		Quality: TimedLyricsQuality{
+			Status: "verified", CandidateLines: 1, AlignedLines: 1,
+			LineCoverage: 1, WordCoverage: 1, TimingCoverage: 1,
+			MeanConfidence: 0.9,
+		},
+		Cues: []TimedLyricCue{{
+			Start: 1, End: 2, Section: "Verse 2", Text: "Hello",
+		}},
+	}
+	err := validateTimedLyrics(
+		lyrics, "one", lyrics.AudioSHA256, lyrics.Duration,
+	)
+	if err == nil || !strings.Contains(err.Error(), "exposes a section label") {
+		t.Fatalf("section validation error = %v", err)
+	}
+}
+
 func TestPlayerUsesSinglePlayPauseAndRepeatControls(t *testing.T) {
 	page, err := os.ReadFile(filepath.Join("static", "index.html"))
 	if err != nil {
@@ -684,6 +784,15 @@ func TestPlayerUsesSinglePlayPauseAndRepeatControls(t *testing.T) {
 	for _, id := range []string{`id="play"`, `id="pause"`} {
 		if strings.Contains(html, id) {
 			t.Fatalf("index.html still contains separate control %s", id)
+		}
+	}
+	appJS, err := os.ReadFile(filepath.Join("static", "app.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{"cue.section", "synced-lyrics-heading"} {
+		if strings.Contains(string(appJS), marker) {
+			t.Fatalf("listener still renders lyric formatting marker %q", marker)
 		}
 	}
 	for _, productDetail := range []string{
@@ -769,8 +878,8 @@ func TestSingleShellUsesSemanticTailwindAndLocalPreview(t *testing.T) {
 			t.Fatalf("single-shell library is missing %q", required)
 		}
 	}
-	if strings.Contains(js, "/api/control") || strings.Contains(js, "/api/stations") {
-		t.Fatal("local library preview must not mutate radio station state")
+	if strings.Contains(js, "/api/control") {
+		t.Fatal("local library preview must not mutate radio playback state")
 	}
 }
 

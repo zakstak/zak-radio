@@ -36,8 +36,9 @@ air.
 `ZAK_RADIO_TIMED_LYRICS` is optional. When supplied, it must be an immutable,
 flat directory of validated `<track-id>.json` timing sidecars and may include
 `subjects.json` for weak imported-title replacements. Each sidecar is bound to
-the exact audio digest. Tracks without a validated sidecar keep the normal
-static lyrics view rather than receiving guessed timing.
+the exact audio digest. Version 2 sidecars also carry display-ready text and an
+explicit verified or warning status. Warning lyrics remain readable, but the UI
+labels them instead of presenting uncertain transcription or timing as exact.
 
 Local endpoints:
 
@@ -123,16 +124,80 @@ application and no `vendor/` tree is committed or packaged.
 
 ## Build lyric timing and subject metadata
 
-Timed lyrics are generated offline and promoted as immutable release input. The
-generator uses vocal isolation, speech timing, and exact ordered matching
-against the recovered lyrics. It does not rewrite source lyrics or invent
-timings for unmatched text:
+Lyrics are cleaned, transcribed, and aligned offline, then promoted as
+immutable release input. Source `lyrics.md` and playback audio are never
+rewritten. Obvious section labels and prompt directions are removed
+deterministically; ambiguous prose can be classified by the pinned local Ollama
+model, and songs without source lyrics use the local HeartTranscriptor singing
+model.
+
+The model environment needs CUDA PyTorch, `stable-ts`, `transformers`,
+`accelerate`, and `demucs`; FFmpeg and ffprobe must be on `PATH`. Run one song
+or the complete archive through the same engine:
 
 ```bash
-python3 scripts/generate-timed-lyrics.py \
+python3 scripts/lyrics-harness.py song \
+  --archive /path/to/music-library \
+  --track-id TRACK_ID \
+  --output-root /path/to/alignment-run
+
+python3 scripts/lyrics-harness.py bulk \
   --archive /path/to/music-library \
   --output-root /path/to/alignment-run \
   --bundle-root /path/to/validated-timed-lyrics-bundle
+```
+
+`--preprocess auto` always scores raw audio first. It keeps the inexpensive
+FFmpeg vocal-forward pass only when that measurably improves alignment, and
+tries Demucs only if neither raw nor FFmpeg audio reaches the configured anchor
+quality. The selected preprocessing is for analysis only.
+
+The historical `generate-timed-lyrics.py` bulk command remains as a
+compatibility wrapper. Generated-transcript cleanup is extractive: common ASR
+outros and immediate duplicate sentences are removed, while prompt-like source
+clauses are restored only when local audio evidence supports the exact words.
+
+Gold audio is downloaded into the local cache and is never committed. The
+Hansen/MIREX public half contains five fully annotated popular songs, each with
+full-mix and a-cappella audio:
+
+```bash
+python3 scripts/lyrics-harness.py gold fetch --dataset hansen
+
+python3 scripts/lyrics-harness.py gold run \
+  --output-root ~/.cache/zak-radio-aligner/gold-predictions \
+  --report ~/.cache/zak-radio-aligner/gold-report.json \
+  --split held-out
+```
+
+The command runs both supplied-lyrics alignment and no-lyrics transcription
+lanes and exits with status 2 when the pinned profile misses a gold gate.
+JamendoLyrics adds 20 pinned, Creative Commons English full mixes with manual
+word timestamps and metadata for genre, overlapping lyrics, polyphony, and
+non-lexical singing. The fetch verifies every file checksum and retains the
+upstream license and per-song license catalog:
+
+```bash
+python3 scripts/lyrics-harness.py gold fetch --dataset jamendo
+
+python3 scripts/lyrics-harness.py gold run \
+  --dataset jamendo \
+  --output-root ~/.cache/zak-radio-aligner/gold-predictions-jamendo \
+  --report ~/.cache/zak-radio-aligner/gold-report-jamendo.json \
+  --split held-out \
+  --representation mix
+```
+
+Jamendo’s fixed split is derived from each stable song ID, so reruns and
+machines evaluate the same development and held-out songs.
+MUSDB18 can also be fetched for source-separation and genre-diversity
+experiments (it is not part of the automated word-timing runner), but its
+educational-use license must be acknowledged explicitly:
+
+```bash
+python3 scripts/lyrics-harness.py gold fetch \
+  --dataset musdb18 \
+  --accept-educational-license
 ```
 
 Weak imported titles can be replaced with locally generated subject labels. This
