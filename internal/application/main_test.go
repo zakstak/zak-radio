@@ -346,7 +346,7 @@ insert into temporary_stations values
 	if err := app.db.QueryRow("select track_id, repeat_one, shuffle from stations where id=?", mainStationID).Scan(&track, &repeat, &shuffle); err != nil {
 		t.Fatal(err)
 	}
-	if track != "two" || repeat != 1 || shuffle != 0 {
+	if track != "one" || repeat != 0 || shuffle != 1 {
 		t.Fatalf("main migration = track %q repeat %d shuffle %d", track, repeat, shuffle)
 	}
 	if err := app.db.QueryRow("select count(*) from stations where id='abcdef123456'").Scan(&count); err != nil {
@@ -691,7 +691,7 @@ func TestPlayerUsesSinglePlayPauseAndRepeatControls(t *testing.T) {
 		`rel="icon"`,
 		`href="/reader"`,
 		`id="toast"`,
-		`Space play · ←/→ seek`,
+		`id="footerShortcut"`,
 		`id="createStation"`,
 		`id="toggleDetails"`,
 		`id="promptPanel"`,

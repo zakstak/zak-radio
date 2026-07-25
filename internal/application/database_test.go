@@ -427,7 +427,7 @@ func TestRevisionHeadroomRejectsOverflowingMutations(t *testing.T) {
 		Scan(&stationRevision, &shuffle); err != nil {
 		t.Fatal(err)
 	}
-	if stationRevision != maxRevisionValue || shuffle != 0 {
+	if stationRevision != maxRevisionValue || shuffle != 1 {
 		t.Fatalf("terminal station mutation committed revision=%d shuffle=%d",
 			stationRevision, shuffle)
 	}

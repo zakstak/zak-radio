@@ -368,6 +368,8 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 			a.apiControl(w, r)
 		case "/api/like":
 			a.apiLike(w, r)
+		case "/api/reaction":
+			a.apiReaction(w, r)
 		case "/api/reader/playback":
 			a.setReaderPlayback(w, r)
 		default:
@@ -396,7 +398,8 @@ func routeAllowedMethods(path string) []string {
 		strings.HasPrefix(path, "/api/track/") ||
 		strings.HasPrefix(path, "/api/reader/items/"):
 		return []string{http.MethodGet}
-	case path == "/api/stations" || path == "/api/control" || path == "/api/like":
+	case path == "/api/stations" || path == "/api/control" ||
+		path == "/api/like" || path == "/api/reaction":
 		return []string{http.MethodPost}
 	case path == "/api/reader/playback":
 		return []string{http.MethodGet, http.MethodPost}

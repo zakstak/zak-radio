@@ -28,6 +28,9 @@ type Snapshot struct {
 	TrackChangedAt  float64  `json:"track_changed_at"`
 	ServerTime      float64  `json:"server_time"`
 	Liked           bool     `json:"liked"`
+	Disliked        bool     `json:"disliked"`
+	LikeCount       int      `json:"like_count"`
+	DislikeCount    int      `json:"dislike_count"`
 	SkipCount       int      `json:"skip_count"`
 	ExpiresAt       *float64 `json:"expires_at,omitempty"`
 	Revision        int64    `json:"revision"`

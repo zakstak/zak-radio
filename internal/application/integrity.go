@@ -424,7 +424,8 @@ select
 select
 	(select count(*) from likes where length(cast(track_id as blob))>? or
 		instr(track_id,char(0))>0 or typeof(track_id)<>'text' or
-		typeof(liked)<>'integer' or liked not in (0,1) or
+		typeof(liked)<>'integer' or liked<0 or liked>=? or
+		typeof(disliked)<>'integer' or disliked<0 or disliked>=? or
 		typeof(updated_at) not in ('integer','real') or updated_at<0 or updated_at>?) +
 	(select count(*) from skip_counts where length(cast(track_id as blob))>? or
 		instr(track_id,char(0))>0 or typeof(track_id)<>'text' or
@@ -438,7 +439,8 @@ select
 	(select count(*) from reader_playback where length(cast(item_id as blob))>? or
 		length(cast(writer_id as blob))>128 or instr(item_id,char(0))>0 or
 		instr(writer_id,char(0))>0 or typeof(item_id)<>'text' or typeof(writer_id)<>'text')
-`, maxRouteIDBytes, maxRetainedTimestamp, maxRouteIDBytes, maxRevisionValue-2,
+`, maxRouteIDBytes, maxRevisionValue-2, maxRevisionValue-2,
+		maxRetainedTimestamp, maxRouteIDBytes, maxRevisionValue-2,
 		maxCatalogTracks, maxCatalogTracks,
 		maxReaderFieldBytes, maxReaderFieldBytes, maxRouteIDBytes).Scan(&invalid); err != nil {
 		return err

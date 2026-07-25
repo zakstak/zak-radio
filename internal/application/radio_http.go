@@ -36,7 +36,7 @@ func (a *App) apiTracks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) tracksWithStats(ctx context.Context) ([]Track, int64, error) {
-	likes, skips := map[string]bool{}, map[string]int{}
+	likes, dislikes, skips := map[string]int{}, map[string]int{}, map[string]int{}
 	tx, err := a.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, 0, err
@@ -46,18 +46,18 @@ func (a *App) tracksWithStats(ctx context.Context) ([]Track, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	rows, err := tx.QueryContext(ctx, "select track_id, liked from likes")
+	rows, err := tx.QueryContext(ctx, "select track_id, liked, disliked from likes")
 	if err != nil {
 		return nil, 0, err
 	}
 	for rows.Next() {
 		var id string
-		var liked int
-		if err := rows.Scan(&id, &liked); err != nil {
+		var liked, disliked int
+		if err := rows.Scan(&id, &liked, &disliked); err != nil {
 			rows.Close()
 			return nil, 0, err
 		}
-		likes[id] = liked != 0
+		likes[id], dislikes[id] = liked, disliked
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -89,7 +89,9 @@ func (a *App) tracksWithStats(ctx context.Context) ([]Track, int64, error) {
 	out := make([]Track, len(a.tracks))
 	copy(out, a.tracks)
 	for i := range out {
-		out[i].Liked, out[i].SkipCount = likes[out[i].ID], skips[out[i].ID]
+		out[i].LikeCount, out[i].DislikeCount = likes[out[i].ID], dislikes[out[i].ID]
+		out[i].Liked, out[i].Disliked = out[i].LikeCount > 0, out[i].DislikeCount > 0
+		out[i].SkipCount = skips[out[i].ID]
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, 0, err
@@ -105,7 +107,10 @@ func (a *App) publishTrackStats(ctx context.Context) (map[string]any, error) {
 	stats := make([]map[string]any, 0, len(tracks))
 	for _, track := range tracks {
 		stats = append(stats, map[string]any{
-			"track_id": track.ID, "liked": track.Liked, "skip_count": track.SkipCount,
+			"track_id": track.ID,
+			"liked":    track.Liked, "disliked": track.Disliked,
+			"like_count": track.LikeCount, "dislike_count": track.DislikeCount,
+			"skip_count": track.SkipCount,
 		})
 	}
 	payload := map[string]any{"revision": revision, "tracks": stats}
@@ -146,19 +151,19 @@ func (a *App) trackStatsPayload(ctx context.Context, q queryer) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	likes, skips := map[string]bool{}, map[string]int{}
-	rows, err := q.QueryContext(ctx, "select track_id, liked from likes")
+	likes, dislikes, skips := map[string]int{}, map[string]int{}, map[string]int{}
+	rows, err := q.QueryContext(ctx, "select track_id, liked, disliked from likes")
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var id string
-		var liked int
-		if err := rows.Scan(&id, &liked); err != nil {
+		var liked, disliked int
+		if err := rows.Scan(&id, &liked, &disliked); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		likes[id] = liked != 0
+		likes[id], dislikes[id] = liked, disliked
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -190,7 +195,10 @@ func (a *App) trackStatsPayload(ctx context.Context, q queryer) (map[string]any,
 	stats := make([]map[string]any, 0, len(a.tracks))
 	for _, track := range a.tracks {
 		stats = append(stats, map[string]any{
-			"track_id": track.ID, "liked": likes[track.ID], "skip_count": skips[track.ID],
+			"track_id": track.ID,
+			"liked":    likes[track.ID] > 0, "disliked": dislikes[track.ID] > 0,
+			"like_count": likes[track.ID], "dislike_count": dislikes[track.ID],
+			"skip_count": skips[track.ID],
 		})
 	}
 	return map[string]any{"revision": revision, "tracks": stats}, nil
@@ -423,9 +431,10 @@ func writeSSE(w http.ResponseWriter, snapshot Snapshot) {
 	fmt.Fprintf(w, "event: station\ndata: %s\n\n", payload)
 }
 
-func (a *App) apiLike(w http.ResponseWriter, r *http.Request) {
+func (a *App) apiReaction(w http.ResponseWriter, r *http.Request) {
 	var request struct {
-		TrackID string `json:"track_id"`
+		TrackID  string `json:"track_id"`
+		Reaction string `json:"reaction"`
 	}
 	if !decodeJSON(w, r, &request, false) {
 		return
@@ -434,8 +443,15 @@ func (a *App) apiLike(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown track", http.StatusBadRequest)
 		return
 	}
+	if request.Reaction == "" {
+		request.Reaction = "like"
+	}
+	if request.Reaction != "like" && request.Reaction != "dislike" {
+		http.Error(w, "reaction must be like or dislike", http.StatusBadRequest)
+		return
+	}
 	now := unixTime(time.Now())
-	var liked int
+	var liked, disliked int
 	var revision int64
 	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -443,10 +459,25 @@ func (a *App) apiLike(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	if err := tx.QueryRowContext(r.Context(), `
-insert into likes(track_id, liked, updated_at) values (?, 1, ?)
-on conflict(track_id) do update set liked=not likes.liked, updated_at=excluded.updated_at
-returning liked`, request.TrackID, now).Scan(&liked); err != nil {
+	column := "liked"
+	if request.Reaction == "dislike" {
+		column = "disliked"
+	}
+	query := fmt.Sprintf(`
+insert into likes(track_id, liked, updated_at, disliked) values (?, ?, ?, ?)
+on conflict(track_id) do update set
+	%s=%s+1, updated_at=excluded.updated_at
+where %s<?
+returning liked, disliked`, column, column, column)
+	likeIncrement, dislikeIncrement := 0, 0
+	if request.Reaction == "like" {
+		likeIncrement = 1
+	} else {
+		dislikeIncrement = 1
+	}
+	if err := tx.QueryRowContext(r.Context(), query,
+		request.TrackID, likeIncrement, now, dislikeIncrement,
+		maxRevisionValue-3).Scan(&liked, &disliked); err != nil {
 		internalError(w)
 		return
 	}
@@ -470,6 +501,9 @@ returning cast(value as integer)`, maxRevisionValue-3).Scan(&revision); err != n
 	}
 	payload["track_id"] = request.TrackID
 	payload["liked"] = liked != 0
+	payload["disliked"] = disliked != 0
+	payload["like_count"] = liked
+	payload["dislike_count"] = disliked
 	payload["skip_count"] = skips
 	payload["revision"] = revision
 	if err := tx.Commit(); err != nil {
@@ -478,6 +512,10 @@ returning cast(value as integer)`, maxRevisionValue-3).Scan(&revision); err != n
 	}
 	a.publishTrackStatsPayload(payload)
 	writeJSON(w, payload)
+}
+
+func (a *App) apiLike(w http.ResponseWriter, r *http.Request) {
+	a.apiReaction(w, r)
 }
 
 func readTrackStatsRevision(ctx context.Context, q queryer) (int64, error) {

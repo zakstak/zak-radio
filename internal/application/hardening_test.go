@@ -493,7 +493,7 @@ func TestLastRestartableRevisionCannotCommitInvalidTerminalState(t *testing.T) {
 		Scan(&revision, &shuffle); err != nil {
 		t.Fatal(err)
 	}
-	if revision != boundary || shuffle != 0 {
+	if revision != boundary || shuffle != 1 {
 		t.Fatalf("boundary station mutation committed revision=%d shuffle=%d",
 			revision, shuffle)
 	}

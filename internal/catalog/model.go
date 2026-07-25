@@ -54,6 +54,9 @@ type Track struct {
 	HasSyncedLyrics    bool   `json:"has_synced_lyrics,omitempty"`
 	PromptPath         string `json:"-"`
 	Liked              bool   `json:"liked,omitempty"`
+	Disliked           bool   `json:"disliked,omitempty"`
+	LikeCount          int    `json:"like_count,omitempty"`
+	DislikeCount       int    `json:"dislike_count,omitempty"`
 	SkipCount          int    `json:"skip_count,omitempty"`
 }
 

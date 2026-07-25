@@ -349,6 +349,10 @@
     @apply justify-self-center;
   }
 
+  .transport.is-radio {
+    @apply max-w-[140px] grid-cols-[58px_58px] gap-3;
+  }
+
   .track-actions {
     @apply mt-4 flex flex-wrap items-center gap-2;
   }
@@ -1036,6 +1040,10 @@
 
   .transport {
     @apply max-w-[250px] grid-cols-4 gap-y-2;
+  }
+
+  .transport.is-radio {
+    @apply max-w-[140px] grid-cols-[54px_44px] gap-3;
   }
 
   .transport .icon-button {

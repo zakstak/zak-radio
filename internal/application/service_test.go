@@ -303,7 +303,7 @@ func TestCatalogRejectsDuplicateAndEscapingMedia(t *testing.T) {
 	})
 }
 
-func TestConcurrentLikeTogglesAreAtomic(t *testing.T) {
+func TestConcurrentLikesAccumulateAtomically(t *testing.T) {
 	app := newTestApp(t)
 	var wg sync.WaitGroup
 	statuses := make(chan int, 2)
@@ -329,20 +329,22 @@ func TestConcurrentLikeTogglesAreAtomic(t *testing.T) {
 	if err := app.db.QueryRow("select liked from likes where track_id='one'").Scan(&liked); err != nil {
 		t.Fatal(err)
 	}
-	if liked != 0 {
-		t.Fatalf("two toggles left liked=%d, want 0", liked)
+	if liked != 2 {
+		t.Fatalf("two likes left count=%d, want 2", liked)
 	}
 }
 
 func TestConcurrentLikeResponsesAreRevisionConsistent(t *testing.T) {
 	app := newTestApp(t)
 	type result struct {
-		status   int
-		revision int64
-		liked    bool
-		tracks   []struct {
-			TrackID string `json:"track_id"`
-			Liked   bool   `json:"liked"`
+		status    int
+		revision  int64
+		liked     bool
+		likeCount int
+		tracks    []struct {
+			TrackID   string `json:"track_id"`
+			Liked     bool   `json:"liked"`
+			LikeCount int    `json:"like_count"`
 		}
 	}
 	results := make(chan result, 2)
@@ -357,15 +359,18 @@ func TestConcurrentLikeResponsesAreRevisionConsistent(t *testing.T) {
 			app.apiLike(res, req)
 			value := result{status: res.Code}
 			var payload struct {
-				Revision int64 `json:"revision"`
-				Liked    bool  `json:"liked"`
-				Tracks   []struct {
-					TrackID string `json:"track_id"`
-					Liked   bool   `json:"liked"`
+				Revision  int64 `json:"revision"`
+				Liked     bool  `json:"liked"`
+				LikeCount int   `json:"like_count"`
+				Tracks    []struct {
+					TrackID   string `json:"track_id"`
+					Liked     bool   `json:"liked"`
+					LikeCount int    `json:"like_count"`
 				} `json:"tracks"`
 			}
 			if json.Unmarshal(res.Body.Bytes(), &payload) == nil {
-				value.revision, value.liked, value.tracks = payload.Revision, payload.Liked, payload.Tracks
+				value.revision, value.liked, value.likeCount, value.tracks =
+					payload.Revision, payload.Liked, payload.LikeCount, payload.Tracks
 			}
 			results <- value
 		}()
@@ -379,18 +384,21 @@ func TestConcurrentLikeResponsesAreRevisionConsistent(t *testing.T) {
 		}
 		byRevision[value.revision] = value
 	}
-	for revision, wantLiked := range map[int64]bool{1: true, 2: false} {
+	for revision, wantCount := range map[int64]int{1: 1, 2: 2} {
 		value, ok := byRevision[revision]
 		if !ok {
 			t.Fatalf("missing revision %d in %#v", revision, byRevision)
 		}
 		var trackLiked bool
+		var trackLikeCount int
 		for _, track := range value.tracks {
 			if track.TrackID == "one" {
 				trackLiked = track.Liked
+				trackLikeCount = track.LikeCount
 			}
 		}
-		if value.liked != wantLiked || trackLiked != wantLiked {
+		if !value.liked || !trackLiked ||
+			value.likeCount != wantCount || trackLikeCount != wantCount {
 			t.Fatalf("revision %d response=%#v", revision, value)
 		}
 	}

@@ -103,8 +103,19 @@ func (s *StationService) EnsureMain(ctx context.Context) error {
 insert into stations
 	(id, kind, owner_hash, track_id, position, playing, repeat_one, shuffle,
 	 created_at, updated_at, track_changed_at, expires_at, revision)
-values (?, 'shared', '', ?, 0, 0, 0, 0, ?, ?, ?, null, 1)
+values (?, 'shared', '', ?, 0, 0, 0, 1, ?, ?, ?, null, 1)
 on conflict(id) do nothing`, mainStationID, s.catalog.Tracks[0].ID, now, now, now); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+update stations
+set repeat_one=0, shuffle=1, revision=revision+1
+where id=? and (repeat_one<>0 or shuffle<>1) and revision<?`,
+		mainStationID, maxRevisionValue-3); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx,
+		"delete from station_queue where station_id=?", mainStationID); err != nil {
 		return err
 	}
 	rows, err := s.db.QueryContext(ctx, "select id, kind, track_id from stations")
@@ -874,8 +885,12 @@ func (s *StationService) duration(trackID string) float64 {
 }
 
 func (s *StationService) snapshot(ctx context.Context, q queryer, row Station, now float64) (Snapshot, error) {
-	var liked, skipCount int
-	if err := q.QueryRowContext(ctx, "select coalesce((select liked from likes where track_id=?), 0)", row.TrackID).Scan(&liked); err != nil {
+	var liked, disliked, skipCount int
+	if err := q.QueryRowContext(ctx, `
+select
+	coalesce((select liked from likes where track_id=?), 0),
+	coalesce((select disliked from likes where track_id=?), 0)`,
+		row.TrackID, row.TrackID).Scan(&liked, &disliked); err != nil {
 		return Snapshot{}, err
 	}
 	if err := q.QueryRowContext(ctx, "select coalesce((select skip_count from skip_counts where track_id=?), 0)", row.TrackID).Scan(&skipCount); err != nil {
@@ -890,7 +905,9 @@ func (s *StationService) snapshot(ctx context.Context, q queryer, row Station, n
 		Kind: row.Kind, TrackID: row.TrackID,
 		Position: stationPosition(row, now, s.duration(row.TrackID)), Playing: row.Playing,
 		RepeatOne: row.RepeatOne, Shuffle: row.Shuffle, UpdatedAt: row.UpdatedAt,
-		TrackChangedAt: row.TrackChangedAt, ServerTime: now, Liked: liked != 0,
+		TrackChangedAt: row.TrackChangedAt, ServerTime: now,
+		Liked: liked != 0, Disliked: disliked != 0,
+		LikeCount: liked, DislikeCount: disliked,
 		SkipCount: skipCount, ExpiresAt: row.ExpiresAt, Revision: row.Revision,
 		Queue: queue,
 	}, nil

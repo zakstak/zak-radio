@@ -289,7 +289,7 @@ func writeRateRule(path string) (rateRule, bool) {
 	switch path {
 	case "/api/stations":
 		return rateRule{limit: 20, window: time.Hour}, true
-	case "/api/control", "/api/like":
+	case "/api/control", "/api/like", "/api/reaction":
 		return rateRule{limit: 120, window: time.Minute}, true
 	case "/api/reader/playback":
 		return rateRule{limit: 240, window: time.Minute}, true

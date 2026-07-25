@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const currentSchemaVersion = 15
+const currentSchemaVersion = 16
 
 type migration struct {
 	version int
@@ -339,6 +339,7 @@ select count(*) from sqlite_master where type='table' and name not like 'sqlite_
 		{13, reserveRevisionHeadroomAndClock},
 		{14, addStationCreationIdempotency},
 		{15, addStationQueue},
+		{16, addDislikeCounts},
 	}
 	for _, item := range migrations {
 		if item.version <= version {
@@ -361,6 +362,35 @@ select count(*) from sqlite_master where type='table' and name not like 'sqlite_
 		}
 	}
 	return nil
+}
+
+func addDislikeCounts(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `pragma table_xinfo("likes")`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey, hidden int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull,
+			&defaultValue, &primaryKey, &hidden); err != nil {
+			rows.Close()
+			return err
+		}
+		found = found || name == "disliked"
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = tx.ExecContext(ctx, `
+alter table likes add column disliked integer not null default 0
+	check(disliked between 0 and 9007199254740990);`)
+	return err
 }
 
 func addStationQueue(ctx context.Context, tx *sql.Tx) error {

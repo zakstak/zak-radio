@@ -37,6 +37,7 @@ const state = {
 const els = {
   skipToContent: document.getElementById("skipToContent"),
   shellContext: document.getElementById("shellContext"),
+  footerShortcut: document.getElementById("footerShortcut"),
   connection: document.getElementById("connection"),
   connectionDot: document.getElementById("connectionDot"),
   connectionText: document.getElementById("connectionText"),
@@ -55,6 +56,8 @@ const els = {
   lyricsSyncStatus: document.getElementById("lyricsSyncStatus"),
   prompt: document.getElementById("prompt"),
   download: document.getElementById("download"),
+  stationProgress: document.getElementById("stationProgress"),
+  transport: document.getElementById("transport"),
   currentTime: document.getElementById("currentTime"),
   duration: document.getElementById("duration"),
   progress: document.getElementById("progress"),
@@ -68,6 +71,7 @@ const els = {
   random: document.getElementById("random"),
   repeatOne: document.getElementById("repeatOne"),
   like: document.getElementById("like"),
+  dislike: document.getElementById("dislike"),
   skipCount: document.getElementById("skipCount"),
   stationStatus: document.getElementById("stationStatus"),
   nowPlayingAnnouncement: document.getElementById("nowPlayingAnnouncement"),
@@ -94,6 +98,7 @@ const els = {
   returnLive: document.getElementById("returnLive"),
   ownerAnnouncement: document.getElementById("audioOwnerAnnouncement"),
   radioRetry: document.getElementById("radioRetry"),
+  radioQueue: document.getElementById("radioQueue"),
   radioQueueSummary: document.getElementById("radioQueueSummary"),
 };
 
@@ -606,6 +611,9 @@ function applyTrackStats(payload) {
     const stat = byID.get(track.id);
     if (!stat) continue;
     track.liked = Boolean(stat.liked);
+    track.disliked = Boolean(stat.disliked);
+    track.like_count = Number(stat.like_count || 0);
+    track.dislike_count = Number(stat.dislike_count || 0);
     track.skip_count = Number(stat.skip_count || 0);
   }
   state.trackStatsRevision = revision;
@@ -615,6 +623,9 @@ function applyTrackStats(payload) {
     );
     if (current) {
       state.station.liked = current.liked;
+      state.station.disliked = current.disliked;
+      state.station.like_count = current.like_count;
+      state.station.dislike_count = current.dislike_count;
       state.station.skip_count = current.skip_count;
     }
   }
@@ -697,6 +708,7 @@ function stationView() {
     kind: temporary ? "private" : "shared",
     label: temporary ? "your private station" : "the shared station",
     canControl: canControlStation(),
+    supportsQueue: temporary,
     queue: Array.isArray(state.station?.queue) ? [...state.station.queue] : [],
   };
 }
@@ -764,6 +776,7 @@ function setStationLoading() {
     els.repeatOne,
     els.progress,
     els.like,
+    els.dislike,
     els.createStation,
   ].forEach((control) => {
     control.disabled = true;
@@ -928,13 +941,18 @@ function renderTimedLyrics(timedLyrics) {
     line.className = "synced-lyric-cue";
     line.dataset.lyricCue = String(index);
     line.textContent = cue.text;
+    line.disabled = state.stationId === "main" || !canControlStation();
     line.setAttribute(
       "aria-label",
       `Seek to ${timeLabel(cue.start)}: ${cue.text}`,
     );
     line.addEventListener("click", () => {
-      if (!canControlStation()) {
-        showToast("Only the station controller can seek this station.");
+      if (state.stationId === "main" || !canControlStation()) {
+        showToast(
+          state.stationId === "main"
+            ? "Radio playback stays live; seeking is unavailable."
+            : "Only the station controller can seek this station.",
+        );
         return;
       }
       postControl("seek", { position: Number(cue.start || 0) });
@@ -1096,8 +1114,20 @@ function renderStation() {
   renderModeButton(els.repeatOne, repeatOne, "Repeat current track");
   renderModeButton(els.random, shuffle, "Shuffle");
   if (audioController.is("radio")) els.audio.loop = repeatOne;
-  els.like.textContent = station.liked ? "Liked" : "Like";
-  els.like.setAttribute("aria-pressed", station.liked ? "true" : "false");
+  const likes = Number(station.like_count || 0);
+  const dislikes = Number(station.dislike_count || 0);
+  els.like.textContent = `♡ Like · ${likes}`;
+  els.like.setAttribute(
+    "aria-label",
+    `Like this song. ${likes} ${likes === 1 ? "like" : "likes"}`,
+  );
+  els.like.setAttribute("aria-pressed", "false");
+  els.dislike.textContent = `Dislike · ${dislikes}`;
+  els.dislike.setAttribute(
+    "aria-label",
+    `Dislike this song. ${dislikes} ${dislikes === 1 ? "dislike" : "dislikes"}`,
+  );
+  els.dislike.setAttribute("aria-pressed", "false");
   const skips = Number(station.skip_count || 0);
   els.skipCount.textContent = `${skips} early ${skips === 1 ? "skip" : "skips"}`;
   const queue = Array.isArray(station.queue) ? station.queue : [];
@@ -1114,8 +1144,23 @@ function renderStation() {
     ? canControl
       ? "Only this browser can turn this dial. The share link is listen-only."
       : "Listen-only. The creator controls this dial."
-    : "Everyone here can turn the dial.";
+    : "Always random. Everyone can react or skip to the next song.";
+  els.footerShortcut.textContent = temporary
+    ? "Space play · ←/→ seek"
+    : "Space play · live radio";
   renderStationIdentityActions();
+  els.random.hidden = !temporary;
+  els.prev.hidden = !temporary;
+  els.back10.hidden = !temporary;
+  els.forward10.hidden = !temporary;
+  els.repeatOne.hidden = !temporary;
+  els.stationProgress.hidden = !temporary;
+  els.radioQueue.hidden = !temporary;
+  els.skipCount.hidden = !temporary;
+  els.transport.classList.toggle("is-radio", !temporary);
+  els.lyrics.querySelectorAll(".synced-lyric-cue").forEach((cue) => {
+    cue.disabled = !temporary || !canControl;
+  });
   [
     els.playPause,
     els.back10,
@@ -1132,6 +1177,7 @@ function renderStation() {
     playing && audioController.is("radio") && !els.audio.paused;
   els.playPause.disabled = !canControl && !needsLocalJoin && !canPauseLocally;
   els.like.disabled = false;
+  els.dislike.disabled = false;
   els.createStation.disabled =
     state.stationCreatePending ||
     performance.now() < state.stationCapacityRetryAt;
@@ -1296,6 +1342,9 @@ function mergeCurrentStats(station) {
   const track = state.tracks.find((item) => item.id === station.track_id);
   if (!track) return null;
   station.liked = Boolean(track.liked);
+  station.disliked = Boolean(track.disliked);
+  station.like_count = Number(track.like_count || 0);
+  station.dislike_count = Number(track.dislike_count || 0);
   station.skip_count = Number(track.skip_count || 0);
   return track;
 }
@@ -1552,6 +1601,7 @@ window.ZakStation = {
     if (
       !["play_next", "add_to_queue"].includes(action) ||
       !trackID ||
+      state.stationId === "main" ||
       !canControlStation()
     )
       return null;
@@ -1750,28 +1800,29 @@ function toggleShuffle() {
   showToast(`Shuffle ${enabled ? "on" : "off"}`);
 }
 
-async function toggleLike() {
+async function addReaction(reaction) {
   const track = currentTrack();
   if (!track) return;
   const trackID = track.id;
-  const previous = state.likeQueues.get(trackID) || Promise.resolve();
+  const queueKey = `${trackID}:${reaction}`;
+  const previous = state.likeQueues.get(queueKey) || Promise.resolve();
   const mutation = previous
     .catch(() => {})
     .then(async () => {
       try {
-        const result = await api("/api/like", {
+        const result = await api("/api/reaction", {
           method: "POST",
-          body: { track_id: trackID },
+          body: { track_id: trackID, reaction },
         });
         applyTrackStats(result);
       } catch {
         showToast("Couldn’t update this track.");
       }
     });
-  state.likeQueues.set(trackID, mutation);
+  state.likeQueues.set(queueKey, mutation);
   await mutation;
-  if (state.likeQueues.get(trackID) === mutation)
-    state.likeQueues.delete(trackID);
+  if (state.likeQueues.get(queueKey) === mutation)
+    state.likeQueues.delete(queueKey);
 }
 
 function setStationUnavailable(message) {
@@ -1795,6 +1846,7 @@ function setStationUnavailable(message) {
     els.repeatOne,
     els.progress,
     els.like,
+    els.dislike,
     els.createStation,
   ].forEach((control) => {
     control.disabled = true;
@@ -1863,7 +1915,8 @@ els.prev.addEventListener("click", () => postControl("prev"));
 els.next.addEventListener("click", () => postControl("next"));
 els.random.addEventListener("click", toggleShuffle);
 els.repeatOne.addEventListener("click", toggleRepeatOne);
-els.like.addEventListener("click", toggleLike);
+els.like.addEventListener("click", () => addReaction("like"));
+els.dislike.addEventListener("click", () => addReaction("dislike"));
 els.toggleDetails.addEventListener("click", () => {
   const expanded = els.toggleDetails.getAttribute("aria-expanded") !== "true";
   els.toggleDetails.setAttribute("aria-expanded", String(expanded));
@@ -2090,7 +2143,7 @@ if ("mediaSession" in navigator) {
       const offset = Number(details.seekOffset || 10);
       if (audioController.is("reader")) window.ZakReader?.seekBy?.(-offset);
       else if (audioController.is("radio")) {
-        if (canControlStation())
+        if (state.stationId !== "main" && canControlStation())
           postControl("relative_seek", { position: -offset });
       } else
         els.audio.currentTime = Math.max(
@@ -2102,7 +2155,7 @@ if ("mediaSession" in navigator) {
       const offset = Number(details.seekOffset || 10);
       if (audioController.is("reader")) window.ZakReader?.seekBy?.(offset);
       else if (audioController.is("radio")) {
-        if (canControlStation())
+        if (state.stationId !== "main" && canControlStation())
           postControl("relative_seek", { position: offset });
       } else
         els.audio.currentTime = Math.min(
@@ -2114,7 +2167,8 @@ if ("mediaSession" in navigator) {
       const position = Number(details.seekTime || 0);
       if (audioController.is("reader")) window.ZakReader?.seekTo?.(position);
       else if (audioController.is("radio")) {
-        if (canControlStation()) postControl("seek", { position });
+        if (state.stationId !== "main" && canControlStation())
+          postControl("seek", { position });
       } else els.audio.currentTime = position;
     });
   } catch {}
@@ -2148,6 +2202,10 @@ els.progress.addEventListener("input", () => {
 els.progress.addEventListener("change", async () => {
   const position = Number(els.progress.value || 0);
   state.syncingProgress = false;
+  if (state.stationId === "main") {
+    updateProgressFromStation();
+    return;
+  }
   await postControl("seek", { position });
 });
 
@@ -2170,11 +2228,11 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     togglePlayback();
   } else if (event.key === "ArrowLeft") {
-    if (!canControlStation()) return;
+    if (state.stationId === "main" || !canControlStation()) return;
     event.preventDefault();
     postControl("relative_seek", { position: -10 });
   } else if (event.key === "ArrowRight") {
-    if (!canControlStation()) return;
+    if (state.stationId === "main" || !canControlStation()) return;
     event.preventDefault();
     postControl("relative_seek", { position: 10 });
   }

@@ -11,24 +11,85 @@ test("date-only metadata stays in its catalog month", async ({ page }) => {
   }))).toEqual({ catalog: "object", reader: "object" });
 });
 
-test("Library requires an explicit queue or preview action", async ({ page }) => {
+test("Library queues tracks only for private stations", async ({ page }) => {
   await page.goto("/library");
   const audio = page.locator("#audio");
   const queueBefore = await page.evaluate(async () =>
     (await (await fetch("/api/station?station_id=main")).json()).queue);
 
   await page.getByRole("button", { name: "Choose actions for Alpha Sunrise" }).click();
-  await expect(page.getByRole("button", { name: "Play Alpha Sunrise next" })).toBeFocused();
   expect(await audio.evaluate((element) => element.paused)).toBe(true);
   expect(await page.evaluate(async () =>
     (await (await fetch("/api/station?station_id=main")).json()).queue)).toEqual(queueBefore);
 
+  await expect(page.locator("#libraryStationTarget")).toContainText(
+    "Radio is always random",
+  );
+  await expect(
+    page.getByRole("button", { name: "Add Alpha Sunrise to queue" }),
+  ).toBeDisabled();
+
+  const created = await page.request.post("/api/stations", {
+    data: {
+      idempotency_key: "11111111111111111111111111111111",
+      owner_token: "222222222222222222222222222222222222222222222222",
+      track_id: "alpha",
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const privateStation = await created.json();
+  await page.evaluate(({ id, token }) => {
+    localStorage.setItem(`zak-radio-owner:${id}`, token);
+  }, { id: privateStation.station_id, token: privateStation.owner_token });
+  await page.goto(`/library?station=${privateStation.station_id}`);
   await page.getByRole("button", { name: "Add Alpha Sunrise to queue" }).click();
   await expect(page.locator(".track-action-status")).toContainText(
-    "was added to the shared station");
+    "was added to your private station");
   await expect.poll(() => page.evaluate(async () =>
-    (await (await fetch("/api/station?station_id=main")).json()).queue.length),
-  ).toBe(queueBefore.length + 1);
+    window.ZakStation.current().queue.length),
+  ).toBe(1);
+});
+
+test("Radio has cumulative reactions and a reduced transport", async ({ page }) => {
+  await page.goto("/");
+
+  for (const selector of [
+    "#random",
+    "#prev",
+    "#back10",
+    "#forward10",
+    "#repeatOne",
+    "#stationProgress",
+    "#radioQueue",
+  ]) {
+    await expect(page.locator(selector)).toBeHidden();
+  }
+  await expect(page.locator("#playPause")).toBeVisible();
+  await expect(page.locator("#next")).toBeVisible();
+  await expect(page.locator("#like")).toBeVisible();
+  await expect(page.locator("#dislike")).toBeVisible();
+  await expect(page.locator("#download")).toBeVisible();
+
+  const before = await page.evaluate(() => ({
+    likes: Number(window.ZakCatalog.tracks[0].like_count || 0),
+    dislikes: Number(window.ZakCatalog.tracks[0].dislike_count || 0),
+  }));
+  await page.locator("#like").click();
+  await page.locator("#like").click();
+  await page.locator("#dislike").click();
+  await expect(page.locator("#like")).toHaveText(`♡ Like · ${before.likes + 2}`);
+  await expect(page.locator("#dislike")).toHaveText(
+    `Dislike · ${before.dislikes + 1}`,
+  );
+
+  await page.locator("#createStation").click();
+  await expect(page.locator("#random")).toBeVisible();
+  await expect(page.locator("#prev")).toBeVisible();
+  await expect(page.locator("#back10")).toBeVisible();
+  await expect(page.locator("#forward10")).toBeVisible();
+  await expect(page.locator("#repeatOne")).toBeVisible();
+  await expect(page.locator("#stationProgress")).toBeVisible();
+  await expect(page.locator("#radioQueue")).toBeVisible();
 });
 
 test("weak track metadata falls back to its subject and deliberate no-artwork icon", async ({ page }) => {
@@ -114,7 +175,11 @@ test("timed lyrics follow radio playback, yield to scrolling, and seek the stati
   await page.getByRole("button", { name: "Follow song" }).click();
   await expect(page.getByRole("button", { name: "Follow song" })).toBeHidden();
 
-  await page.getByRole("button", { name: /Seek to .*First line/ }).click();
+  const firstLine = page.getByRole("button", { name: /Seek to .*First line/ });
+  await expect(firstLine).toBeDisabled();
+  await page.locator("#createStation").click();
+  await expect(firstLine).toBeEnabled();
+  await firstLine.click();
   await expect.poll(() => seekPosition).toBe(0.05);
 });
 

@@ -92,23 +92,32 @@
     state.station = window.ZakStation?.current?.() || null;
     if (!els.stationTarget || !state.station) return;
     const count = state.station.queue.length;
-    if (state.station.canControl) {
+    if (state.station.supportsQueue && state.station.canControl) {
       els.stationTarget.textContent = `Your picks will go to ${state.station.label}${count ? ` · ${count} already queued` : ""}.`;
+    } else if (!state.station.supportsQueue) {
+      els.stationTarget.textContent =
+        "Radio is always random. Create a private station to build a queue.";
     } else {
       els.stationTarget.textContent = `This is a listen-only private station. Its owner controls the queue.`;
     }
     document.querySelectorAll("[data-queue-action]").forEach((button) => {
-      button.disabled = !state.station.canControl;
-      button.title = state.station.canControl
-        ? `Add to ${state.station.label}`
-        : "This private station is listen-only";
+      button.disabled =
+        !state.station.supportsQueue || !state.station.canControl;
+      button.title =
+        state.station.supportsQueue && state.station.canControl
+          ? `Add to ${state.station.label}`
+          : state.station.supportsQueue
+            ? "This private station is listen-only"
+            : "Create a private station to build a queue";
     });
   }
 
   async function queueTrack(track, action, button, status) {
     const station = window.ZakStation?.current?.();
-    if (!station?.canControl) {
-      status.textContent = "This private station is listen-only.";
+    if (!station?.supportsQueue || !station.canControl) {
+      status.textContent = station?.supportsQueue
+        ? "This private station is listen-only."
+        : "Create a private station to build a queue.";
       return;
     }
     const label = action === "play_next" ? "Play next" : "Add to queue";
@@ -125,7 +134,8 @@
     } else {
       status.textContent = `Couldn’t update ${station.label}.`;
     }
-    button.disabled = !window.ZakStation.current().canControl;
+    const current = window.ZakStation.current();
+    button.disabled = !current.supportsQueue || !current.canControl;
   }
 
   function matchesFilter(track, newestTrackTime = 0) {

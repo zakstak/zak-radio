@@ -343,7 +343,7 @@ select item_id, status, coalesce(audio_path, ''), audio_bytes from reader_segmen
 func validateCanonicalSchema(ctx context.Context, db *sql.DB) error {
 	expectedTables := map[string][]string{
 		"app_metadata":          {"key", "value"},
-		"likes":                 {"track_id", "liked", "updated_at"},
+		"likes":                 {"track_id", "liked", "updated_at", "disliked"},
 		"reader_items":          {"id", "title", "source_url", "source_type", "source_hash", "author", "published_at", "uploaded_at", "generated_at", "status", "voice", "tts_backend", "tts_speed", "storage_dir", "source_path", "normalized_text_path", "manifest_path", "total_duration", "segment_count", "audio_bytes", "extractor_version", "quality_score", "quality_warnings", "cleanup_after", "notes"},
 		"reader_playback":       {"item_id", "segment_index", "position", "playing", "updated_at", "revision", "writer_id", "writer_sequence"},
 		"reader_segments":       {"id", "item_id", "segment_index", "heading_path", "kind", "text", "char_start", "char_end", "audio_path", "duration", "audio_bytes", "status", "audio_sha256"},
@@ -358,8 +358,9 @@ func validateCanonicalSchema(ctx context.Context, db *sql.DB) error {
 			value text not null
 		)`,
 		"likes": `create table likes (
-			track_id text primary key, liked integer not null default 0, updated_at real not null
-		)`,
+			track_id text primary key, liked integer not null default 0, updated_at real not null ,
+			disliked integer not null default 0
+				check(disliked between 0 and 9007199254740990))`,
 		"reader_items": `create table reader_items (
 			id text primary key, title text not null, source_url text, source_type text not null,
 			source_hash text not null, author text, published_at text, uploaded_at real not null,
@@ -453,7 +454,9 @@ order by type, name`)
 			seenTables[name] = true
 			if normalized != expectedTableSQL[name] {
 				rows.Close()
-				return fmt.Errorf("retained table %q definition is not canonical", name)
+				return fmt.Errorf(
+					"retained table %q definition is not canonical: got %q, want %q",
+					name, normalized, expectedTableSQL[name])
 			}
 		case "index":
 			if name != "stations_expiry" || table != "stations" ||

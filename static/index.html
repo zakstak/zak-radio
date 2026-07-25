@@ -13,7 +13,7 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 fill=%22%23f5f5f5%22/><path d=%22M17 37V27h5v10zm9 9V18h5v28zm9-5V23h5v18zm9-8v-2h5v2z%22 fill=%22%2309090b%22/></svg>"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=16" />
+    <link rel="stylesheet" href="/static/styles.css?v=17" />
   </head>
   <body>
     <a id="skipToContent" class="skip-link" href="#title">Skip to content</a>
@@ -135,7 +135,7 @@
             <button id="radioRetry" class="button" type="button" hidden>
               Retry station
             </button>
-            <div class="range-row station-progress">
+            <div id="stationProgress" class="range-row station-progress">
               <span id="currentTime">0:00</span>
               <div class="range-track">
                 <div id="progressFill" class="range-fill"></div>
@@ -154,7 +154,7 @@
               </div>
               <span id="duration" class="range-end">0:00</span>
             </div>
-            <div class="transport" aria-label="Station controls">
+            <div id="transport" class="transport" aria-label="Station controls">
               <button
                 id="random"
                 class="icon-button"
@@ -245,6 +245,9 @@
               <button id="like" class="button" aria-pressed="false" disabled>
                 <span aria-hidden="true">♡</span> Like
               </button>
+              <button id="dislike" class="button" aria-pressed="false" disabled>
+                Dislike
+              </button>
               <a id="download" class="button" aria-disabled="true"
                 ><span aria-hidden="true">↓</span> Download</a
               >
@@ -303,7 +306,9 @@
         </div>
         <footer class="site-footer">
           <span>Zak Radio</span><span>Original tracks, always on.</span
-          ><span class="footer-shortcut">Space play · ←/→ seek</span>
+          ><span id="footerShortcut" class="footer-shortcut"
+            >Space play · live radio</span
+          >
         </footer>
       </section>
 
