@@ -303,8 +303,26 @@ window.ZakRouteScroll = {
 };
 
 function setOwnerBarHidden(hidden) {
+  const previousContainer = routeScrollContainer();
+  const previousPosition = routeScrollPosition();
+  const visibilityChanged = els.ownerBar.hidden !== hidden;
   els.ownerBar.hidden = hidden;
   document.body.classList.toggle("has-audio-owner", !hidden);
+  if (!visibilityChanged) {
+    syncOwnerBarInset();
+    return;
+  }
+  const nextContainer = routeScrollContainer();
+  if (previousContainer !== nextContainer) {
+    const options = {
+      left: previousPosition[0],
+      top: previousPosition[1],
+      behavior: "instant",
+    };
+    if (nextContainer) nextContainer.scrollTo(options);
+    else window.scrollTo(options);
+  }
+  syncOwnerBarInset();
   window.requestAnimationFrame(syncOwnerBarInset);
 }
 
@@ -926,9 +944,11 @@ function setStationLoading() {
   state.current = null;
   els.stationMode.textContent = "Loading station";
   els.stationAccess.textContent = "Waiting for authoritative station state.";
-  els.stationCapabilityLabel.textContent = "Station connecting";
-  els.stationCapabilityDetail.textContent =
-    "Radio is waiting for authoritative station state. Library and Reader remain separate.";
+  setText(els.stationCapabilityLabel, "Station connecting");
+  setText(
+    els.stationCapabilityDetail,
+    "Radio is waiting for authoritative station state. Library and Reader remain separate.",
+  );
   els.radioView.classList.remove("is-listen-only");
   els.stationStatus.textContent = "Connecting…";
   els.livePulse.classList.remove("is-live");
@@ -1366,20 +1386,26 @@ function renderStation() {
   const capabilityChanged = els.radioView.dataset.capability !== capability;
   els.radioView.dataset.capability = capability;
   els.radioView.classList.toggle("is-listen-only", !canControl);
-  els.stationCapabilityLabel.textContent = temporary
-    ? canControl
-      ? "Private owner controls"
-      : "Listen-only private station"
-    : canControl
-      ? "Shared station control"
-      : "Listen-only saved station";
-  els.stationCapabilityDetail.textContent = temporary
-    ? canControl
-      ? "This browser can control the private queue. Shared links can listen but cannot change it."
-      : "Join live, follow lyrics, react, and download here. The creator owns transport and queue changes."
-    : canControl
-      ? "Join live, react, download, and shape this saved station from this browser."
-      : "Join live, follow lyrics, react, and download here. The station owner controls transport and programming.";
+  setText(
+    els.stationCapabilityLabel,
+    temporary
+      ? canControl
+        ? "Private owner controls"
+        : "Listen-only private station"
+      : canControl
+        ? "Shared station control"
+        : "Listen-only saved station",
+  );
+  setText(
+    els.stationCapabilityDetail,
+    temporary
+      ? canControl
+        ? "This browser can control the private queue. Shared links can listen but cannot change it."
+        : "Join live, follow lyrics, react, and download here. The creator owns transport and queue changes."
+      : canControl
+        ? "Join live, react, download, and shape this saved station from this browser."
+        : "Join live, follow lyrics, react, and download here. The station owner controls transport and programming.",
+  );
   els.stationMode.textContent = radio
     ? station.station_name || stationDefinition()?.name || "Radio station"
     : "Private queue";
@@ -2006,9 +2032,11 @@ function setStationUnavailable(message) {
   state.current = null;
   els.stationMode.textContent = "Station unavailable";
   els.stationAccess.textContent = "Retry to reconnect to this station.";
-  els.stationCapabilityLabel.textContent = "Radio unavailable";
-  els.stationCapabilityDetail.textContent =
-    "Station state could not be loaded. The music archive and Reader recover separately.";
+  setText(els.stationCapabilityLabel, "Radio unavailable");
+  setText(
+    els.stationCapabilityDetail,
+    "Station state could not be loaded. The music archive and Reader recover separately.",
+  );
   els.radioView.classList.remove("is-listen-only");
   els.title.textContent = message;
   els.details.textContent =

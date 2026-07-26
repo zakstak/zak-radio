@@ -156,6 +156,15 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   await page.locator("#createStation").click();
   await expect(page).toHaveURL(/\/library$/);
   await expect(page.locator("#stationEditor")).toBeVisible();
+  await expect(page.locator("#stationEditorName")).toBeFocused();
+  const editorNameBounds = await page.locator("#stationEditorName").evaluate(
+    (input) => {
+      const rect = input.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, viewport: window.innerHeight };
+    },
+  );
+  expect(editorNameBounds.top).toBeGreaterThanOrEqual(0);
+  expect(editorNameBounds.bottom).toBeLessThanOrEqual(editorNameBounds.viewport);
 });
 
 test("weak track metadata falls back to its subject and deliberate no-artwork icon", async ({ page }) => {
@@ -198,6 +207,26 @@ test("station polling is scoped instead of implying whole-product failure", asyn
   await expect(page.locator("#libraryCount")).toContainText("matching tracks");
   await expect(page.locator("#connectionDot")).toHaveClass(/is-polling/);
   await expect(page.locator("#connectionDot")).not.toHaveClass(/is-disconnected/);
+});
+
+test("unchanged station capability does not retrigger its live region", async ({ page }) => {
+  await page.goto("/");
+  const stableNodes = await page.evaluate(() => {
+    const label = document.querySelector("#stationCapabilityLabel");
+    const detail = document.querySelector("#stationCapabilityDetail");
+    const labelNode = label.firstChild;
+    const detailNode = detail.firstChild;
+    window.dispatchEvent(
+      new CustomEvent("zak-audio-owner", {
+        detail: { owner: window.ZakAudio.owner, label: window.ZakAudio.label },
+      }),
+    );
+    return {
+      label: label.firstChild === labelNode,
+      detail: detail.firstChild === detailNode,
+    };
+  });
+  expect(stableNodes).toEqual({ label: true, detail: true });
 });
 
 test("Library discovery precedes saved-station administration", async ({ page }) => {
@@ -1143,6 +1172,7 @@ test("mobile audio owner stays compact and reserves its measured inset", async (
   await page.goto("/reader");
   const ownerBar = page.locator("#audioOwnerBar");
   await expect(ownerBar).toBeVisible();
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
   await expect(page.locator("#audioOwnerPlayPause")).toBeVisible();
   await expect(page.locator("#returnLive")).toHaveAttribute(
     "aria-label",
@@ -1178,6 +1208,55 @@ test("mobile audio owner stays compact and reserves its measured inset", async (
   for (const height of geometry.controlHeights) {
     expect(height).toBeGreaterThanOrEqual(44);
   }
+});
+
+test("mobile audio-owner transitions preserve the active route scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/library");
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
+  await expect(page.locator("#libraryTracks")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect
+    .poll(() =>
+      page.locator(".app-shell").evaluate(
+        (shell) => shell.scrollHeight - shell.clientHeight,
+      ),
+    )
+    .toBeGreaterThan(500);
+  const initial = await page.evaluate(() => {
+    const shell = document.querySelector(".app-shell");
+    shell.scrollTo({ top: 420 });
+    return shell.scrollTop;
+  });
+  expect(initial).toBeGreaterThan(300);
+
+  await page.evaluate(() => {
+    window.ZakAudio.claim(
+      "library",
+      "/media/alpha/audio",
+      "Alpha Sunrise",
+    );
+  });
+  await expect(page.locator("body")).not.toHaveClass(/has-audio-owner/);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeCloseTo(
+    initial,
+    -1,
+  );
+
+  const windowPosition = await page.evaluate(() => {
+    window.scrollTo({ top: 520 });
+    return window.scrollY;
+  });
+  expect(windowPosition).toBeGreaterThan(400);
+  await page.evaluate(() => window.ZakAudio.returnLive(false));
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
+  await expect
+    .poll(() =>
+      page.locator(".app-shell").evaluate((shell) => shell.scrollTop),
+    )
+    .toBeCloseTo(windowPosition, -1);
 });
 
 test("slash shortcut is scoped to Library", async ({ page }) => {
