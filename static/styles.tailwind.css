@@ -5,17 +5,17 @@
 @source "./reader.js";
 
 @theme {
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: "Noto Sans", "Helvetica Neue", Arial, sans-serif;
   --font-editorial: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  --color-radio-bg: #09090b;
-  --color-radio-fg: #f7f7f2;
-  --color-radio-muted: #97978f;
-  --color-radio-soft: #0d0d10;
-  --color-radio-panel: #141417;
-  --color-radio-panel-hover: #1b1b1f;
-  --color-radio-line: #29292e;
-  --color-radio-line-strong: #44444b;
-  --color-radio-accent: #f5f5f5;
+  --color-radio-bg: #080a0c;
+  --color-radio-fg: #d8d4e2;
+  --color-radio-muted: #a49fb0;
+  --color-radio-soft: #12161a;
+  --color-radio-panel: #181d22;
+  --color-radio-panel-hover: #1d2329;
+  --color-radio-line: #30363d;
+  --color-radio-line-strong: #4b535b;
+  --color-radio-accent: #8983e8;
 }
 
 @layer base {
@@ -68,7 +68,7 @@
   }
 
   .app-rail {
-    @apply sticky top-0 z-40 flex min-w-0 flex-wrap items-center border-b border-radio-line bg-[#0d0d10ed] px-3 py-2 shadow-[0_12px_36px_rgba(0,0,0,.32)] backdrop-blur-xl sm:px-5 lg:flex-nowrap lg:gap-5 lg:px-7;
+    @apply sticky top-0 z-40 flex min-w-0 flex-wrap items-center border-b border-radio-line bg-radio-soft px-3 py-2 sm:px-5 lg:flex-nowrap lg:gap-5 lg:px-7;
   }
 
   .brand {
@@ -76,19 +76,11 @@
   }
 
   .brand-mark {
-    @apply flex size-9 shrink-0 items-center justify-center gap-0.5 bg-radio-accent shadow-[0_0_24px_rgba(245,245,245,.08)];
-    border-radius: 2px 11px 2px 11px;
+    @apply grid size-10 shrink-0 place-items-center border border-radio-line;
+    border-radius: 10px;
   }
 
-  .brand-mark i {
-    @apply block w-[3px] bg-radio-bg;
-    border-radius: 1px;
-  }
-
-  .brand-mark i:nth-child(1) { @apply h-[9px]; }
-  .brand-mark i:nth-child(2) { @apply h-5; }
-  .brand-mark i:nth-child(3) { @apply h-3.5; }
-  .brand-mark i:nth-child(4) { @apply h-[5px]; }
+  .brand-mark img { @apply size-full; }
 
   .brand-copy {
     @apply min-w-0;
@@ -103,7 +95,7 @@
   }
 
   .primary-nav {
-    @apply order-3 mt-2 grid w-full grid-cols-3 gap-1 rounded-lg border border-radio-line bg-[#09090b] p-1 sm:order-none sm:mt-0 sm:w-auto sm:min-w-[300px];
+    @apply order-3 mt-2 grid w-full grid-cols-3 gap-1 rounded-lg border border-radio-line bg-radio-bg p-1 sm:order-none sm:mt-0 sm:w-auto sm:min-w-[300px];
   }
 
   .primary-nav-link {
@@ -111,7 +103,7 @@
   }
 
   .primary-nav-link[aria-current="page"] {
-    @apply rounded-md bg-radio-fg text-radio-bg;
+    @apply rounded-md bg-radio-accent text-radio-bg;
   }
 
   .section-label {
@@ -151,7 +143,7 @@
   }
 
   .play-button {
-    @apply grid size-[58px] min-w-[58px] cursor-pointer place-items-center rounded-full border-0 bg-radio-fg text-radio-bg shadow-[0_8px_26px_rgba(245,245,245,.12)] transition hover:scale-105;
+    @apply grid size-[58px] min-w-[58px] cursor-pointer place-items-center rounded-full border-0 bg-radio-accent text-radio-bg transition hover:scale-105;
   }
 
   .play-button svg {
@@ -208,15 +200,15 @@
   }
 
   .connection-dot.is-connected {
-    @apply bg-[#31c46b] shadow-[0_0_10px_rgba(49,196,107,.55)];
+    @apply bg-[#85c9a0];
   }
 
   .connection-dot.is-polling {
-    @apply bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,.3)];
+    @apply bg-[#e7b66a];
   }
 
   .connection-dot.is-disconnected {
-    @apply bg-[#ff5d5d];
+    @apply bg-[#e98585];
   }
 
   .station-card {
@@ -252,7 +244,7 @@
   }
 
   .station-action-primary {
-    @apply border-radio-fg bg-radio-fg text-radio-bg hover:bg-radio-accent;
+    @apply border-radio-accent bg-radio-accent text-radio-bg hover:bg-[#d7d3ff];
   }
 
   .station-note {
@@ -261,12 +253,6 @@
 
   .radio-stage {
     @apply relative mx-auto min-w-0 max-w-[1600px] overflow-hidden p-4 sm:p-6 lg:p-[clamp(28px,4vw,64px)];
-  }
-
-  .radio-stage::before {
-    content: "";
-    @apply pointer-events-none absolute -top-[270px] -right-[220px] -z-10 size-[560px] rounded-full;
-    background: radial-gradient(circle, rgba(245,245,245,.06), transparent 66%);
   }
 
   .now-playing {
@@ -310,7 +296,7 @@
   }
 
   .cover-fallback {
-    @apply size-full content-center justify-items-center gap-4 bg-[radial-gradient(circle_at_50%_35%,#24242a,#0b0b0e_68%)] text-[10px] font-bold tracking-[.18em] text-radio-muted uppercase;
+    @apply size-full content-center justify-items-center gap-4 bg-radio-panel text-[10px] font-bold tracking-[.18em] text-radio-muted uppercase;
   }
 
   .no-artwork-icon {
@@ -326,7 +312,7 @@
   }
 
   .live-dot.is-live {
-    @apply bg-radio-accent shadow-[0_0_0_5px_rgba(245,245,245,.08)];
+    @apply bg-radio-accent;
   }
 
   .track-source {
@@ -547,12 +533,6 @@
     @apply relative my-12 md:my-18 lg:my-20;
   }
 
-  .library-hero::before {
-    content: "";
-    @apply pointer-events-none absolute -top-52 right-0 -z-10 size-[500px] max-w-full rounded-full;
-    background: radial-gradient(circle, rgba(245,245,245,.07), transparent 68%);
-  }
-
   .library-hero h2 {
     @apply mt-3 max-w-4xl text-[clamp(42px,6.5vw,82px)] leading-[.92] tracking-[-.065em];
   }
@@ -642,7 +622,7 @@
   }
 
   .track-cover-fallback {
-    @apply grid h-full w-full content-center justify-items-center gap-2 bg-[radial-gradient(circle_at_50%_35%,#24242a,#0b0b0e_68%)] text-[8px] font-bold tracking-[.16em] text-radio-muted uppercase;
+    @apply grid h-full w-full content-center justify-items-center gap-2 bg-radio-panel text-[8px] font-bold tracking-[.16em] text-radio-muted uppercase;
   }
 
   .track-cover-fallback .no-artwork-icon {
@@ -842,12 +822,6 @@
     @apply relative py-12 md:py-18 lg:py-20;
   }
 
-  .reader-hero::before {
-    content: "";
-    @apply pointer-events-none absolute -top-52 right-0 -z-10 size-[500px] max-w-full rounded-full;
-    background: radial-gradient(circle, rgba(245,245,245,.07), transparent 68%);
-  }
-
   .reader-hero h2 {
     @apply mt-3 max-w-5xl text-[clamp(42px,7vw,90px)] leading-[.9] tracking-[-.07em];
   }
@@ -945,11 +919,11 @@
   }
 
   .reader-card.is-active {
-    @apply border-radio-fg;
+    @apply border-radio-accent;
   }
 
   .reader-card-icon {
-    @apply grid aspect-[16/8] place-items-center border-b border-radio-line bg-[radial-gradient(circle_at_50%_25%,#292930,#0a0a0c_72%)];
+    @apply grid aspect-[16/8] place-items-center border-b border-radio-line bg-radio-panel-hover;
   }
 
   .reader-card-icon svg {
