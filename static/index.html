@@ -17,20 +17,35 @@ FORM: The established Radio composition with Zakstak identity and product tokens
     />
     <title>Zak Radio</title>
     <link rel="icon" type="image/svg+xml" href="/static/zakstak-mark.svg" />
-    <link rel="stylesheet" href="/static/styles.css?v=18" />
+    <link rel="stylesheet" href="/static/styles.css?v=19" />
   </head>
   <body>
     <a id="skipToContent" class="skip-link" href="#title">Skip to content</a>
     <main class="app-shell">
       <header class="app-rail" aria-label="Application navigation">
-        <div class="brand">
-          <div class="brand-mark" aria-hidden="true">
-            <img src="/static/zakstak-mark.svg" alt="" />
+        <div class="app-rail-inner">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">
+              <img src="/static/zakstak-mark.svg" alt="" />
+            </div>
+            <div class="brand-copy">
+              <span class="brand-family">Zakstak</span>
+              <div class="brand-product">
+                <h1 class="brand-title">Zak Radio</h1>
+                <span class="brand-separator" aria-hidden="true">·</span>
+                <p id="shellContext" class="brand-subtitle">Shared listening</p>
+              </div>
+            </div>
           </div>
-          <div class="brand-copy">
-            <h1 class="brand-title">Zak Radio</h1>
-            <p id="shellContext" class="brand-subtitle">Shared listening</p>
-          </div>
+          <nav class="primary-nav" aria-label="Zak Radio destinations">
+            <a class="primary-nav-link" data-route="/" href="/">Radio</a>
+            <a class="primary-nav-link" data-route="/library" href="/library"
+              >Library</a
+            >
+            <a class="primary-nav-link" data-route="/reader" href="/reader"
+              >Reader</a
+            >
+          </nav>
           <div
             id="connection"
             class="connection"
@@ -42,69 +57,6 @@ FORM: The established Radio composition with Zakstak identity and product tokens
             <span id="connectionText">Connecting</span>
           </div>
         </div>
-        <nav class="primary-nav" aria-label="Zak audio">
-          <a class="primary-nav-link" data-route="/" href="/">Radio</a>
-          <a class="primary-nav-link" data-route="/library" href="/library"
-            >Library</a
-          >
-          <a class="primary-nav-link" data-route="/reader" href="/reader"
-            >Reader</a
-          >
-        </nav>
-        <section id="stationCard" class="station-card" aria-label="Station">
-          <div class="station-card-head">
-            <span class="section-label">Listening to</span>
-            <strong id="stationMode" tabindex="-1">Shared station</strong>
-          </div>
-          <label class="station-picker-label" for="stationSelect"
-            >Radio station</label
-          >
-          <select id="stationSelect" class="select-control station-picker">
-            <option value="main">All songs</option>
-          </select>
-          <div class="station-actions">
-            <button
-              id="mainStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Go shared
-            </button>
-            <button
-              id="shareStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Share
-            </button>
-            <button
-              id="createStation"
-              class="station-action station-action-primary"
-              type="button"
-              disabled
-            >
-              New station
-            </button>
-          </div>
-          <p id="stationAccess" class="station-note">
-            Everyone here can turn the dial.
-          </p>
-          <div id="stationShareFallback" class="station-share-fallback" hidden>
-            <label for="stationShareLink">Listen-only station link</label>
-            <div>
-              <input id="stationShareLink" type="text" readonly />
-              <button
-                id="stationShareClose"
-                class="station-action"
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </section>
       </header>
 
       <section id="radioView" class="radio-stage view-panel" data-view="/">
@@ -268,6 +220,60 @@ FORM: The established Radio composition with Zakstak identity and product tokens
             </div>
           </div>
         </div>
+        <section id="stationCard" class="station-card" aria-label="Station">
+          <div class="station-card-head">
+            <span class="section-label">Listening to</span>
+            <strong id="stationMode" tabindex="-1">Shared station</strong>
+          </div>
+          <label class="station-picker-label" for="stationSelect"
+            >Radio station</label
+          >
+          <select id="stationSelect" class="select-control station-picker">
+            <option value="main">All songs</option>
+          </select>
+          <div class="station-actions">
+            <button
+              id="mainStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Go shared
+            </button>
+            <button
+              id="shareStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Share
+            </button>
+            <button
+              id="createStation"
+              class="station-action station-action-primary"
+              type="button"
+              disabled
+            >
+              New station
+            </button>
+          </div>
+          <p id="stationAccess" class="station-note">
+            Everyone here can turn the dial.
+          </p>
+          <div id="stationShareFallback" class="station-share-fallback" hidden>
+            <label for="stationShareLink">Listen-only station link</label>
+            <div>
+              <input id="stationShareLink" type="text" readonly />
+              <button
+                id="stationShareClose"
+                class="station-action"
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </section>
         <div id="detailsPanels" class="details-panels">
           <section class="transcript">
             <div class="transcript-head">
@@ -649,9 +655,9 @@ FORM: The established Radio composition with Zakstak identity and product tokens
       </section>
 
       <dialog id="addToStationDialog" class="station-dialog">
-        <form method="dialog">
+        <form method="dialog" aria-labelledby="addToStationTitle">
           <div class="section-label">Add song</div>
-          <h2>Add to station</h2>
+          <h2 id="addToStationTitle">Add to station</h2>
           <p id="addToStationTrack"></p>
           <label>
             Station
@@ -659,10 +665,10 @@ FORM: The established Radio composition with Zakstak identity and product tokens
           </label>
           <p id="addToStationStatus" aria-live="polite"></p>
           <div class="station-manager-actions">
+            <button class="button" value="cancel">Cancel</button>
             <button id="confirmAddToStation" class="button" type="button">
               Add song
             </button>
-            <button class="button" value="cancel">Cancel</button>
           </div>
         </form>
       </dialog>

@@ -481,6 +481,210 @@ test("preview dock remains inside the viewport at the former sm breakpoint", asy
     .toBeGreaterThan(offRouteTime);
 });
 
+test("product identity and route semantics persist at every required width", async ({ page }) => {
+  for (const [width, height] of [
+    [1440, 1000],
+    [900, 900],
+    [390, 844],
+    [320, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    for (const [path, name] of [
+      ["/", "Radio"],
+      ["/library", "Library"],
+      ["/reader", "Reader"],
+    ]) {
+      await page.goto(path);
+      await expect(page.locator(".brand-mark")).toBeVisible();
+      await expect(page.locator(".brand-family")).toHaveText("Zakstak");
+      await expect(page.locator(".brand-title")).toBeVisible();
+      await expect(page.locator(".brand-title")).toHaveText("Zak Radio");
+      await expect(
+        page.getByRole("navigation", { name: "Zak Radio destinations" })
+          .getByRole("link", { name }),
+      ).toHaveAttribute("aria-current", "page");
+      await expect(page.locator("#connectionText")).toHaveText(
+        /Connected|Polling|Reconnecting/,
+      );
+      expect(await page.evaluate(() => ({
+        viewport: document.documentElement.clientWidth,
+        scroll: document.documentElement.scrollWidth,
+      }))).toEqual({ viewport: width, scroll: width });
+    }
+  }
+});
+
+test("phone navigation and station controls follow playback without becoming persistent chrome", async ({ page }) => {
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/");
+    await expect(page.locator("#stationStatus")).not.toHaveText("Connecting…");
+
+    const layout = await page.evaluate(() => {
+      const rail = document.querySelector(".app-rail");
+      const station = document.querySelector("#stationCard");
+      const transport = document.querySelector("#transport");
+      const visibleControls = [
+        ...rail.querySelectorAll(".primary-nav-link"),
+        ...station.querySelectorAll("#stationSelect, .station-action"),
+      ].filter((element) => {
+        const style = getComputedStyle(element);
+        return !element.hidden && style.display !== "none"
+          && element.getClientRects().length > 0;
+      });
+      return {
+        position: getComputedStyle(rail).position,
+        railHeight: rail.getBoundingClientRect().height,
+        identityRows: getComputedStyle(
+          rail.querySelector(".app-rail-inner"),
+        ).gridTemplateRows,
+        stationTop: station.getBoundingClientRect().top,
+        transportBottom: transport.getBoundingClientRect().bottom,
+        viewportWidth: document.documentElement.clientWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        controls: visibleControls.map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            height: rect.height,
+            left: rect.left,
+            right: rect.right,
+          };
+        }),
+      };
+    });
+
+    expect(layout.position).toBe("static");
+    expect(layout.identityRows.split(" ")[0]).toBe("56px");
+    expect(layout.stationTop).toBeGreaterThanOrEqual(layout.transportBottom);
+    expect(layout.documentScrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.controls.length).toBeGreaterThanOrEqual(5);
+    for (const control of layout.controls) {
+      expect(control.height).toBeGreaterThanOrEqual(44);
+      expect(control.left).toBeGreaterThanOrEqual(0);
+      expect(control.right).toBeLessThanOrEqual(layout.viewportWidth);
+    }
+
+    await page.evaluate((distance) => window.scrollTo(0, distance), layout.railHeight + 48);
+    await expect.poll(() => page.locator(".app-rail").evaluate(
+      (rail) => rail.getBoundingClientRect().bottom,
+    )).toBeLessThanOrEqual(0);
+  }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await expect.poll(() => page.locator(".app-rail").evaluate(
+    (rail) => getComputedStyle(rail).position,
+  )).toBe("sticky");
+  await expect(page.locator(".app-rail")).toHaveCSS("height", "64px");
+});
+
+test("canonical control, focus, dialog, and mobile function geometry stays available", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto("/");
+  await expect(page.locator("#stationStatus")).not.toHaveText("Connecting…");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(page.locator('[data-route="/"]')).toBeFocused();
+
+  for (const selector of [
+    "#playPause",
+    "#next",
+    "#like",
+    "#dislike",
+    "#download",
+    "#addCurrentToStation",
+    "#stationSelect",
+    "#createStation",
+    "#radioProgramming",
+    "#radioQueue",
+  ]) {
+    await expect(page.locator(selector)).toBeVisible();
+  }
+
+  const geometry = await page.evaluate(() => {
+    const control = document.querySelector("#createStation");
+    const select = document.querySelector("#stationSelect");
+    const route = document.querySelector('[data-route="/"]');
+    const root = getComputedStyle(document.documentElement);
+    const routeStyle = getComputedStyle(route);
+    return {
+      signal: root.getPropertyValue("--zs-signal").trim(),
+      readable: root.getPropertyValue("--zs-signal-readable").trim(),
+      controlHeight: control.getBoundingClientRect().height,
+      controlRadius: getComputedStyle(control).borderRadius,
+      selectHeight: select.getBoundingClientRect().height,
+      outlineColor: routeStyle.outlineColor,
+      outlineWidth: routeStyle.outlineWidth,
+      overflow: document.documentElement.scrollWidth
+        - document.documentElement.clientWidth,
+    };
+  });
+  expect(geometry).toEqual({
+    signal: "#8983e8",
+    readable: "#d7d3ff",
+    controlHeight: 44,
+    controlRadius: "2px",
+    selectHeight: 44,
+    outlineColor: "rgb(215, 211, 255)",
+    outlineWidth: "2px",
+    overflow: 0,
+  });
+
+  await page.locator("#addToStationDialog").evaluate((dialog) => {
+    dialog.showModal();
+  });
+  const dialog = page.locator("#addToStationDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeVisible();
+  const dialogBounds = await dialog.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      backdropFilter: getComputedStyle(element, "::backdrop").backdropFilter,
+    };
+  });
+  expect(dialogBounds.left).toBeGreaterThanOrEqual(16);
+  expect(dialogBounds.right).toBeLessThanOrEqual(304);
+  expect(dialogBounds.top).toBeGreaterThanOrEqual(16);
+  expect(dialogBounds.bottom).toBeLessThanOrEqual(828);
+  expect(dialogBounds.backdropFilter).toBe("none");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  await page.goto("/library");
+  for (const selector of [
+    "#createFilterStation",
+    "#createListStation",
+    "#librarySearch",
+    "#librarySort",
+    "[data-library-view='grid']",
+    "[data-library-filter='all']",
+    ".track-card-actions",
+  ]) {
+    await expect(page.locator(selector).first()).toBeVisible();
+  }
+  expect(await page.evaluate(() =>
+    document.documentElement.scrollWidth
+      - document.documentElement.clientWidth)).toBe(0);
+
+  await page.goto("/reader");
+  for (const selector of [
+    "#readerSearch",
+    "#readerSort",
+    "[data-reader-filter='all']",
+    "[data-reader-filter='ready']",
+    "[data-reader-filter='processing']",
+  ]) {
+    await expect(page.locator(selector)).toBeVisible();
+  }
+  expect(await page.evaluate(() =>
+    document.documentElement.scrollWidth
+      - document.documentElement.clientWidth)).toBe(0);
+});
+
 test("Reader announces filtering and clears current-item semantics in library mode", async ({ page }) => {
   const item = {
     id: "item-test",
