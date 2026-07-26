@@ -329,7 +329,7 @@
   }
 
   .station-action {
-    @apply min-h-11 cursor-pointer border border-radio-line bg-transparent px-3 text-[13px] font-semibold text-radio-fg hover:border-radio-line-strong hover:bg-radio-panel-hover;
+    @apply min-h-11 cursor-pointer border border-radio-line bg-transparent px-3 text-[13px] font-semibold text-radio-fg transition-colors hover:border-radio-line-strong hover:bg-radio-panel-hover;
     border-radius: var(--zs-radius-control);
   }
 
@@ -346,7 +346,7 @@
   }
 
   .now-playing {
-    @apply grid grid-cols-1 items-start gap-5 pb-7 md:grid-cols-[minmax(220px,340px)_minmax(0,1fr)] md:items-center md:gap-7 lg:grid-cols-[minmax(240px,380px)_minmax(0,680px)] lg:gap-[clamp(26px,4vw,56px)] lg:pb-9 lg:pt-[clamp(6px,1.5vw,18px)];
+    @apply grid grid-cols-1 items-start gap-5 pb-7 md:grid-cols-[minmax(220px,340px)_minmax(0,1fr)] md:items-center md:gap-7 lg:grid-cols-[minmax(240px,380px)_minmax(0,760px)] lg:gap-[clamp(26px,4vw,56px)] lg:pb-9 lg:pt-[clamp(6px,1.5vw,18px)];
   }
 
   .now-playing-copy {
@@ -410,7 +410,7 @@
   }
 
   .track-title {
-    @apply mt-2 [overflow-wrap:anywhere] text-[clamp(30px,9vw,42px)] font-semibold leading-[1.02] tracking-[-.045em] lg:text-[clamp(38px,4.5vw,62px)];
+    @apply mt-2 [overflow-wrap:anywhere] text-[clamp(30px,9vw,42px)] font-semibold leading-[1.02] tracking-[-.04em] lg:text-[clamp(38px,4.5vw,62px)];
   }
 
   .track-details {
@@ -527,7 +527,7 @@
   }
 
   .transcript-fade {
-    @apply pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-radio-bg to-transparent;
+    @apply pointer-events-none absolute inset-x-0 bottom-0 h-14 border-t border-radio-line bg-radio-bg;
   }
 
   .transcript-more {
@@ -670,7 +670,7 @@
   }
 
   .filter-chip {
-    @apply min-h-11 cursor-pointer rounded-full border border-radio-line bg-transparent px-4 text-[13px] font-semibold text-radio-fg hover:border-radio-line-strong;
+    @apply min-h-11 cursor-pointer rounded-full border border-radio-line bg-transparent px-4 text-[13px] font-semibold text-radio-fg transition-colors hover:border-radio-line-strong;
   }
 
   .filter-chip[aria-pressed="true"] {
