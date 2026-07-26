@@ -563,7 +563,7 @@
   }
 
   .library-back {
-    @apply inline-flex min-h-11 cursor-pointer items-center gap-2 border-0 bg-transparent px-0 text-[11px] font-bold tracking-[.12em] text-radio-fg uppercase;
+    @apply inline-flex min-h-11 cursor-pointer items-center gap-2 border-0 bg-transparent px-0 text-[12px] font-bold tracking-[.12em] text-radio-fg uppercase;
   }
 
   .library-back::before {
@@ -875,7 +875,7 @@
   }
 
   .dock-return-live {
-    @apply whitespace-nowrap px-2.5 py-2 text-[11px] min-[720px]:px-3;
+    @apply whitespace-nowrap px-2.5 py-2 text-[12px] min-[720px]:px-3;
   }
 
   .audio-owner-bar {
