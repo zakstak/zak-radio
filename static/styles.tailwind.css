@@ -146,7 +146,7 @@
   }
 
   .brand-family {
-    @apply block text-[10px] leading-[1.4] font-medium tracking-[.08em] text-radio-muted uppercase;
+    @apply block text-[11px] leading-[1.4] font-medium tracking-[.06em] text-radio-muted uppercase;
   }
 
   .brand-product {
@@ -184,7 +184,7 @@
   }
 
   .section-label {
-    @apply text-[10px] font-bold tracking-[.14em] text-radio-muted uppercase;
+    @apply font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
   }
 
   .rule-heading {
@@ -279,7 +279,7 @@
 
   /* Radio */
   .connection {
-    @apply ml-auto inline-flex min-w-[88px] items-center justify-end gap-1.5 text-[12px] text-radio-muted sm:min-w-[96px];
+    @apply ml-auto inline-flex min-w-[142px] items-center justify-end gap-1.5 text-right text-[12px] leading-4 text-radio-muted sm:min-w-[166px];
   }
 
   .connection-dot {
@@ -394,7 +394,7 @@
   }
 
   .live-status {
-    @apply mb-[18px] flex items-center gap-2 text-[11px] font-bold tracking-[.1em] text-radio-muted uppercase;
+    @apply mb-[18px] flex items-center gap-2 font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
   }
 
   .live-dot {
@@ -406,15 +406,31 @@
   }
 
   .track-source {
-    @apply text-[10px] font-bold tracking-[.14em] text-radio-muted uppercase;
+    @apply font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
   }
 
   .track-title {
-    @apply mt-2 [overflow-wrap:anywhere] text-[clamp(30px,9vw,42px)] font-semibold leading-[1.02] tracking-[-.04em] lg:text-[clamp(38px,4.5vw,62px)];
+    @apply mt-2 [overflow-wrap:anywhere] text-[clamp(30px,9vw,42px)] font-semibold leading-[1.05] tracking-[-.03em] lg:text-[clamp(38px,4.5vw,62px)];
   }
 
   .track-details {
     @apply my-3 max-w-[760px] text-[13px] leading-6 text-radio-muted lg:mb-[18px];
+  }
+
+  .station-capability {
+    @apply my-4 grid max-w-[760px] gap-1 border-y border-radio-line py-3;
+  }
+
+  .station-capability-label {
+    @apply font-mono text-xs font-semibold tracking-[.04em] text-radio-accent;
+  }
+
+  .station-capability p {
+    @apply m-0 max-w-[65ch] text-sm leading-6 text-radio-muted;
+  }
+
+  .radio-stage.is-listen-only .station-capability {
+    @apply border-radio-accent/50 bg-radio-soft px-3;
   }
 
   .transport {
@@ -458,7 +474,7 @@
   }
 
   .transcript-head h3 {
-    @apply m-0 text-[11px] font-bold tracking-[.14em] uppercase;
+    @apply m-0 font-mono text-xs font-semibold tracking-[.04em];
   }
 
   .transcript-head-actions {
@@ -466,7 +482,7 @@
   }
 
   .lyrics-sync-status {
-    @apply mt-1 block text-[10px] tracking-[.05em] text-radio-muted;
+    @apply mt-1 block text-xs tracking-[.02em] text-radio-muted;
   }
 
   .transcript-viewport {
@@ -543,7 +559,7 @@
   }
 
   .site-footer {
-    @apply flex flex-wrap justify-between gap-4 pt-7 text-[10px] tracking-[.08em] text-[#a3a39d] uppercase;
+    @apply flex flex-wrap justify-between gap-4 pt-7 font-mono text-xs tracking-[.03em] text-[#a3a39d];
   }
 
   .footer-shortcut {
@@ -625,7 +641,7 @@
   }
 
   .library-hero h2 {
-    @apply mt-3 max-w-4xl text-[clamp(42px,6.5vw,82px)] leading-[.92] tracking-[-.04em];
+    @apply mt-3 max-w-4xl text-[clamp(42px,6.5vw,82px)] leading-[.98] font-editorial font-normal tracking-[-.025em] text-balance;
   }
 
   .library-hero p {
@@ -746,7 +762,7 @@
   }
 
   .track-kicker {
-    @apply mb-2 flex justify-between gap-2 text-[10px] font-semibold tracking-[.08em] text-radio-muted uppercase;
+    @apply mb-2 flex justify-between gap-2 font-mono text-xs font-medium tracking-[.02em] text-radio-muted;
   }
 
   .track-card-title {
@@ -803,11 +819,11 @@
   }
 
   .track-action-status {
-    @apply col-span-full min-h-4 px-1 text-[10px] leading-4 text-radio-muted;
+    @apply col-span-full min-h-4 px-1 text-xs leading-4 text-radio-muted;
   }
 
   .track-badge {
-    @apply rounded-full border border-radio-line bg-radio-soft px-2 py-1 text-[10px] text-radio-muted;
+    @apply rounded-full border border-radio-line bg-radio-soft px-2 py-1 text-xs text-radio-muted;
   }
 
   .track-badge.is-accent {
@@ -847,7 +863,7 @@
   }
 
   .dock-kicker {
-    @apply text-[9px] font-bold tracking-[.09em] text-radio-accent uppercase;
+    @apply font-mono text-xs font-semibold tracking-[.03em] text-radio-accent;
   }
 
   .dock-title {
@@ -886,7 +902,7 @@
     @apply grid min-w-0 gap-1;
   }
 
-  .audio-owner-actions {
+  .audio-owner-bar > .audio-owner-actions {
     @apply flex shrink-0 items-center gap-2;
   }
 
@@ -898,12 +914,9 @@
     display: none;
   }
 
-  body.has-audio-owner .radio-stage {
-    @apply pb-36 sm:pb-28;
-  }
-
-  body.has-audio-owner .reader-main {
-    @apply pb-28;
+  body.has-audio-owner .view-panel:not([hidden]) {
+    padding-bottom: calc(var(--audio-owner-height, 72px) + 24px);
+    scroll-padding-bottom: calc(var(--audio-owner-height, 72px) + 24px);
   }
 
   /* Reader */
@@ -916,7 +929,7 @@
   }
 
   .reader-hero h2 {
-    @apply mt-3 max-w-5xl text-[clamp(42px,7vw,90px)] leading-[.9] tracking-[-.04em];
+    @apply mt-3 max-w-5xl text-[clamp(42px,7vw,90px)] leading-[.98] font-editorial font-normal tracking-[-.025em] text-balance;
   }
 
   .reader-hero > p {
@@ -1029,7 +1042,7 @@
   }
 
   .reader-card-title {
-    @apply mt-3 text-xl font-semibold leading-6 tracking-[-.025em];
+    @apply mt-3 font-editorial text-2xl leading-7 font-normal tracking-[-.015em];
   }
 
   .reader-card-meta,
@@ -1105,6 +1118,17 @@
 }
 
 @media (max-width: 767px) {
+  body.has-audio-owner {
+    @apply overflow-hidden;
+  }
+
+  body.has-audio-owner .app-shell {
+    height: calc(100dvh - var(--audio-owner-height, 72px));
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
   .reader-head {
     @apply static;
   }
@@ -1132,6 +1156,26 @@
   .transport .play-button {
     @apply size-[54px] min-w-[54px];
   }
+
+  .audio-owner-bar {
+    @apply right-0 bottom-0 left-0 min-h-[60px] gap-2 border-x-0 border-b-0 px-2.5 py-2;
+  }
+
+  .audio-owner-bar > div:first-child {
+    @apply flex min-w-0 items-baseline gap-1.5;
+  }
+
+  .audio-owner-bar > div:first-child .section-label {
+    @apply shrink-0;
+  }
+
+  .audio-owner-bar > .audio-owner-actions {
+    @apply gap-1;
+  }
+
+  .audio-owner-actions .button {
+    @apply min-h-11 px-2.5 text-xs;
+  }
 }
 
 @layer components {
@@ -1144,11 +1188,35 @@
   }
 
   .radio-programming {
-    @apply mt-5 grid max-w-[760px] gap-5 border border-radio-line bg-radio-panel p-4;
+    @apply grid max-w-[760px] gap-5 border border-radio-line bg-radio-panel p-4;
   }
 
   .radio-programming-panel {
     @apply grid gap-5 py-7 lg:grid-cols-[minmax(300px,1fr)_minmax(0,1fr)] lg:items-start;
+  }
+
+  .owner-controls-disclosure {
+    @apply min-w-0 border border-radio-line bg-radio-soft;
+  }
+
+  .owner-controls-disclosure summary {
+    @apply grid min-h-14 cursor-pointer gap-1 px-4 py-3 marker:text-radio-accent hover:bg-radio-panel-hover;
+  }
+
+  .owner-controls-disclosure summary strong {
+    @apply text-sm font-semibold text-radio-fg;
+  }
+
+  .owner-controls-disclosure[open] summary {
+    @apply border-b border-radio-line;
+  }
+
+  .radio-stage.is-listen-only .owner-controls-disclosure {
+    @apply border-radio-line bg-radio-bg;
+  }
+
+  .radio-stage.is-listen-only .owner-controls-disclosure summary strong {
+    @apply text-radio-muted;
   }
 
   .radio-programming-panel .radio-programming,
@@ -1165,7 +1233,7 @@
   }
 
   .programming-label {
-    @apply text-[11px] font-bold tracking-[.1em] text-radio-muted uppercase;
+    @apply font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
   }
 
   .random-mode-options {
@@ -1256,7 +1324,7 @@
   }
 
   .station-manager {
-    @apply mb-8 border border-radio-line bg-radio-panel p-4 sm:p-5;
+    @apply mt-14 mb-8 border border-radio-line bg-radio-panel p-4 sm:mt-18 sm:p-5;
   }
 
   .station-manager-head {

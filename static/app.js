@@ -36,6 +36,7 @@ const state = {
 };
 
 const els = {
+  appShell: document.querySelector(".app-shell"),
   skipToContent: document.getElementById("skipToContent"),
   shellContext: document.getElementById("shellContext"),
   footerShortcut: document.getElementById("footerShortcut"),
@@ -93,6 +94,9 @@ const els = {
   shareClose: document.getElementById("stationShareClose"),
   createStation: document.getElementById("createStation"),
   stationCard: document.getElementById("stationCard"),
+  radioView: document.getElementById("radioView"),
+  stationCapabilityLabel: document.getElementById("stationCapabilityLabel"),
+  stationCapabilityDetail: document.getElementById("stationCapabilityDetail"),
   ownerBar: document.getElementById("audioOwnerBar"),
   ownerKicker: document.getElementById("audioOwnerKicker"),
   ownerLabel: document.getElementById("audioOwnerLabel"),
@@ -104,6 +108,10 @@ const els = {
   radioQueueSummary: document.getElementById("radioQueueSummary"),
   radioQueueTracks: document.getElementById("radioQueueTracks"),
   radioProgramming: document.getElementById("radioProgramming"),
+  radioOwnerControls: document.getElementById("radioOwnerControls"),
+  radioOwnerControlsSummary: document.getElementById(
+    "radioOwnerControlsSummary",
+  ),
   stationRandomMode: document.getElementById("stationRandomMode"),
   stationSkipDisliked: document.getElementById("stationSkipDisliked"),
   addCurrentToStation: document.getElementById("addCurrentToStation"),
@@ -120,6 +128,7 @@ let toastPriorityUntil = 0;
 let toastType = "";
 let scrollStateTimer = 0;
 let ownerAnnouncement = "Audio stopped";
+let ownerBarResizeObserver = null;
 
 function setText(element, value) {
   if (element.textContent !== value) element.textContent = value;
@@ -268,9 +277,45 @@ function routePath() {
   return "/";
 }
 
+function routeScrollContainer() {
+  return document.body.classList.contains("has-audio-owner") &&
+    window.matchMedia("(max-width: 767px)").matches
+    ? els.appShell
+    : null;
+}
+
+function routeScrollPosition() {
+  const container = routeScrollContainer();
+  return container
+    ? [container.scrollLeft, container.scrollTop]
+    : [window.scrollX, window.scrollY];
+}
+
+function scrollRoute(options) {
+  const container = routeScrollContainer();
+  if (container) container.scrollTo(options);
+  else window.scrollTo(options);
+}
+
+window.ZakRouteScroll = {
+  position: routeScrollPosition,
+  to: scrollRoute,
+};
+
 function setOwnerBarHidden(hidden) {
   els.ownerBar.hidden = hidden;
   document.body.classList.toggle("has-audio-owner", !hidden);
+  window.requestAnimationFrame(syncOwnerBarInset);
+}
+
+function syncOwnerBarInset() {
+  const height = els.ownerBar.hidden
+    ? 0
+    : Math.ceil(els.ownerBar.getBoundingClientRect().height);
+  document.documentElement.style.setProperty(
+    "--audio-owner-height",
+    `${height}px`,
+  );
 }
 
 function renderOwnerBar() {
@@ -335,6 +380,12 @@ function renderOwnerBar() {
   }
 }
 
+if ("ResizeObserver" in window) {
+  ownerBarResizeObserver = new ResizeObserver(syncOwnerBarInset);
+  ownerBarResizeObserver.observe(els.ownerBar);
+}
+window.addEventListener("resize", syncOwnerBarInset, { passive: true });
+
 function syncRouteLinks() {
   document.querySelectorAll("[data-route]").forEach((link) => {
     const url = new URL(link.dataset.route, window.location.origin);
@@ -383,7 +434,7 @@ function renderRoute(focusView = false, preserveScroll = false) {
   updateNowPlayingMetadata();
   renderStation();
   if (path === "/" && state.current) loadTrackText(state.current);
-  if (!preserveScroll) window.scrollTo({ top: 0 });
+  if (!preserveScroll) scrollRoute({ top: 0 });
   window.dispatchEvent(new CustomEvent("zak-route", { detail: { path } }));
   if (focusView) {
     const heading =
@@ -851,14 +902,19 @@ function setConnected(connected) {
     "is-disconnected",
     !state.streamConnected && !connected,
   );
-  setText(
-    els.connectionText,
-    state.streamConnected
-      ? "Connected"
-      : connected
-        ? "Polling"
-        : "Reconnecting",
-  );
+  const label = state.streamConnected
+    ? "Station updates live"
+    : connected
+      ? "Station updates polling"
+      : "Station updates reconnecting";
+  const detail = state.streamConnected
+    ? "Station changes are arriving live."
+    : connected
+      ? "The live station stream is reconnecting; station state is still refreshing."
+      : "Station state is unavailable and Radio is retrying. Library and Reader recover separately.";
+  setText(els.connectionText, label);
+  els.connection.title = detail;
+  els.connection.setAttribute("aria-label", `${label}. ${detail}`);
 }
 
 function setStationLoading() {
@@ -870,6 +926,10 @@ function setStationLoading() {
   state.current = null;
   els.stationMode.textContent = "Loading station";
   els.stationAccess.textContent = "Waiting for authoritative station state.";
+  els.stationCapabilityLabel.textContent = "Station connecting";
+  els.stationCapabilityDetail.textContent =
+    "Radio is waiting for authoritative station state. Library and Reader remain separate.";
+  els.radioView.classList.remove("is-listen-only");
   els.stationStatus.textContent = "Connecting…";
   els.livePulse.classList.remove("is-live");
   els.source.textContent = "Zak Radio";
@@ -1302,6 +1362,24 @@ function renderStation() {
   );
   const temporary = !radio;
   const canControl = canControlStation();
+  const capability = canControl ? "control" : "listen-only";
+  const capabilityChanged = els.radioView.dataset.capability !== capability;
+  els.radioView.dataset.capability = capability;
+  els.radioView.classList.toggle("is-listen-only", !canControl);
+  els.stationCapabilityLabel.textContent = temporary
+    ? canControl
+      ? "Private owner controls"
+      : "Listen-only private station"
+    : canControl
+      ? "Shared station control"
+      : "Listen-only saved station";
+  els.stationCapabilityDetail.textContent = temporary
+    ? canControl
+      ? "This browser can control the private queue. Shared links can listen but cannot change it."
+      : "Join live, follow lyrics, react, and download here. The creator owns transport and queue changes."
+    : canControl
+      ? "Join live, react, download, and shape this saved station from this browser."
+      : "Join live, follow lyrics, react, and download here. The station owner controls transport and programming.";
   els.stationMode.textContent = radio
     ? station.station_name || stationDefinition()?.name || "Radio station"
     : "Private queue";
@@ -1326,6 +1404,11 @@ function renderStation() {
   els.skipCount.hidden = !temporary;
   els.transport.classList.toggle("is-radio", !temporary);
   els.radioProgramming.hidden = !radio;
+  els.radioOwnerControls.hidden = !radio;
+  if (radio && capabilityChanged) els.radioOwnerControls.open = canControl;
+  els.radioOwnerControlsSummary.textContent = canControl
+    ? "Shape the saved station"
+    : "Station owner controls these settings";
   els.addCurrentToStation.hidden = !radio;
   setRadioGroupValue(els.stationRandomMode, station.random_mode || "deck");
   setRadioGroupDisabled(els.stationRandomMode, !canControl);
@@ -1923,6 +2006,10 @@ function setStationUnavailable(message) {
   state.current = null;
   els.stationMode.textContent = "Station unavailable";
   els.stationAccess.textContent = "Retry to reconnect to this station.";
+  els.stationCapabilityLabel.textContent = "Radio unavailable";
+  els.stationCapabilityDetail.textContent =
+    "Station state could not be loaded. The music archive and Reader recover separately.";
+  els.radioView.classList.remove("is-listen-only");
   els.title.textContent = message;
   els.details.textContent =
     "Station state could not be loaded. The music archive remains available.";
@@ -2139,7 +2226,7 @@ window.addEventListener("popstate", (event) => {
   }
   renderRoute(changedView && !restoredAwayFromTop, true);
   window.requestAnimationFrame(() => {
-    window.scrollTo({
+    scrollRoute({
       left: window.ZakPendingRouteScroll?.[0] || 0,
       top: window.ZakPendingRouteScroll?.[1] || 0,
       behavior: "instant",
@@ -2162,34 +2249,36 @@ if ("scrollRestoration" in window.history) {
   window.history.scrollRestoration = "manual";
 }
 if (!Array.isArray(window.history.state?.scroll)) {
+  const routeScroll = routeScrollPosition();
   window.history.replaceState(
     {
       ...(window.history.state || {}),
-      scroll: [window.scrollX, window.scrollY],
+      scroll: routeScroll,
     },
     "",
   );
 }
 function commitScrollState() {
+  const routeScroll = routeScrollPosition();
   window.history.replaceState(
     {
       ...(window.history.state || {}),
-      scroll: [window.scrollX, window.scrollY],
+      scroll: routeScroll,
     },
     "",
   );
 }
 window.ZakCommitScrollState = commitScrollState;
-window.addEventListener(
-  "scroll",
-  () => {
-    window.clearTimeout(scrollStateTimer);
-    scrollStateTimer = window.setTimeout(() => {
-      commitScrollState();
-    }, 120);
-  },
-  { passive: true },
-);
+function scheduleScrollStateCommit() {
+  window.clearTimeout(scrollStateTimer);
+  scrollStateTimer = window.setTimeout(() => {
+    commitScrollState();
+  }, 120);
+}
+window.addEventListener("scroll", scheduleScrollStateCommit, { passive: true });
+els.appShell.addEventListener("scroll", scheduleScrollStateCommit, {
+  passive: true,
+});
 els.returnLive.addEventListener("click", async () => {
   const restoreRadioFocus =
     routePath() === "/" && els.ownerBar.contains(document.activeElement);

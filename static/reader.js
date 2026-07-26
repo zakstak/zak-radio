@@ -1350,7 +1350,7 @@
     url.searchParams.delete("item");
     history.pushState({ scroll: [0, 0] }, "", url);
     renderLibrary();
-    window.scrollTo({ top: 0 });
+    (window.ZakRouteScroll?.to || window.scrollTo)({ top: 0 });
     els.libraryTitle.focus({ preventScroll: true });
   };
 
