@@ -101,11 +101,14 @@ PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
   python3 -m py_compile \
   scripts/lyrics_harness.py scripts/lyrics-harness.py \
   scripts/generate-timed-lyrics.py scripts/generate-track-subjects.py \
+  scripts/test_generate_track_subjects.py \
   scripts/test_generate_timed_lyrics.py \
   scripts/verify-runtime.py scripts/test_verify_runtime.py \
   scripts/with-volume-lock.py
 PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
   python3 scripts/test_generate_timed_lyrics.py
+PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
+  python3 scripts/test_generate_track_subjects.py
 PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
   python3 scripts/test_verify_runtime.py
 python3 -m json.tool testdata/lyrics-gold/manifest.json >/dev/null

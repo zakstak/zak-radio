@@ -431,6 +431,24 @@
     @apply border-radio-accent bg-radio-panel text-radio-fg;
   }
 
+  .synced-lyric-primary,
+  .synced-lyric-secondary {
+    @apply block;
+  }
+
+  .synced-lyric-secondary {
+    @apply mt-1 pl-4 text-[0.88em] italic text-radio-accent;
+  }
+
+  .synced-lyric-cue.is-uncertain {
+    @apply opacity-75;
+    border-left-style: dashed;
+  }
+
+  .synced-lyric-cue.is-current.is-uncertain {
+    @apply opacity-100;
+  }
+
   .transcript-fade {
     @apply pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-radio-bg to-transparent;
   }

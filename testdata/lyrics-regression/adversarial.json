@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "generic-looking words are genuinely sung",
+      "kind": "generated",
+      "text": "Thanks for listening.",
+      "observed": [
+        ["Thanks", 0.92],
+        ["for", 0.95],
+        ["listening", 0.91]
+      ],
+      "expected_lines": ["Thanks for listening."]
+    },
+    {
+      "name": "unsupported generic ASR outro is removed",
+      "kind": "generated",
+      "text": "Hold on to the light. Thanks for listening.",
+      "observed": [
+        ["Hold", 0.94],
+        ["on", 0.93],
+        ["to", 0.96],
+        ["the", 0.95],
+        ["light", 0.92]
+      ],
+      "expected_lines": ["Hold on to the light."]
+    },
+    {
+      "name": "an intentional repeated chorus remains repeated",
+      "kind": "generated",
+      "text": "We rise together. We rise together.",
+      "observed": [
+        ["We", 0.91],
+        ["rise", 0.93],
+        ["together", 0.92],
+        ["We", 0.9],
+        ["rise", 0.94],
+        ["together", 0.91]
+      ],
+      "expected_lines": ["We rise together.", "We rise together."]
+    },
+    {
+      "name": "a production-looking one-word lyric is restored",
+      "kind": "source-recovery",
+      "text": "[Instrumental]\nStomp.\n",
+      "observed": [["Stomp", 0.94]],
+      "expected_lines": ["Stomp."]
+    },
+    {
+      "name": "unsupported production direction stays hidden",
+      "kind": "source-recovery",
+      "text": "[Instrumental]\nStomp.\n",
+      "observed": [["Music", 0.92]],
+      "expected_lines": []
+    }
+  ]
+}

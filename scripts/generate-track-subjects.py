@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create concise subject titles for tracks whose imported title is metadata noise."""
+"""Create concise titles for tracks whose imported title is absent or metadata noise."""
 
 from __future__ import annotations
 
@@ -33,6 +33,12 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--curated", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--timed-lyrics-root",
+        type=Path,
+        help="prefer cleaned or locally transcribed display_text from lyric sidecars",
+    )
+    parser.add_argument("--track-id", action="append", default=[])
     parser.add_argument("--model", default="gemma4:e2b")
     parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
     return parser.parse_args()
@@ -99,25 +105,66 @@ def fallback_subject(lyrics: str) -> str:
     return "Original track"
 
 
+def title_evidence(
+    archive: Path,
+    track: dict[str, Any],
+    timed_lyrics_root: Path | None,
+) -> tuple[str, str]:
+    """Prefer audio-derived clean text, then source lyrics, then the prompt."""
+
+    if timed_lyrics_root:
+        candidates = (
+            timed_lyrics_root / f"{track['id']}.json",
+            timed_lyrics_root / track["organized_dir"] / "lyrics.timed.json",
+        )
+        for path in candidates:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if payload.get("track_id") == track["id"] and payload.get(
+                "audio_sha256"
+            ) == track.get("audio_sha256"):
+                display_text = str(payload.get("display_text") or "").strip()
+                if display_text:
+                    return display_text, "timed-lyrics"
+
+    directory = archive / track["organized_dir"]
+    for filename, kind in (("lyrics.md", "source-lyrics"), ("prompt.txt", "prompt")):
+        path = directory / filename
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if text:
+            return text, kind
+    return "", "none"
+
+
 def ollama_subject(
     endpoint: str,
     model: str,
     imported_title: str,
     imported_summary: str,
-    lyrics: str,
+    evidence: str,
+    evidence_kind: str = "lyrics",
 ) -> str:
-    prompt = f"""Name the subject of this song.
+    prompt = f"""Create a title for this song.
 
 Return only JSON in this exact shape: {{"subject":"two to six words"}}
-The subject must be a concise human-facing song title grounded in the lyrics.
-Do not use section labels, production notes, artist names, quotes, colons, or
-generic words such as Untitled. Do not explain the answer.
+The result must sound like a concise human-facing song title, not a synopsis,
+topic label, filename, or production instruction. Ground it only in the
+evidence below. Prefer a memorable phrase or central image from the song.
+Do not use section labels, artist names, quotes, colons, numbering, or generic
+words such as Untitled and Original Track. Use normal song-title
+capitalization. Do not explain the answer.
 
 Imported noisy title: {imported_title}
 Imported first line: {imported_summary}
+Evidence source: {evidence_kind}
 
-Lyrics or source text:
-{lyrics[:7000]}
+Song evidence:
+{evidence[:7000]}
 """
     request = urllib.request.Request(
         endpoint.rstrip("/") + "/api/generate",
@@ -158,17 +205,31 @@ def main() -> int:
     archive = args.archive.resolve()
     index = json.loads((archive / "index.json").read_text(encoding="utf-8"))
     curated = json.loads(args.curated.read_text(encoding="utf-8")).get("tracks", {})
+    selected = set(args.track_id)
+    timed_lyrics_root = (
+        args.timed_lyrics_root.resolve() if args.timed_lyrics_root else None
+    )
     subjects: dict[str, dict[str, str]] = {}
     by_source: dict[str, str] = {}
+    evidence_manifest: dict[str, dict[str, str]] = {}
     generated = fallback = 0
     for track in index["tracks"]:
+        if selected and track["id"] not in selected:
+            continue
         current = curated.get(track["id"], {})
         imported_title = current.get("title") or track.get("title") or ""
         if not weak_label(imported_title):
             continue
-        lyrics_path = archive / track["organized_dir"] / "lyrics.md"
-        lyrics = lyrics_path.read_text(encoding="utf-8")
-        identity = hashlib.sha256(lyrics.encode()).hexdigest()
+        evidence, evidence_kind = title_evidence(
+            archive,
+            track,
+            timed_lyrics_root,
+        )
+        identity = hashlib.sha256(evidence.encode()).hexdigest()
+        evidence_manifest[track["id"]] = {
+            "kind": evidence_kind,
+            "sha256": identity,
+        }
         subject = by_source.get(identity)
         if subject is None:
             try:
@@ -177,11 +238,12 @@ def main() -> int:
                     args.model,
                     imported_title,
                     current.get("summary", ""),
-                    lyrics,
+                    evidence,
+                    evidence_kind,
                 )
                 generated += 1
             except Exception as error:
-                subject = fallback_subject(lyrics)
+                subject = fallback_subject(evidence)
                 fallback += 1
                 print(
                     json.dumps(
@@ -213,8 +275,9 @@ def main() -> int:
             "generator": {
                 "name": "zak-radio-local-subject-curator",
                 "model": args.model,
-                "policy": "weak-imported-titles-only",
+                "policy": "missing-or-weak-imported-titles-only",
             },
+            "evidence": evidence_manifest,
             "tracks": subjects,
         },
     )

@@ -1042,12 +1042,28 @@ function renderTimedLyrics(timedLyrics) {
     const line = document.createElement("button");
     line.type = "button";
     line.className = "synced-lyric-cue";
+    if (cue.quality_status === "warning") {
+      line.classList.add("is-uncertain");
+      line.title = "This line has lower-confidence words or timing.";
+    }
+    if (cue.secondary_text) line.classList.add("has-secondary-vocal");
     line.dataset.lyricCue = String(index);
-    line.textContent = cue.text;
+    const primary = document.createElement("span");
+    primary.className = "synced-lyric-primary";
+    primary.textContent = cue.text;
+    line.append(primary);
+    if (cue.secondary_text) {
+      const secondary = document.createElement("span");
+      secondary.className = "synced-lyric-secondary";
+      secondary.textContent = cue.secondary_text;
+      line.append(secondary);
+    }
     line.disabled = state.stationId === "main" || !canControlStation();
     line.setAttribute(
       "aria-label",
-      `Seek to ${timeLabel(cue.start)}: ${cue.text}`,
+      `Seek to ${timeLabel(cue.start)}: ${cue.text}${
+        cue.secondary_text ? `; overlapping vocal: ${cue.secondary_text}` : ""
+      }`,
     );
     line.addEventListener("click", () => {
       if (state.stationId === "main" || !canControlStation()) {
@@ -1067,6 +1083,12 @@ function renderTimedLyrics(timedLyrics) {
 }
 
 function syncedLyricsStatus(timedLyrics) {
+  if (timedLyrics?.quality?.alternate_vocals_unresolved) {
+    return "Alternate vocals detected · exact words need review";
+  }
+  if (timedLyrics?.quality?.alternate_vocals_detected) {
+    return "Following the song · alternate vocals included";
+  }
   if (timedLyrics?.quality?.status === "warning") {
     return "Auto-generated lyrics · timing may be off";
   }

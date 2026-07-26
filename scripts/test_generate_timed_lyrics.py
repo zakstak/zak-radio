@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -284,6 +286,37 @@ Close words stay together
         )
         self.assertEqual([line.text for line in lines], ["Hold on to the light."])
 
+    def test_adversarial_cleaning_cases_are_audio_evidence_dependent(self):
+        fixtures = json.loads(
+            (
+                SCRIPT.parent.parent / "testdata/lyrics-regression/adversarial.json"
+            ).read_text(encoding="utf-8")
+        )
+        for case in fixtures["cases"]:
+            with self.subTest(case=case["name"]):
+                observed = [
+                    ALIGNER.ObservedWord(
+                        text,
+                        ALIGNER.normalized_word(text),
+                        index,
+                        index + 0.2,
+                        confidence,
+                    )
+                    for index, (text, confidence) in enumerate(case["observed"])
+                ]
+                if case["kind"] == "generated":
+                    actual = [
+                        line.text
+                        for line in ALIGNER.transcript_lines(case["text"], observed)
+                    ]
+                else:
+                    cleaning = ALIGNER.clean_lyrics(case["text"])
+                    recovered, _ = ALIGNER.recover_audio_supported_metadata(
+                        cleaning, "", observed
+                    )
+                    actual = [line.text for line in recovered]
+                self.assertEqual(actual, case["expected_lines"])
+
     def test_generated_transcript_chunks_each_long_sentence(self):
         lines = ALIGNER.transcript_lines(
             "One two three four five six seven eight nine ten eleven twelve thirteen. "
@@ -303,7 +336,9 @@ Close words stay together
 
         cleaning = ALIGNER.clean_lyrics(source, classifier)
         observed = [
-            ALIGNER.ObservedWord(word, ALIGNER.normalized_word(word), index, index + 0.2, 0.9)
+            ALIGNER.ObservedWord(
+                word, ALIGNER.normalized_word(word), index, index + 0.2, 0.9
+            )
             for index, word in enumerate(
                 "memory stays searchable but future me sees why it was deprecated "
                 "the graveyard but as a hollow feature".split()
@@ -349,6 +384,11 @@ Close words stay together
             better,
         )
 
+    def test_transcript_scoring_handles_no_timed_observed_words(self):
+        score, details = ALIGNER.score_candidate([], ["possibly", "sung"], [])
+        self.assertEqual(score, 0)
+        self.assertEqual(details["token_coverage"], 0)
+
     def test_transcription_cache_avoids_repeating_model_work(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -364,9 +404,7 @@ Close words stay together
                     self.calls += 1
                     return SimpleNamespace(
                         segments=[
-                            SimpleNamespace(
-                                words=[observed_word("hello", 1.0, 1.2)]
-                            )
+                            SimpleNamespace(words=[observed_word("hello", 1.0, 1.2)])
                         ]
                     )
 
@@ -457,6 +495,161 @@ Under my umbrella
         self.assertEqual(sum(len(line.words) for line in lines), 20)
         self.assertEqual(ALIGNER.transcript_lines("е"), [])
 
+    def test_missing_vocals_require_two_independent_text_signals(self):
+        lines = ALIGNER.candidate_lines("Hold the line\n")
+        observed = [
+            ALIGNER.ObservedWord("Hold", "hold", 1.0, 1.2, 0.9),
+            ALIGNER.ObservedWord("the", "the", 1.2, 1.3, 0.9),
+            ALIGNER.ObservedWord("line", "line", 1.3, 1.6, 0.9),
+            ALIGNER.ObservedWord("I", "i", 2.0, 2.1, 0.9),
+            ALIGNER.ObservedWord("will", "will", 2.1, 2.3, 0.9),
+            ALIGNER.ObservedWord("answer", "answer", 2.3, 2.6, 0.9),
+        ]
+        existing = [
+            {
+                "start": 1.0,
+                "end": 1.6,
+                "text": "Hold the line",
+                "words": [],
+            }
+        ]
+        cues, counts = ALIGNER.missing_vocal_cues(
+            lines,
+            existing,
+            observed,
+            "Hold the line. I will answer.",
+            ALIGNER.Profile(),
+        )
+        self.assertEqual(counts["primary"], 1)
+        self.assertEqual(cues[-1]["text"], "I will answer")
+        rejected, rejected_counts = ALIGNER.missing_vocal_cues(
+            lines,
+            existing,
+            observed,
+            "Hold the line. 完全不同的幻觉。",
+            ALIGNER.Profile(),
+        )
+        self.assertEqual(rejected_counts["primary"], 0)
+        self.assertEqual(len(rejected), 1)
+
+    def test_overlapping_second_singer_is_kept_as_secondary_text(self):
+        lines = ALIGNER.candidate_lines("Hold the line\n")
+        observed = [
+            ALIGNER.ObservedWord("Hold", "hold", 1.0, 1.2, 0.9),
+            ALIGNER.ObservedWord("the", "the", 1.2, 1.3, 0.9),
+            ALIGNER.ObservedWord("line", "line", 1.3, 1.6, 0.9),
+            ALIGNER.ObservedWord("I", "i", 1.1, 1.2, 0.9),
+            ALIGNER.ObservedWord("hear", "hear", 1.2, 1.4, 0.9),
+            ALIGNER.ObservedWord("you", "you", 1.4, 1.6, 0.9),
+        ]
+        cues, counts = ALIGNER.missing_vocal_cues(
+            lines,
+            [
+                {
+                    "start": 1.0,
+                    "end": 1.7,
+                    "text": "Hold the line",
+                    "words": [],
+                }
+            ],
+            observed,
+            "Hold the line. I hear you.",
+            ALIGNER.Profile(),
+        )
+        self.assertEqual(counts["secondary"], 1)
+        self.assertEqual(cues[0]["secondary_text"], "I hear you")
+        self.assertEqual(cues[0]["secondary_origin"], "transcribed-missing")
+
+    def test_backing_vocal_words_need_three_corroborated_matches(self):
+        lines = []
+        observed = [
+            ALIGNER.ObservedWord(
+                word, word.casefold(), 2 + index * 0.2, 2.15 + index * 0.2, 0.9
+            )
+            for index, word in enumerate(("Follow", "the", "silver", "road", "tonight"))
+        ]
+        cues, counts = ALIGNER.missing_vocal_cues(
+            lines,
+            [],
+            observed,
+            "Follow another silver road tonight",
+            ALIGNER.Profile(),
+            phrase_coverage=ALIGNER.BACKING_PHRASE_COVERAGE,
+            minimum_matched_words=ALIGNER.BACKING_MINIMUM_MATCHED_WORDS,
+            evidence_origin="backing",
+            exclude_mapped_source=False,
+        )
+        self.assertEqual(counts["primary"], 1)
+        self.assertEqual(cues[0]["vocal_evidence"], "backing")
+        rejected, rejected_counts = ALIGNER.missing_vocal_cues(
+            lines,
+            [],
+            observed,
+            "Follow a completely different song",
+            ALIGNER.Profile(),
+            phrase_coverage=ALIGNER.BACKING_PHRASE_COVERAGE,
+            minimum_matched_words=ALIGNER.BACKING_MINIMUM_MATCHED_WORDS,
+            evidence_origin="backing",
+            exclude_mapped_source=False,
+        )
+        self.assertEqual(rejected_counts["primary"], 0)
+        self.assertEqual(rejected, [])
+
+    def test_local_timing_repair_requires_representation_consensus(self):
+        lines = ALIGNER.candidate_lines("Hold the line\n")
+
+        def candidate(name, start):
+            return ALIGNER.AudioCandidate(
+                name,
+                Path(name),
+                observed=[
+                    ALIGNER.ObservedWord("Hold", "hold", start, start + 0.1, 0.9),
+                    ALIGNER.ObservedWord("the", "the", start + 0.1, start + 0.2, 0.9),
+                    ALIGNER.ObservedWord("line", "line", start + 0.2, start + 0.3, 0.9),
+                ],
+            )
+
+        cues, counts = ALIGNER.repair_timings_from_consensus(
+            lines,
+            [
+                {
+                    "start": 2.05,
+                    "end": 2.35,
+                    "text": "Hold the line",
+                    "words": [
+                        {"start": 2.05, "end": 2.15, "text": "Hold", "confidence": 0.4},
+                        {"start": 2.15, "end": 2.25, "text": "the", "confidence": 0.4},
+                        {"start": 2.25, "end": 2.35, "text": "line", "confidence": 0.4},
+                    ],
+                }
+            ],
+            [candidate("raw", 1.0), candidate("ffmpeg", 1.1), candidate("demucs", 4.0)],
+            ALIGNER.Profile(),
+        )
+        self.assertEqual(counts["repaired_lines"], 1)
+        self.assertAlmostEqual(cues[0]["start"], 1.55)
+        self.assertTrue(cues[0]["timing_repaired"])
+
+    def test_each_cue_gets_calibrated_uncertainty(self):
+        cues = [
+            {
+                "text": "Hold the line",
+                "words": [
+                    {"confidence": 0.9},
+                    {"confidence": 0.9},
+                    {"confidence": 0.9},
+                ],
+            },
+            {
+                "text": "Words are missing here",
+                "words": [{"confidence": 0.5}],
+            },
+        ]
+        counts = ALIGNER.annotate_cue_quality(cues, ALIGNER.Profile())
+        self.assertEqual(counts, {"verified": 1, "warning": 1})
+        self.assertEqual(cues[0]["quality_status"], "verified")
+        self.assertEqual(cues[1]["quality_status"], "warning")
+
     def test_gold_metrics_are_exact_for_exact_word_timing(self):
         reference = [
             {"normalized": "hello", "start": 1.0},
@@ -472,16 +665,312 @@ Under my umbrella
         self.assertEqual(metrics["median_onset_error"], 0)
         self.assertEqual(metrics["within_500ms"], 1)
 
+    def test_gold_confidence_calibration_uses_fixed_bands(self):
+        reference = [
+            {"normalized": "hello", "start": 1.0},
+            {"normalized": "world", "start": 2.0},
+        ]
+        prediction = [
+            {"text": "Hello", "start": 1.1, "confidence": 0.6},
+            {"text": "world", "start": 2.8, "confidence": 0.9},
+        ]
+        calibration = ALIGNER.confidence_calibration(reference, prediction)
+        self.assertEqual(calibration[1]["matched_words"], 1)
+        self.assertEqual(calibration[1]["within_500ms"], 1)
+        self.assertEqual(calibration[3]["matched_words"], 1)
+        self.assertEqual(calibration[3]["within_500ms"], 0)
+
     def test_profile_digest_changes_when_alignment_tuning_changes(self):
         baseline = ALIGNER.Profile()
         tuned = ALIGNER.Profile(line_initial_offset=baseline.line_initial_offset + 0.1)
-        self.assertEqual(ALIGNER.profile_digest(baseline), ALIGNER.profile_digest(baseline))
+        self.assertEqual(
+            ALIGNER.profile_digest(baseline), ALIGNER.profile_digest(baseline)
+        )
         self.assertNotEqual(
             ALIGNER.profile_digest(baseline),
             ALIGNER.profile_digest(tuned),
         )
 
-    def test_cli_exposes_song_bulk_and_gold_commands(self):
+    def test_regression_compare_promotes_only_an_evidence_safe_improvement(self):
+        def payload(display_text, words, **quality):
+            return {
+                "track_id": "track",
+                "audio_sha256": "audio",
+                "source_lyrics_sha256": "lyrics",
+                "display_text": display_text,
+                "quality": {
+                    "status": "warning",
+                    "line_coverage": quality.get("line_coverage", 1),
+                    "word_coverage": quality.get("word_coverage", 1),
+                    "mean_confidence": quality.get("mean_confidence", 0.9),
+                },
+                "cues": [
+                    {
+                        "start": words[0][1],
+                        "end": words[-1][1] + 0.2,
+                        "text": quality.get("cue_text", "Sing this line"),
+                        "words": [
+                            {
+                                "text": text,
+                                "start": start,
+                                "end": start + 0.2,
+                                "confidence": confidence,
+                            }
+                            for text, start, confidence in words
+                        ],
+                    }
+                ],
+            }
+
+        evidence = {"sha256": "same"}
+        baseline = payload(
+            "[Verse 2]\nSing this line",
+            [("Sing", 1.0, 0.9), ("this", 1.2, 0.9), ("line", 1.4, 0.9)],
+        )
+        candidate = payload(
+            "Sing this line",
+            [("Sing", 1.0, 0.9), ("this", 1.2, 0.9), ("line", 1.4, 0.9)],
+        )
+        comparison = ALIGNER.compare_sidecars(baseline, candidate, evidence, evidence)
+        self.assertEqual(comparison["decision"], "promote")
+        self.assertEqual(comparison["selected"], "candidate")
+        self.assertIn(
+            "removed 1 unsupported metadata-like display lines",
+            comparison["improvements"],
+        )
+
+        sung_phrase = payload(
+            "Thanks for listening",
+            [
+                ("Thanks", 1.0, 0.9),
+                ("for", 1.2, 0.9),
+                ("listening", 1.4, 0.9),
+            ],
+            cue_text="Thanks for listening",
+        )
+        comparison = ALIGNER.compare_sidecars(
+            sung_phrase, sung_phrase, evidence, evidence
+        )
+        self.assertEqual(comparison["decision"], "retain-baseline")
+        self.assertEqual(comparison["unsupported_metadata_before"], [])
+
+    def test_regression_compare_abstains_on_word_timing_or_evidence_loss(self):
+        def payload(words, coverage=1):
+            return {
+                "track_id": "track",
+                "audio_sha256": "audio",
+                "display_text": "Hold the line",
+                "quality": {
+                    "status": "warning",
+                    "line_coverage": coverage,
+                    "word_coverage": coverage,
+                    "mean_confidence": 0.9,
+                },
+                "cues": [
+                    {
+                        "start": words[0][1],
+                        "end": words[-1][1] + 0.2,
+                        "text": "Hold the line",
+                        "words": [
+                            {
+                                "text": text,
+                                "start": start,
+                                "end": start + 0.2,
+                                "confidence": 0.9,
+                            }
+                            for text, start in words
+                        ],
+                    }
+                ],
+            }
+
+        evidence = {"sha256": "same"}
+        baseline = payload([("Hold", 1.0), ("the", 1.2), ("line", 1.4)])
+        missing = payload([("Hold", 1.0), ("line", 1.4)], coverage=0.67)
+        comparison = ALIGNER.compare_sidecars(baseline, missing, evidence, evidence)
+        self.assertEqual(comparison["decision"], "abstain")
+        self.assertTrue(
+            any(
+                "high-confidence baseline words" in item
+                for item in comparison["regressions"]
+            )
+        )
+
+        shifted = payload([("Hold", 2.0), ("the", 2.2), ("line", 2.4)])
+        comparison = ALIGNER.compare_sidecars(baseline, shifted, evidence, evidence)
+        self.assertEqual(comparison["decision"], "abstain")
+        self.assertTrue(
+            any("word onsets moved" in item for item in comparison["regressions"])
+        )
+
+        lower_confidence = payload([("Hold", 1.0), ("the", 1.2), ("line", 1.4)])
+        lower_confidence["cues"][0]["words"][1]["confidence"] = 0.7
+        comparison = ALIGNER.compare_sidecars(
+            baseline, lower_confidence, evidence, evidence
+        )
+        self.assertEqual(comparison["decision"], "abstain")
+        self.assertTrue(
+            any(
+                "high-confidence baseline words" in item
+                for item in comparison["regressions"]
+            )
+        )
+
+        comparison = ALIGNER.compare_sidecars(
+            baseline, baseline, evidence, {"sha256": "different"}
+        )
+        self.assertEqual(comparison["decision"], "abstain")
+        self.assertIn(
+            "baseline and candidate did not use identical frozen evidence",
+            comparison["regressions"],
+        )
+
+    def test_compare_command_retains_baseline_in_bundle_when_it_abstains(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            archive = root / "archive"
+            organized = archive / "tracks/Test/01"
+            organized.mkdir(parents=True)
+            audio = organized / "audio.mp3"
+            audio.write_bytes(b"audio")
+            audio_sha256 = ALIGNER.sha256_file(audio)
+            track = {
+                "id": "track",
+                "organized_dir": "tracks/Test/01",
+                "audio_sha256": audio_sha256,
+            }
+            (archive / "index.json").write_text(
+                json.dumps({"tracks": [track]}),
+                encoding="utf-8",
+            )
+            evidence = {
+                "version": 1,
+                "audio_sha256": audio_sha256,
+                "source_lyrics_sha256": "",
+                "selected_preprocessing": "raw",
+                "selected_audio_sha256": audio_sha256,
+                "model_output_sha256": "model",
+            }
+            evidence["sha256"] = ALIGNER.canonical_json_sha256(evidence)
+
+            def payload(words):
+                return {
+                    "version": 2,
+                    "track_id": "track",
+                    "audio_sha256": audio_sha256,
+                    "display_text": "Hold the line",
+                    "evidence": evidence,
+                    "generator": {"preprocessing": "raw"},
+                    "quality": {
+                        "status": "warning",
+                        "line_coverage": 1,
+                        "word_coverage": len(words) / 3,
+                        "mean_confidence": 0.9,
+                    },
+                    "cues": [
+                        {
+                            "start": 1,
+                            "end": 2,
+                            "text": "Hold the line",
+                            "words": [
+                                {
+                                    "text": word,
+                                    "start": 1 + index * 0.2,
+                                    "end": 1.1 + index * 0.2,
+                                    "confidence": 0.9,
+                                }
+                                for index, word in enumerate(words)
+                            ],
+                        }
+                    ],
+                }
+
+            baseline_root = root / "baseline"
+            candidate_root = root / "candidate"
+            baseline_path = ALIGNER.output_path(baseline_root, track["organized_dir"])
+            candidate_path = ALIGNER.output_path(candidate_root, track["organized_dir"])
+            baseline_path.parent.mkdir(parents=True)
+            candidate_path.parent.mkdir(parents=True)
+            baseline_path.write_text(
+                json.dumps(payload(["Hold", "the", "line"])),
+                encoding="utf-8",
+            )
+            candidate_path.write_text(
+                json.dumps(payload(["Hold", "line"])),
+                encoding="utf-8",
+            )
+            bundle = root / "bundle"
+            report = root / "report.json"
+            with contextlib.redirect_stdout(io.StringIO()):
+                status = ALIGNER.run_compare(
+                    SimpleNamespace(
+                        archive=archive,
+                        baseline_root=baseline_root,
+                        candidate_root=candidate_root,
+                        cache_root=root / "cache",
+                        profile=ALIGNER.DEFAULT_PROFILE,
+                        track_id=[],
+                        max_tracks=0,
+                        maximum_onset_shift=0.5,
+                        high_confidence=0.75,
+                        bundle_root=bundle,
+                        report=report,
+                    )
+                )
+            self.assertEqual(status, 2)
+            self.assertEqual(
+                json.loads((bundle / "track.json").read_text())["cues"][0]["words"][1][
+                    "text"
+                ],
+                "the",
+            )
+            self.assertEqual(
+                json.loads(report.read_text())["counts"]["abstain"],
+                1,
+            )
+
+    def test_regression_compare_promotes_safe_alternate_vocal_detection(self):
+        baseline = {
+            "display_text": "Hold the line",
+            "quality": {
+                "status": "verified",
+                "line_coverage": 1,
+                "word_coverage": 1,
+                "mean_confidence": 0.9,
+            },
+            "cues": [
+                {
+                    "start": 1.0,
+                    "end": 1.5,
+                    "text": "Hold the line",
+                    "words": [
+                        {
+                            "text": "Hold",
+                            "start": 1.0,
+                            "end": 1.2,
+                            "confidence": 0.9,
+                        }
+                    ],
+                }
+            ],
+        }
+        candidate = json.loads(json.dumps(baseline))
+        candidate["quality"]["alternate_vocals_detected"] = True
+        candidate["quality"]["alternate_vocals_unresolved"] = True
+        evidence = {"sha256": "same"}
+        result = ALIGNER.compare_sidecars(
+            baseline,
+            candidate,
+            evidence,
+            evidence,
+        )
+        self.assertEqual(result["decision"], "promote")
+        self.assertIn(
+            "surfaced independently detected alternate vocals",
+            result["improvements"],
+        )
+
+    def test_cli_exposes_song_bulk_compare_and_gold_commands(self):
         parser = ALIGNER.build_parser()
         song = parser.parse_args(
             [
@@ -499,6 +988,33 @@ Under my umbrella
             ["bulk", "--archive", "/archive", "--output-root", "/output"]
         )
         self.assertEqual(bulk.command, "bulk")
+        compare = parser.parse_args(
+            [
+                "compare",
+                "--archive",
+                "/archive",
+                "--baseline-root",
+                "/baseline",
+                "--candidate-root",
+                "/candidate",
+                "--report",
+                "/report.json",
+            ]
+        )
+        self.assertEqual(compare.command, "compare")
+        gold = parser.parse_args(
+            [
+                "gold",
+                "run",
+                "--output-root",
+                "/output",
+                "--report",
+                "/report.json",
+                "--strategy",
+                "v5",
+            ]
+        )
+        self.assertEqual(gold.strategy, "v5")
 
     def test_gold_manifest_has_fixed_song_level_holdout(self):
         manifest = json.loads(

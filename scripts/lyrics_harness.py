@@ -31,14 +31,28 @@ from types import SimpleNamespace
 from typing import Any, Callable, Sequence
 
 
-HARNESS_VERSION = "4"
+HARNESS_VERSION = "6"
 MODEL_CACHE_VERSION = "3"
 DEFAULT_MODEL_DIR = Path.home() / ".cache/zak-radio-aligner/models"
 DEFAULT_CACHE_ROOT = Path.home() / ".cache/zak-radio-aligner"
-DEFAULT_PROFILE = Path(__file__).resolve().parent.parent / "testdata/lyrics-gold/profile-v1.json"
+DEFAULT_PROFILE = (
+    Path(__file__).resolve().parent.parent / "testdata/lyrics-gold/profile-v1.json"
+)
 DEFAULT_GOLD_MANIFEST = (
     Path(__file__).resolve().parent.parent / "testdata/lyrics-gold/manifest.json"
 )
+SOURCE_MISMATCH_COVERAGE = 0.30
+SUPPLEMENTAL_TRIGGER_COVERAGE = 0.75
+SUPPLEMENTAL_PHRASE_COVERAGE = 0.75
+SUPPLEMENTAL_MINIMUM_CONFIDENCE = 0.65
+BACKING_PHRASE_COVERAGE = 0.55
+BACKING_MINIMUM_MATCHED_WORDS = 4
+BACKING_VOCAL_MODEL = "mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt"
+CONSENSUS_MAXIMUM_SPREAD = 0.50
+LOCAL_REPAIR_MINIMUM_SHIFT = 0.50
+LOCAL_REPAIR_MAXIMUM_SHIFT = 0.50
+LINE_VERIFIED_COVERAGE = 0.75
+LINE_VERIFIED_CONFIDENCE = 0.65
 
 WORD_RE = re.compile(r"[\w]+(?:['’][\w]+)?", re.UNICODE)
 MARKDOWN_EDGE_RE = re.compile(r"^(?:\*\*|__|~~|`)(.*?)(?:\*\*|__|~~|`)$")
@@ -90,7 +104,16 @@ GENERIC_TRANSCRIPT_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-RECOVERABLE_METADATA_REASONS = frozenset({"local-text-model", "prompt-prose"})
+RECOVERABLE_METADATA_REASONS = frozenset(
+    {
+        "local-text-model",
+        "production-direction",
+        "production-prose",
+        "production-duration",
+        "prompt-prose",
+        "section-production-direction",
+    }
+)
 PRODUCTION_SENTENCE_RE = re.compile(
     r"^(?:"
     r"no lyrics\b|"
@@ -112,6 +135,7 @@ class CandidateLine:
     section: str
     text: str
     words: tuple[str, ...]
+    origin: str = "source"
 
 
 @dataclass(frozen=True)
@@ -173,6 +197,7 @@ class ObservedWord:
 class AudioCandidate:
     name: str
     path: Path
+    raw_transcript: str = ""
     transcript: str = ""
     observed: list[ObservedWord] | None = None
     stable_result: Any = None
@@ -189,7 +214,11 @@ def normalized_word(value: str) -> str:
 
 
 def tokenize(value: str) -> list[str]:
-    return [word for word in (normalized_word(item) for item in WORD_RE.findall(value)) if word]
+    return [
+        word
+        for word in (normalized_word(item) for item in WORD_RE.findall(value))
+        if word
+    ]
 
 
 def _markdown_unwrap(value: str) -> str:
@@ -227,18 +256,17 @@ def _section_name(value: str) -> str:
 
 def is_production_cue(value: str) -> bool:
     stripped = _markdown_unwrap(value).strip()
-    enclosed = (
-        len(stripped) >= 2
-        and (stripped[0], stripped[-1]) in {("(", ")"), ("[", "]")}
-    )
+    enclosed = len(stripped) >= 2 and (stripped[0], stripped[-1]) in {
+        ("(", ")"),
+        ("[", "]"),
+    }
     return enclosed and bool(PRODUCTION_CUE_RE.search(stripped))
 
 
 def _looks_like_prompt_prose(value: str) -> bool:
     words = WORD_RE.findall(value)
-    return (
-        bool(PROMPT_PROSE_RE.search(value))
-        and (len(words) >= 10 or any(mark in value for mark in (":", ";", "—")))
+    return bool(PROMPT_PROSE_RE.search(value)) and (
+        len(words) >= 10 or any(mark in value for mark in (":", ";", "—"))
     )
 
 
@@ -247,7 +275,8 @@ def _display_text(lines: Sequence[CandidateLine]) -> str:
     previous: CandidateLine | None = None
     for line in lines:
         if previous and (
-            line.section != previous.section or line.source_line > previous.source_line + 1
+            line.section != previous.section
+            or line.source_line > previous.source_line + 1
         ):
             if parts and parts[-1] != "":
                 parts.append("")
@@ -338,7 +367,11 @@ def clean_lyrics(
         if stop_after_commentary:
             decisions.append(
                 LineDecision(
-                    source_line, original, normalized, "metadata", "after-editorial-tail"
+                    source_line,
+                    original,
+                    normalized,
+                    "metadata",
+                    "after-editorial-tail",
                 )
             )
             continue
@@ -359,14 +392,16 @@ def clean_lyrics(
             continue
         if normalized.upper() in {"LYRICS:", "LYRICS", "STYLE:", "STYLE", "PROMPT:"}:
             decisions.append(
-                LineDecision(source_line, original, normalized, "metadata", "field-label")
+                LineDecision(
+                    source_line, original, normalized, "metadata", "field-label"
+                )
             )
             continue
-        if re.match(
-            r"^[^\w]*(?:title|style|genre|tempo|key)\s*:", normalized, re.I
-        ):
+        if re.match(r"^[^\w]*(?:title|style|genre|tempo|key)\s*:", normalized, re.I):
             decisions.append(
-                LineDecision(source_line, original, normalized, "metadata", "prompt-field")
+                LineDecision(
+                    source_line, original, normalized, "metadata", "prompt-field"
+                )
             )
             continue
         if normalized.startswith("#"):
@@ -386,7 +421,11 @@ def clean_lyrics(
         if is_production_cue(normalized):
             decisions.append(
                 LineDecision(
-                    source_line, original, normalized, "metadata", "production-direction"
+                    source_line,
+                    original,
+                    normalized,
+                    "metadata",
+                    "production-direction",
                 )
             )
             saw_content = True
@@ -403,11 +442,10 @@ def clean_lyrics(
             )
             saw_content = True
             continue
-        if (
-            re.match(r"^(?:instrumental|outro)\b", section, re.IGNORECASE)
-            and re.fullmatch(
-                r"(?:stomp|clap|low hum|wind)[.!…]*", normalized, re.IGNORECASE
-            )
+        if re.match(
+            r"^(?:instrumental|outro)\b", section, re.IGNORECASE
+        ) and re.fullmatch(
+            r"(?:stomp|clap|low hum|wind)[.!…]*", normalized, re.IGNORECASE
         ):
             decisions.append(
                 LineDecision(
@@ -453,7 +491,9 @@ def clean_lyrics(
             continue
         if _looks_like_prompt_prose(normalized):
             decisions.append(
-                LineDecision(source_line, original, normalized, "metadata", "prompt-prose")
+                LineDecision(
+                    source_line, original, normalized, "metadata", "prompt-prose"
+                )
             )
             continue
         words = tuple(WORD_RE.findall(normalized))
@@ -471,7 +511,9 @@ def clean_lyrics(
         candidate = CandidateLine(source_line, section, normalized, words)
         result.append(candidate)
         decisions.append(
-            LineDecision(source_line, original, normalized, "lyrics", "deterministic", section)
+            LineDecision(
+                source_line, original, normalized, "lyrics", "deterministic", section
+            )
         )
         saw_content = True
 
@@ -479,11 +521,21 @@ def clean_lyrics(
     model_decisions: dict[int, str] = {}
     if ambiguous and classifier:
         try:
-            model_decisions = classifier([(number, value) for number, _, value, _ in ambiguous])
-        except (OSError, ValueError, KeyError, json.JSONDecodeError, urllib.error.URLError) as error:
+            model_decisions = classifier(
+                [(number, value) for number, _, value, _ in ambiguous]
+            )
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            json.JSONDecodeError,
+            urllib.error.URLError,
+        ) as error:
             warnings.append(f"local text classification unavailable: {error}")
     elif ambiguous:
-        warnings.append(f"{len(ambiguous)} ambiguous lines preserved without model classification")
+        warnings.append(
+            f"{len(ambiguous)} ambiguous lines preserved without model classification"
+        )
 
     for source_line, original, normalized, line_section in ambiguous:
         decision = model_decisions.get(source_line, "lyrics")
@@ -502,7 +554,9 @@ def clean_lyrics(
                 original,
                 normalized,
                 decision,
-                "local-text-model" if source_line in model_decisions else "safe-fallback",
+                "local-text-model"
+                if source_line in model_decisions
+                else "safe-fallback",
                 line_section,
             )
         )
@@ -535,6 +589,88 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: source.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def canonical_json_sha256(payload: Any) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def model_evidence(
+    track: dict[str, Any],
+    source_lyrics_sha256: str,
+    selected: AudioCandidate,
+) -> dict[str, Any]:
+    observed = [asdict(word) for word in selected.observed or []]
+    model_output_sha256 = canonical_json_sha256(
+        {
+            "raw_transcript": selected.raw_transcript,
+            "observed": observed,
+            "warning": selected.warning,
+        }
+    )
+    evidence = {
+        "version": 1,
+        "audio_sha256": str(track["audio_sha256"]),
+        "source_lyrics_sha256": source_lyrics_sha256,
+        "selected_preprocessing": selected.name,
+        "selected_audio_sha256": sha256_file(selected.path),
+        "model_output_sha256": model_output_sha256,
+    }
+    evidence["sha256"] = canonical_json_sha256(evidence)
+    return evidence
+
+
+def model_evidence_set(
+    track: dict[str, Any],
+    source_lyrics_sha256: str,
+    selected: AudioCandidate,
+    candidates: Sequence[AudioCandidate],
+    supplemental: AudioCandidate | None,
+) -> dict[str, Any]:
+    """Freeze every representation used by either side of a v5/v6 comparison."""
+
+    representations = []
+    for candidate in sorted(candidates, key=lambda item: item.name):
+        if candidate.error or not candidate.path.is_file():
+            continue
+        representations.append(
+            {
+                "name": candidate.name,
+                "audio_sha256": sha256_file(candidate.path),
+                "model_output_sha256": canonical_json_sha256(
+                    {
+                        "observed": [asdict(word) for word in candidate.observed or []],
+                        "warning": candidate.warning,
+                    }
+                ),
+            }
+        )
+    evidence = {
+        "version": 2,
+        "audio_sha256": str(track["audio_sha256"]),
+        "source_lyrics_sha256": source_lyrics_sha256,
+        "selected_preprocessing": selected.name,
+        "representations": representations,
+        "supplemental_model_output_sha256": (
+            canonical_json_sha256(
+                {
+                    "raw_transcript": supplemental.raw_transcript,
+                    "observed": [asdict(word) for word in supplemental.observed or []],
+                    "warning": supplemental.warning,
+                }
+            )
+            if supplemental
+            else ""
+        ),
+    }
+    evidence["sha256"] = canonical_json_sha256(evidence)
+    return evidence
 
 
 def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
@@ -570,7 +706,9 @@ def existing_matches(path: Path, track: dict[str, Any]) -> bool:
 
 def bundle_eligible(payload: dict[str, Any]) -> bool:
     if payload.get("version") == 2:
-        return bool(payload.get("cues")) or bool(str(payload.get("display_text") or "").strip())
+        return bool(payload.get("cues")) or bool(
+            str(payload.get("display_text") or "").strip()
+        )
     quality = payload.get("quality") or {}
     cues = payload.get("cues") or []
     line_coverage = float(quality.get("line_coverage") or 0)
@@ -648,9 +786,7 @@ def timed_cues(
         for line_index, (line, segment) in enumerate(
             zip(candidates, segments, strict=True)
         ):
-            segment_words = flatten_result_words(
-                SimpleNamespace(segments=[segment])
-            )
+            segment_words = flatten_result_words(SimpleNamespace(segments=[segment]))
             matcher = difflib.SequenceMatcher(
                 None,
                 [normalized_word(word) for word in line.words],
@@ -762,7 +898,9 @@ def timed_cues(
     return cues, quality
 
 
-def _sequence_score(reference: Sequence[str], observed: Sequence[ObservedWord]) -> tuple[float, dict[str, float]]:
+def _sequence_score(
+    reference: Sequence[str], observed: Sequence[ObservedWord]
+) -> tuple[float, dict[str, float]]:
     if not reference or not observed:
         return 0.0, {
             "token_coverage": 0.0,
@@ -796,7 +934,7 @@ def score_candidate(
 ) -> tuple[float, dict[str, float]]:
     reference = list(source_words) or list(transcript_words)
     score, details = _sequence_score(reference, observed)
-    if not source_words and transcript_words:
+    if not source_words and transcript_words and observed:
         words_per_minute = len(observed) / max(
             1 / 60, (observed[-1].end - observed[0].start) / 60
         )
@@ -814,7 +952,9 @@ def choose_candidate(
     if not usable:
         errors = "; ".join(f"{item.name}: {item.error}" for item in candidates)
         raise RuntimeError(f"all audio candidates failed: {errors}")
-    raw = next((candidate for candidate in usable if candidate.name == "raw"), usable[0])
+    raw = next(
+        (candidate for candidate in usable if candidate.name == "raw"), usable[0]
+    )
     selected = raw
     for candidate in sorted(usable, key=lambda item: item.score, reverse=True):
         raw_coverage = float((raw.score_details or {}).get("token_coverage", 0))
@@ -831,13 +971,18 @@ def choose_candidate(
     return selected
 
 
-def _run(command: Sequence[str]) -> None:
+def _run(
+    command: Sequence[str],
+    *,
+    environment: dict[str, str] | None = None,
+) -> None:
     completed = subprocess.run(
         list(command),
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        env=environment,
     )
     if completed.returncode:
         message = completed.stderr.strip().splitlines()
@@ -878,7 +1023,10 @@ def ffmpeg_vocal_forward(audio: Path, destination: Path) -> Path:
 
 def demucs_vocals(audio: Path, destination: Path) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="zak-radio-demucs-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="zak-radio-demucs-",
+        dir=destination.parent,
+    ) as temporary:
         _run(
             [
                 sys.executable,
@@ -895,23 +1043,104 @@ def demucs_vocals(audio: Path, destination: Path) -> Path:
         matches = list(Path(temporary).glob("*/" + audio.stem + "/vocals.*"))
         if len(matches) != 1:
             raise RuntimeError("Demucs did not produce one vocals stem")
+        converted = destination.with_name(destination.name + f".tmp-{os.getpid()}.wav")
+        try:
+            _run(
+                [
+                    "ffmpeg",
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    str(matches[0]),
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
+                    str(converted),
+                ]
+            )
+            os.replace(converted, destination)
+        finally:
+            converted.unlink(missing_ok=True)
+    return destination
+
+
+def backing_vocals(
+    vocal_stem: Path,
+    destination: Path,
+    cache_root: Path,
+) -> Path:
+    """Split a Demucs vocal stem into lead and backing vocals, fail-atomic."""
+
+    executable = Path(sys.executable).with_name("audio-separator")
+    if not executable.is_file():
+        raise FileNotFoundError(
+            f"optional backing-vocal separator is unavailable: {executable}"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    model_directory = cache_root / "models" / "audio-separator"
+    model_directory.mkdir(parents=True, exist_ok=True)
+    temporary_root = cache_root / "tmp"
+    temporary_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="zak-radio-backing-",
+        dir=destination.parent,
+    ) as temporary:
+        output_directory = Path(temporary)
+        environment = dict(os.environ)
+        environment["TMPDIR"] = str(temporary_root)
         _run(
             [
-                "ffmpeg",
-                "-nostdin",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-y",
-                "-i",
-                str(matches[0]),
-                "-ar",
+                str(executable),
+                "--log_level",
+                "warning",
+                "--model_filename",
+                BACKING_VOCAL_MODEL,
+                "--model_file_dir",
+                str(model_directory),
+                "--output_dir",
+                str(output_directory),
+                "--output_format",
+                "WAV",
+                "--single_stem",
+                "Instrumental",
+                "--sample_rate",
                 "16000",
-                "-ac",
-                "1",
-                str(destination),
-            ]
+                "--use_autocast",
+                "--custom_output_names",
+                '{"Instrumental":"backing-vocals"}',
+                str(vocal_stem),
+            ],
+            environment=environment,
         )
+        separated = output_directory / "backing-vocals.wav"
+        if not separated.is_file():
+            raise RuntimeError("backing-vocal separator produced no backing stem")
+        converted = destination.with_name(destination.name + f".tmp-{os.getpid()}.wav")
+        try:
+            _run(
+                [
+                    "ffmpeg",
+                    "-nostdin",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    str(separated),
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
+                    str(converted),
+                ]
+            )
+            os.replace(converted, destination)
+        finally:
+            converted.unlink(missing_ok=True)
     return destination
 
 
@@ -953,31 +1182,44 @@ class LocalModels:
     def heart_transcribe(self, audio: Path) -> str:
         if self._heart is None:
             import torch
-            from transformers import pipeline
+            from transformers.models.whisper.modeling_whisper import (
+                WhisperForConditionalGeneration,
+            )
+            from transformers.models.whisper.processing_whisper import WhisperProcessor
+            from transformers.pipelines.automatic_speech_recognition import (
+                AutomaticSpeechRecognitionPipeline,
+            )
 
             local_model = self.model_dir / "HeartTranscriptor-oss"
-            model_name = str(local_model) if local_model.exists() else self.profile.heart_model
-            self._heart = pipeline(
-                "automatic-speech-recognition",
-                model=model_name,
+            if not local_model.exists():
+                raise FileNotFoundError(
+                    f"HeartTranscriptor checkpoint is missing: {local_model}"
+                )
+            model = WhisperForConditionalGeneration.from_pretrained(
+                str(local_model),
+                torch_dtype=torch.float16,
+                low_cpu_mem_usage=True,
+            )
+            processor = WhisperProcessor.from_pretrained(str(local_model))
+            self._heart = AutomaticSpeechRecognitionPipeline(
+                model=model,
+                tokenizer=processor.tokenizer,
+                feature_extractor=processor.feature_extractor,
                 device=0,
                 dtype=torch.float16,
                 chunk_length_s=30,
-                stride_length_s=5,
-                **(
-                    {"revision": self.profile.heart_revision}
-                    if model_name == self.profile.heart_model
-                    else {}
-                ),
+                batch_size=16,
             )
         result = self._heart(
             str(audio),
-            return_timestamps=True,
-            generate_kwargs={
-                "language": self.profile.language,
-                "do_sample": False,
-                "num_beams": 1,
-            },
+            max_new_tokens=256,
+            num_beams=2,
+            task="transcribe",
+            condition_on_prev_tokens=False,
+            compression_ratio_threshold=1.8,
+            temperature=(0.0, 0.1, 0.2, 0.4),
+            logprob_threshold=-1.0,
+            no_speech_threshold=0.4,
         )
         return str(result.get("text") or "").strip()
 
@@ -1025,11 +1267,7 @@ def monotonic_line_mapping(
 ) -> dict[int, int]:
     """Map source words onto ASR words with a global minimum-edit alignment."""
 
-    expected = [
-        normalized_word(word)
-        for line in lines
-        for word in line.words
-    ]
+    expected = [normalized_word(word) for line in lines for word in line.words]
     observed_tokens = [word.normalized for word in observed]
     return dict(edit_alignment_pairs(expected, observed_tokens))
 
@@ -1161,9 +1399,7 @@ def direct_line_cue(
         ]
         total_weight = sum(weights)
         cursor = left
-        for word_index, weight in zip(
-            range(gap_start, gap_end), weights, strict=True
-        ):
+        for word_index, weight in zip(range(gap_start, gap_end), weights, strict=True):
             word_end = cursor + (right - left) * weight / total_weight
             completed[word_index] = (cursor, word_end, 0.0)
             cursor = word_end
@@ -1281,9 +1517,7 @@ def align_in_windows(
                 following = line_ranges[line_index + 1]
                 assert current is not None and following is not None
                 boundary = (current[1] + following[0]) / 2
-                boundaries.append(
-                    min(duration, max(boundaries[-1] + 0.02, boundary))
-                )
+                boundaries.append(min(duration, max(boundaries[-1] + 0.02, boundary)))
             boundaries.append(duration)
             aligned = align_words(
                 models.stable(),
@@ -1395,9 +1629,7 @@ def align_in_windows(
     total_words = sum(len(line.words) for line in lines)
     timed_words = sum(len(cue.get("words", [])) for cue in monotonic)
     confidences = [
-        word.get("confidence", 0)
-        for cue in monotonic
-        for word in cue.get("words", [])
+        word.get("confidence", 0) for cue in monotonic for word in cue.get("words", [])
     ]
     warnings = list(dict.fromkeys(alignment_warnings))
     omitted = len(lines) - len(monotonic)
@@ -1436,26 +1668,76 @@ def _text_chunks(value: str, maximum_words: int = 12) -> list[str]:
     return chunks
 
 
-def clean_generated_transcript(text: str) -> str:
-    """Remove high-confidence ASR boilerplate and consecutive duplicate sentences."""
+def _observed_phrase_coverage(
+    reference: Sequence[str],
+    observed: Sequence[ObservedWord],
+    minimum_confidence: float = 0.7,
+) -> float:
+    usable = [
+        word.normalized
+        for word in observed
+        if word.confidence >= minimum_confidence and word.normalized
+    ]
+    if not reference or not usable:
+        return 0.0
+    return _matching_token_count(reference, usable) / len(reference)
+
+
+def _observed_phrase_occurrences(
+    reference: Sequence[str],
+    observed: Sequence[ObservedWord],
+    minimum_confidence: float = 0.7,
+) -> int:
+    usable = [
+        word.normalized
+        for word in observed
+        if word.confidence >= minimum_confidence and word.normalized
+    ]
+    width = len(reference)
+    if not width or width > len(usable):
+        return 0
+    return sum(
+        usable[index : index + width] == list(reference)
+        for index in range(len(usable) - width + 1)
+    )
+
+
+def clean_generated_transcript(
+    text: str,
+    observed: Sequence[ObservedWord] = (),
+) -> str:
+    """Remove likely ASR boilerplate without deleting audio-supported lyrics."""
 
     retained: list[str] = []
     previous = ""
+    retained_occurrences: dict[str, int] = {}
     for raw in re.split(r"(?<=[.!?])\s+|\n+", text):
         value = raw.strip(" \t\r\n,")
-        if not value or GENERIC_TRANSCRIPT_RE.search(value):
+        if not value:
             continue
-        normalized = " ".join(tokenize(value))
+        tokens = tokenize(value)
+        normalized = " ".join(tokens)
+        if (
+            GENERIC_TRANSCRIPT_RE.search(value)
+            and _observed_phrase_coverage(tokens, observed) < 0.8
+        ):
+            continue
         if normalized and normalized == previous:
-            continue
+            retained_count = retained_occurrences.get(normalized, 0)
+            if _observed_phrase_occurrences(tokens, observed) <= retained_count:
+                continue
         retained.append(value)
+        retained_occurrences[normalized] = retained_occurrences.get(normalized, 0) + 1
         previous = normalized
     return "\n".join(retained)
 
 
-def transcript_lines(text: str) -> list[CandidateLine]:
+def transcript_lines(
+    text: str,
+    observed: Sequence[ObservedWord] = (),
+) -> list[CandidateLine]:
     lines: list[CandidateLine] = []
-    cleaned = clean_generated_transcript(text)
+    cleaned = clean_generated_transcript(text, observed)
     for raw in re.split(r"(?<=[.!?])\s+|\n+", cleaned):
         for value in _text_chunks(raw):
             words = tuple(WORD_RE.findall(value))
@@ -1482,7 +1764,7 @@ def recover_audio_supported_metadata(
 ) -> tuple[list[CandidateLine], int]:
     """Recover exact source clauses only when independent audio text supports them."""
 
-    transcript_evidence = tokenize(clean_generated_transcript(transcript))
+    transcript_evidence = tokenize(transcript)
     observed_evidence = [word.normalized for word in observed]
     recovered: list[CandidateLine] = []
     considered = 0
@@ -1502,12 +1784,470 @@ def recover_audio_supported_metadata(
                 _matching_token_count(reference, transcript_evidence),
                 _matching_token_count(reference, observed_evidence),
             )
-            if matched < minimum_matches or matched / len(reference) < minimum_coverage:
+            if len(reference) <= 2:
+                if _observed_phrase_coverage(reference, observed, 0.8) < 1:
+                    continue
+            elif (
+                matched < minimum_matches or matched / len(reference) < minimum_coverage
+            ):
                 continue
             recovered.append(
                 CandidateLine(decision.source_line, decision.section, value, words)
             )
     return recovered, considered
+
+
+def _best_contiguous_coverage(
+    reference: Sequence[str],
+    evidence: Sequence[str],
+) -> float:
+    """Measure phrase support without allowing matches scattered across a song."""
+
+    if not reference or not evidence:
+        return 0.0
+    width = len(reference)
+    best = 0
+    for candidate_width in range(max(1, width - 2), min(len(evidence), width + 3) + 1):
+        for index in range(0, len(evidence) - candidate_width + 1):
+            best = max(
+                best,
+                _matching_token_count(
+                    reference,
+                    evidence[index : index + candidate_width],
+                ),
+            )
+            if best == width:
+                return 1.0
+    return best / width
+
+
+def _english_lyric_text(value: str) -> bool:
+    """Reject obvious multilingual ASR hallucinations for an English profile."""
+
+    letters = [character for character in value if character.isalpha()]
+    if not letters:
+        return False
+    latin = sum(
+        ("a" <= character.casefold() <= "z") or character in "'’"
+        for character in letters
+    )
+    return latin / len(letters) >= 0.9
+
+
+def _observed_runs(
+    observed: Sequence[ObservedWord],
+    indexes: Sequence[int],
+    minimum_confidence: float,
+    maximum_words: int = 12,
+) -> list[list[ObservedWord]]:
+    runs: list[list[ObservedWord]] = []
+    current: list[ObservedWord] = []
+    previous_index = -2
+    for index in indexes:
+        word = observed[index]
+        continuous = (
+            current
+            and index == previous_index + 1
+            and word.start - current[-1].end <= 1.1
+            and len(current) < maximum_words
+        )
+        if (
+            word.confidence < minimum_confidence
+            or not math.isfinite(word.start)
+            or not math.isfinite(word.end)
+            or word.end - word.start < 0.02
+        ):
+            if len(current) >= 3:
+                runs.append(current)
+            current = []
+            previous_index = index
+            continue
+        if current and not continuous:
+            if len(current) >= 3:
+                runs.append(current)
+            current = []
+        current.append(word)
+        previous_index = index
+    if len(current) >= 3:
+        runs.append(current)
+    return runs
+
+
+def supported_transcript_lines(
+    transcript: str,
+    observed: Sequence[ObservedWord],
+    profile: Profile,
+) -> list[CandidateLine]:
+    """Build fallback lyrics from independently corroborated timed ASR spans."""
+
+    transcript_tokens = tokenize(transcript)
+    runs = _observed_runs(
+        observed,
+        list(range(len(observed))),
+        SUPPLEMENTAL_MINIMUM_CONFIDENCE,
+    )
+    lines: list[CandidateLine] = []
+    for run in runs:
+        text = " ".join(word.text for word in run)
+        reference = [word.normalized for word in run]
+        if (
+            not _english_lyric_text(text)
+            or _best_contiguous_coverage(reference, transcript_tokens)
+            < SUPPLEMENTAL_PHRASE_COVERAGE
+        ):
+            continue
+        words = tuple(word.text for word in run)
+        lines.append(
+            CandidateLine(
+                len(lines) + 1,
+                "",
+                text,
+                words,
+                "transcribed",
+            )
+        )
+    return lines
+
+
+def missing_vocal_cues(
+    lines: Sequence[CandidateLine],
+    cues: Sequence[dict[str, Any]],
+    observed: Sequence[ObservedWord],
+    supplemental_transcript: str,
+    profile: Profile,
+    *,
+    phrase_coverage: float = SUPPLEMENTAL_PHRASE_COVERAGE,
+    minimum_matched_words: int = 0,
+    evidence_origin: str = "supplemental",
+    exclude_mapped_source: bool = True,
+    maximum_source_similarity: float = 0.55,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Add only transcript clauses corroborated by unmatched timed ASR words."""
+
+    if not supplemental_transcript or not observed:
+        return [dict(cue) for cue in cues], {
+            "primary": 0,
+            "secondary": 0,
+            "rejected": 0,
+            "detected": 0,
+            "unresolved": 0,
+        }
+    source_mapping = (
+        monotonic_line_mapping(lines, observed) if exclude_mapped_source else {}
+    )
+    used = set(source_mapping.values())
+    transcript_tokens = tokenize(supplemental_transcript)
+    source_lines = [tokenize(line.text) for line in lines]
+    source_corpus = [token for line in source_lines for token in line]
+    runs = _observed_runs(
+        observed,
+        [index for index in range(len(observed)) if index not in used],
+        SUPPLEMENTAL_MINIMUM_CONFIDENCE,
+    )
+    merged = [dict(cue) for cue in cues]
+    counts = {
+        "primary": 0,
+        "secondary": 0,
+        "rejected": 0,
+        "detected": 0,
+        "unresolved": 0,
+    }
+    for run in runs:
+        text = " ".join(word.text for word in run)
+        reference = [word.normalized for word in run]
+        transcript_coverage = _best_contiguous_coverage(reference, transcript_tokens)
+        source_similarity = max(
+            (
+                _best_contiguous_coverage(reference, source_corpus),
+                *(_best_contiguous_coverage(reference, line) for line in source_lines),
+            ),
+            default=0.0,
+        )
+        if (
+            not _english_lyric_text(text)
+            or source_similarity >= maximum_source_similarity
+        ):
+            counts["rejected"] += 1
+            continue
+        start = run[0].start
+        end = run[-1].end
+        if end <= start or end - start > max(8.0, len(run) * 2.5):
+            counts["rejected"] += 1
+            continue
+        counts["detected"] += 1
+        if (
+            transcript_coverage < phrase_coverage
+            or round(transcript_coverage * len(reference)) < minimum_matched_words
+        ):
+            counts["rejected"] += 1
+            counts["unresolved"] += 1
+            continue
+        words = [
+            {
+                "start": round(word.start, 3),
+                "end": round(word.end, 3),
+                "text": word.text,
+                "confidence": round(word.confidence, 4),
+            }
+            for word in run
+        ]
+        overlaps = [
+            (
+                max(0.0, min(end, float(cue["end"])) - max(start, float(cue["start"]))),
+                index,
+            )
+            for index, cue in enumerate(merged)
+        ]
+        overlap, overlap_index = max(overlaps, default=(0.0, -1))
+        if overlap_index >= 0 and overlap / max(0.05, end - start) >= 0.45:
+            cue = merged[overlap_index]
+            if cue.get("secondary_text"):
+                counts["rejected"] += 1
+                continue
+            cue["secondary_text"] = text
+            cue["secondary_words"] = words
+            cue["secondary_origin"] = "transcribed-missing"
+            cue["vocal_evidence"] = evidence_origin
+            counts["secondary"] += 1
+            continue
+        merged.append(
+            {
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "text": text,
+                "words": words,
+                "origin": "transcribed-missing",
+                "vocal_evidence": evidence_origin,
+            }
+        )
+        counts["primary"] += 1
+    merged.sort(key=lambda cue: (float(cue["start"]), float(cue["end"])))
+    return merged, counts
+
+
+def _line_ranges(
+    lines: Sequence[CandidateLine],
+    observed: Sequence[ObservedWord],
+) -> list[tuple[float, float] | None]:
+    mapping = monotonic_line_mapping(lines, observed)
+    ranges: list[tuple[float, float] | None] = []
+    offset = 0
+    for line in lines:
+        indexes = [
+            mapping[index]
+            for index in range(offset, offset + len(line.words))
+            if index in mapping
+        ]
+        ranges.append(
+            (observed[min(indexes)].start, observed[max(indexes)].end)
+            if indexes
+            else None
+        )
+        offset += len(line.words)
+    return ranges
+
+
+def _median(values: Sequence[float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    return (
+        ordered[middle]
+        if len(ordered) % 2
+        else (ordered[middle - 1] + ordered[middle]) / 2
+    )
+
+
+def _consensus_range(
+    ranges: Sequence[tuple[float, float]],
+    maximum_spread: float,
+) -> tuple[float, float, int] | None:
+    ordered = sorted(ranges)
+    best: list[tuple[float, float]] = []
+    for first in range(len(ordered)):
+        cluster = [
+            item
+            for item in ordered[first:]
+            if item[0] - ordered[first][0] <= maximum_spread
+        ]
+        if len(cluster) > len(best):
+            best = cluster
+    if len(best) < 2:
+        return None
+    return (
+        _median([item[0] for item in best]),
+        _median([item[1] for item in best]),
+        len(best),
+    )
+
+
+def repair_timings_from_consensus(
+    lines: Sequence[CandidateLine],
+    cues: Sequence[dict[str, Any]],
+    candidates: Sequence[AudioCandidate],
+    profile: Profile,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Repair local onset outliers only where two representations agree."""
+
+    ranges_by_candidate = [
+        _line_ranges(lines, candidate.observed or [])
+        for candidate in candidates
+        if not candidate.error and candidate.observed
+    ]
+    repaired = [dict(cue) for cue in cues]
+    counts = {"agreed_lines": 0, "repaired_lines": 0}
+    search_from = 0
+    for cue_index, cue in enumerate(repaired):
+        cue_tokens = tokenize(str(cue.get("text") or ""))
+        line_index = next(
+            (
+                index
+                for index in range(search_from, len(lines))
+                if tokenize(lines[index].text) == cue_tokens
+            ),
+            None,
+        )
+        if line_index is None:
+            continue
+        search_from = line_index + 1
+        line_ranges = [
+            ranges[line_index]
+            for ranges in ranges_by_candidate
+            if ranges[line_index] is not None
+        ]
+        consensus = _consensus_range(
+            line_ranges,
+            CONSENSUS_MAXIMUM_SPREAD,
+        )
+        if consensus is None:
+            continue
+        target_start, _target_end, agreement = consensus
+        target_start += profile.line_initial_offset
+        counts["agreed_lines"] += 1
+        current_start = float(cue["start"])
+        cue_words = cue.get("words") or []
+        cue_coverage = len(cue_words) / len(cue_tokens) if cue_tokens else 0.0
+        cue_confidence = (
+            sum(float(word.get("confidence") or 0) for word in cue_words)
+            / len(cue_words)
+            if cue_words
+            else 0.0
+        )
+        if (
+            cue_coverage >= LINE_VERIFIED_COVERAGE
+            and cue_confidence >= LINE_VERIFIED_CONFIDENCE
+        ):
+            cue["timing_consensus"] = agreement
+            continue
+        shift = target_start - current_start
+        if abs(shift) + 1e-6 < LOCAL_REPAIR_MINIMUM_SHIFT:
+            cue["timing_consensus"] = agreement
+            continue
+        if abs(shift) - 1e-6 > LOCAL_REPAIR_MAXIMUM_SHIFT:
+            cue["timing_consensus"] = agreement
+            continue
+        previous_end = float(repaired[cue_index - 1]["end"]) if cue_index else 0.0
+        next_start = (
+            float(repaired[cue_index + 1]["start"])
+            if cue_index + 1 < len(repaired)
+            else math.inf
+        )
+        if target_start < previous_end - 0.05 or target_start >= next_start:
+            continue
+        target_end = float(cue["end"]) + shift
+        if target_end <= target_start or target_end > next_start:
+            continue
+        cue["start"] = round(target_start, 3)
+        cue["end"] = round(target_end, 3)
+        cue["words"] = [
+            {
+                **word,
+                "start": round(float(word["start"]) + shift, 3),
+                "end": round(float(word["end"]) + shift, 3),
+            }
+            for word in cue.get("words", [])
+            if float(word["end"]) + shift <= target_end + 0.05
+        ]
+        cue["timing_consensus"] = agreement
+        cue["timing_repaired"] = True
+        counts["repaired_lines"] += 1
+    return repaired, counts
+
+
+def sanitize_cue_timings(
+    cues: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    def sanitize_word(
+        source: dict[str, Any],
+        minimum: float,
+        maximum: float,
+    ) -> dict[str, Any] | None:
+        start = float(source.get("start", math.nan))
+        end = float(source.get("end", math.nan))
+        if not math.isfinite(start) or not math.isfinite(end):
+            return None
+        word = dict(source)
+        if end <= start:
+            end = min(maximum, max(minimum + 0.02, end))
+            start = max(minimum, end - 0.02)
+            if end <= start:
+                return None
+            word["start"] = round(start, 3)
+            word["end"] = round(end, 3)
+            word["confidence"] = 0.0
+            word["timing_repaired"] = True
+        if start < minimum - 0.05 or end > maximum + 0.05:
+            return None
+        return word
+
+    sanitized: list[dict[str, Any]] = []
+    for source in cues:
+        cue = dict(source)
+        start = float(cue["start"])
+        end = float(cue["end"])
+        cue["words"] = list(
+            filter(
+                None,
+                (sanitize_word(word, start, end) for word in cue.get("words", [])),
+            )
+        )
+        cue["secondary_words"] = list(
+            filter(
+                None,
+                (
+                    sanitize_word(word, 0.0, math.inf)
+                    for word in cue.get("secondary_words", [])
+                ),
+            )
+        )
+        sanitized.append(cue)
+    return sanitized
+
+
+def annotate_cue_quality(
+    cues: Sequence[dict[str, Any]],
+    profile: Profile,
+) -> dict[str, int]:
+    counts = {"verified": 0, "warning": 0}
+    for cue in cues:
+        expected = tokenize(str(cue.get("text") or ""))
+        words = cue.get("words") or []
+        coverage = len(words) / len(expected) if expected else 0.0
+        confidence = (
+            sum(float(word.get("confidence") or 0) for word in words) / len(words)
+            if words
+            else 0.0
+        )
+        status = (
+            "verified"
+            if coverage >= LINE_VERIFIED_COVERAGE
+            and confidence >= LINE_VERIFIED_CONFIDENCE
+            else "warning"
+        )
+        cue["quality_status"] = status
+        cue["line_coverage"] = round(min(1.0, coverage), 4)
+        cue["mean_confidence"] = round(confidence, 4)
+        counts[status] += 1
+    return counts
 
 
 def quality_status(
@@ -1571,23 +2311,28 @@ def _evaluate_audio_candidates(
                 models.profile,
                 (
                     f"transcript-{candidate.name}-{models.stable_version}-"
-                    f"{'heart' if generated_transcript else 'anchors'}"
+                    f"{'heart-official-v2' if generated_transcript else 'anchors'}"
                 ),
             )
             cache_path = cache_root / "transcripts" / f"{transcript_key}.json"
             if cache_path.exists():
                 cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                candidate.transcript = str(cached.get("transcript") or "")
                 candidate.warning = str(cached.get("warning") or "")
                 candidate.observed = [
                     ObservedWord(**word) for word in cached["observed"]
                 ]
+                candidate.raw_transcript = str(
+                    cached.get("raw_transcript") or cached.get("transcript") or ""
+                )
+                candidate.transcript = clean_generated_transcript(
+                    candidate.raw_transcript, candidate.observed
+                )
                 candidate.cache_hit = True
             else:
                 if generated_transcript:
                     try:
-                        candidate.transcript = clean_generated_transcript(
-                            models.heart_transcribe(candidate.path)
+                        candidate.raw_transcript = models.heart_transcribe(
+                            candidate.path
                         )
                     except Exception as error:
                         candidate.warning = (
@@ -1596,19 +2341,21 @@ def _evaluate_audio_candidates(
                         )
                 candidate.stable_result = models.stable_transcribe(candidate.path)
                 candidate.observed = observed_words(candidate.stable_result)
-                if generated_transcript and not candidate.transcript:
-                    candidate.transcript = clean_generated_transcript(
-                        " ".join(word.text for word in candidate.observed)
+                if generated_transcript and not candidate.raw_transcript:
+                    candidate.raw_transcript = " ".join(
+                        word.text for word in candidate.observed
                     )
+                candidate.transcript = clean_generated_transcript(
+                    candidate.raw_transcript, candidate.observed
+                )
                 write_json_atomic(
                     cache_path,
                     {
-                        "version": 1,
+                        "version": 2,
+                        "raw_transcript": candidate.raw_transcript,
                         "transcript": candidate.transcript,
                         "warning": candidate.warning,
-                        "observed": [
-                            asdict(word) for word in candidate.observed
-                        ],
+                        "observed": [asdict(word) for word in candidate.observed],
                     },
                 )
             transcript_reference = tokenize(candidate.transcript)
@@ -1647,6 +2394,64 @@ def _maybe_add_demucs(
     return choose_candidate(candidates, profile.candidate_improvement)
 
 
+def _supplemental_transcript(
+    selected: AudioCandidate,
+    models: LocalModels,
+    source_words: Sequence[str],
+    cache_root: Path,
+) -> AudioCandidate:
+    supplemental = AudioCandidate(selected.name, selected.path)
+    _evaluate_audio_candidates(
+        [supplemental],
+        models,
+        source_words,
+        True,
+        cache_root,
+    )
+    if supplemental.error:
+        supplemental.warning = (
+            "supplemental singing transcript unavailable: " + supplemental.error
+        )
+    return supplemental
+
+
+def _maybe_add_backing_vocals(
+    candidates: list[AudioCandidate],
+    *,
+    audio_sha256: str,
+    cache_root: Path,
+    profile: Profile,
+    models: LocalModels,
+    source_words: Sequence[str],
+) -> AudioCandidate | None:
+    demucs = next(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.name == "demucs" and not candidate.error
+        ),
+        None,
+    )
+    if demucs is None:
+        return None
+    root = cache_root / "preprocessed" / _cache_key(audio_sha256, profile, "audio")
+    candidate = AudioCandidate("backing", root / "backing-vocals.wav")
+    try:
+        if not candidate.path.exists():
+            backing_vocals(demucs.path, candidate.path, cache_root)
+    except Exception as error:
+        candidate.error = str(error)
+    candidates.append(candidate)
+    _evaluate_audio_candidates(
+        [candidate],
+        models,
+        source_words,
+        True,
+        cache_root,
+    )
+    return candidate
+
+
 def process_track(
     archive: Path,
     output_root: Path,
@@ -1655,7 +2460,9 @@ def process_track(
     models: LocalModels,
     cache_root: Path,
     preprocess: str = "auto",
-    text_classifier: Callable[[Sequence[tuple[int, str]]], dict[int, str]] | None = None,
+    text_classifier: Callable[[Sequence[tuple[int, str]]], dict[int, str]]
+    | None = None,
+    strategy: str = "v6",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     directory = archive / str(track["organized_dir"])
     audio = directory / "audio.mp3"
@@ -1681,9 +2488,7 @@ def process_track(
         normalized_word(word) for line in cleaning.lines for word in line.words
     ]
     generated = not bool(cleaning.lines)
-    _evaluate_audio_candidates(
-        candidates, models, source_words, generated, cache_root
-    )
+    _evaluate_audio_candidates(candidates, models, source_words, generated, cache_root)
     selected = choose_candidate(candidates, profile.candidate_improvement)
     if preprocess == "auto":
         selected = _maybe_add_demucs(
@@ -1698,27 +2503,79 @@ def process_track(
             generated,
         )
 
-    recovered_prompt = False
-    recovered_considered = 0
-    if generated:
-        recovered, recovered_considered = recover_audio_supported_metadata(
-            cleaning, selected.transcript, selected.observed or []
+    selected_coverage = float((selected.score_details or {}).get("token_coverage", 0))
+    backing: AudioCandidate | None = None
+    if cleaning.lines and selected_coverage < SUPPLEMENTAL_TRIGGER_COVERAGE:
+        backing = _maybe_add_backing_vocals(
+            candidates,
+            audio_sha256=str(track["audio_sha256"]),
+            cache_root=cache_root,
+            profile=profile,
+            models=models,
+            source_words=source_words,
         )
-        if recovered:
-            lines = recovered
-            display_text = _display_text(lines)
-            origin = "reconciled"
-            recovered_prompt = True
-        else:
-            lines = transcript_lines(selected.transcript)
-            display_text = _display_text(lines)
-            origin = "transcribed"
+    supplemental: AudioCandidate | None = None
+    if cleaning.lines and selected_coverage < SUPPLEMENTAL_TRIGGER_COVERAGE:
+        supplemental = _supplemental_transcript(
+            selected,
+            models,
+            source_words,
+            cache_root,
+        )
+    elif generated:
+        supplemental = selected
+    supplemental_text = (
+        supplemental.transcript if supplemental and not supplemental.error else ""
+    )
+
+    recovered_source = False
+    recovered_considered = 0
+    recovered, recovered_considered = recover_audio_supported_metadata(
+        cleaning,
+        supplemental_text or selected.transcript,
+        selected.observed or [],
+    )
+    source_mismatch = (
+        strategy == "v6"
+        and bool(cleaning.lines)
+        and selected_coverage < SOURCE_MISMATCH_COVERAGE
+        and bool(supplemental_text)
+    )
+    fallback_lines = (
+        supported_transcript_lines(
+            supplemental_text,
+            supplemental.observed or [],
+            profile,
+        )
+        if source_mismatch and supplemental
+        else []
+    )
+    if fallback_lines:
+        lines = fallback_lines
+        display_text = _display_text(lines)
+        origin = "transcribed"
+    elif cleaning.lines:
+        keyed = {
+            (line.source_line, line.text): line
+            for line in (*cleaning.lines, *recovered)
+        }
+        lines = sorted(keyed.values(), key=lambda line: line.source_line)
+        display_text = _display_text(lines)
+        recovered_source = bool(recovered)
+        origin = (
+            "reconciled"
+            if any(decision.decision == "metadata" for decision in cleaning.decisions)
+            else "provided"
+        )
+    elif recovered:
+        lines = recovered
+        display_text = _display_text(lines)
+        origin = "reconciled"
+        recovered_source = True
     else:
-        lines = list(cleaning.lines)
-        display_text = cleaning.display_text
-        origin = "reconciled" if any(
-            decision.decision == "metadata" for decision in cleaning.decisions
-        ) else "provided"
+        lines = transcript_lines(selected.transcript, selected.observed or [])
+        display_text = _display_text(lines)
+        origin = "transcribed"
     if not display_text:
         raise RuntimeError("local models produced no lyric text")
 
@@ -1739,6 +2596,111 @@ def process_track(
         alignment_cache,
         profile.window_lines,
     )
+    consensus = {"agreed_lines": 0, "repaired_lines": 0}
+    supplemental_counts = {
+        "primary": 0,
+        "secondary": 0,
+        "rejected": 0,
+        "detected": 0,
+        "unresolved": 0,
+    }
+    backing_counts = {
+        "primary": 0,
+        "secondary": 0,
+        "rejected": 0,
+        "detected": 0,
+        "unresolved": 0,
+    }
+    if strategy == "v6":
+        cues, consensus = repair_timings_from_consensus(
+            lines,
+            cues,
+            candidates,
+            profile,
+        )
+        if supplemental and supplemental_text and not fallback_lines:
+            cues, supplemental_counts = missing_vocal_cues(
+                lines,
+                cues,
+                supplemental.observed or [],
+                supplemental_text,
+                profile,
+                evidence_origin="selected",
+            )
+            if supplemental_counts["primary"] or supplemental_counts["secondary"]:
+                origin = "reconciled"
+                display_text = "\n".join(
+                    filter(
+                        None,
+                        (
+                            (
+                                str(cue["text"])
+                                + (
+                                    "\n" + str(cue["secondary_text"])
+                                    if cue.get("secondary_text")
+                                    else ""
+                                )
+                            )
+                            for cue in cues
+                        ),
+                    )
+                )
+        if backing and not backing.error and backing.transcript and not fallback_lines:
+            cues, backing_counts = missing_vocal_cues(
+                lines,
+                cues,
+                backing.observed or [],
+                backing.transcript,
+                profile,
+                phrase_coverage=BACKING_PHRASE_COVERAGE,
+                minimum_matched_words=BACKING_MINIMUM_MATCHED_WORDS,
+                evidence_origin="backing",
+                exclude_mapped_source=False,
+            )
+            if backing_counts["primary"] or backing_counts["secondary"]:
+                origin = "reconciled"
+                display_text = "\n".join(
+                    filter(
+                        None,
+                        (
+                            (
+                                str(cue["text"])
+                                + (
+                                    "\n" + str(cue["secondary_text"])
+                                    if cue.get("secondary_text")
+                                    else ""
+                                )
+                            )
+                            for cue in cues
+                        ),
+                    )
+                )
+        cues = sanitize_cue_timings(cues)
+    added_primary = supplemental_counts["primary"] + backing_counts["primary"]
+    if added_primary:
+        quality["candidate_lines"] += added_primary
+    quality["aligned_lines"] = len(cues)
+    quality["line_coverage"] = round(
+        len(cues) / max(1, int(quality["candidate_lines"])),
+        4,
+    )
+    all_words = [word for cue in cues for word in cue.get("words", [])]
+    expected_words = sum(len(line.words) for line in lines) + sum(
+        len(tokenize(str(cue.get("text") or "")))
+        for cue in cues
+        if cue.get("origin") == "transcribed-missing"
+    )
+    quality["word_coverage"] = round(
+        len(all_words) / max(1, expected_words),
+        4,
+    )
+    quality["timing_coverage"] = quality["word_coverage"]
+    quality["mean_confidence"] = round(
+        sum(float(word.get("confidence") or 0) for word in all_words)
+        / max(1, len(all_words)),
+        4,
+    )
+    line_quality_counts = annotate_cue_quality(cues, profile)
     quality["warnings"] = list(
         dict.fromkeys(
             [
@@ -1747,28 +2709,74 @@ def process_track(
                 *([selected.warning] if selected.warning else []),
                 *(
                     [
-                        "prompt-like source text was recovered only where local audio evidence supported it"
+                        "backing-vocal pass was unavailable; primary alignment was retained: "
+                        + backing.error
                     ]
-                    if recovered_prompt
+                    if backing and backing.error
                     else []
                 ),
                 *(
                     [
-                        f"{recovered_considered - len(lines)} prompt-like source clauses had no reliable audio support"
+                        "metadata-like source text was recovered only where local audio evidence supported it"
                     ]
-                    if recovered_prompt and recovered_considered > len(lines)
+                    if recovered_source
                     else []
                 ),
                 *(
-                    ["lyrics were transcribed locally because no usable source lyrics were available"]
-                    if generated and not recovered_prompt
+                    [
+                        f"{recovered_considered - len(recovered)} metadata-like source clauses had no reliable audio support"
+                    ]
+                    if recovered_source and recovered_considered > len(recovered)
+                    else []
+                ),
+                *(
+                    [
+                        "lyrics were transcribed locally because no usable source lyrics were available"
+                    ]
+                    if generated and not recovered_source
+                    else []
+                ),
+                *(
+                    [
+                        "provided lyrics were replaced because independent audio evidence showed a source mismatch"
+                    ]
+                    if fallback_lines
+                    else []
+                ),
+                *(
+                    [
+                        f"added {supplemental_counts['primary']} missing vocal lines and "
+                        f"{supplemental_counts['secondary']} overlapping vocal parts"
+                    ]
+                    if supplemental_counts["primary"]
+                    or supplemental_counts["secondary"]
+                    else []
+                ),
+                *(
+                    [
+                        f"added {backing_counts['primary']} backing-vocal lines and "
+                        f"{backing_counts['secondary']} overlapping backing-vocal parts"
+                    ]
+                    if backing_counts["primary"] or backing_counts["secondary"]
+                    else []
+                ),
+                *(
+                    [
+                        f"withheld {backing_counts['unresolved']} possible backing-vocal "
+                        "phrases because the local models did not corroborate the words "
+                        "strongly enough"
+                    ]
+                    if backing_counts["unresolved"]
                     else []
                 ),
             ]
         )
     )
     quality["status"] = quality_status(quality, origin, profile)
-    if recovered_prompt:
+    if strategy == "v6":
+        quality["alternate_vocals_detected"] = bool(backing_counts["detected"])
+        quality["alternate_vocals_unresolved"] = bool(backing_counts["unresolved"])
+    if recovered_source:
         quality["status"] = "warning"
     if quality["status"] == "warning" and not quality["warnings"]:
         quality["warnings"].append("lyrics did not meet the verified quality profile")
@@ -1779,6 +2787,13 @@ def process_track(
         device = torch.cuda.get_device_name(0)
     except Exception:
         device = "unknown"
+    evidence = model_evidence_set(
+        track,
+        source_sha256,
+        selected,
+        candidates,
+        supplemental,
+    )
     payload: dict[str, Any] = {
         "version": 2,
         "track_id": track["id"],
@@ -1787,14 +2802,16 @@ def process_track(
         "language": profile.language,
         "display_text": display_text,
         "origin": origin,
+        "evidence": evidence,
         "generator": {
             "name": "zak-radio-lyrics-harness",
             "version": HARNESS_VERSION,
+            "strategy": strategy,
             "profile_sha256": profile_digest(profile),
             "stable_ts": models.stable_version,
             "aligner_model": profile.stable_model,
-            "transcriber_model": profile.heart_model if generated else "",
-            "transcriber_revision": profile.heart_revision if generated else "",
+            "transcriber_model": profile.heart_model if supplemental else "",
+            "transcriber_revision": profile.heart_revision if supplemental else "",
             "preprocessing": selected.name,
             "device": device,
         },
@@ -1815,6 +2832,10 @@ def process_track(
         "word_coverage": quality["word_coverage"],
         "mean_confidence": quality["mean_confidence"],
         "warnings": quality["warnings"],
+        "consensus": consensus,
+        "supplemental_vocals": supplemental_counts,
+        "backing_vocals": backing_counts,
+        "line_quality_counts": line_quality_counts,
         "candidates": [
             {
                 "name": candidate.name,
@@ -1853,6 +2874,388 @@ def export_bundle(
     return exported
 
 
+def _resolved_sidecar_evidence(
+    payload: dict[str, Any],
+    track: dict[str, Any],
+    archive: Path,
+    cache_root: Path,
+    profile: Profile,
+) -> tuple[dict[str, Any], str]:
+    if payload.get("track_id") != track.get("id"):
+        raise ValueError("sidecar does not match the archive track")
+    if payload.get("audio_sha256") != track.get("audio_sha256"):
+        raise ValueError("sidecar does not match the archive audio identity")
+    directory = archive / str(track["organized_dir"])
+    source = directory / "lyrics.md"
+    source_sha256 = (
+        sha256_file(source) if source.is_file() and source.stat().st_size else ""
+    )
+    payload_source_sha256 = payload.get("source_lyrics_sha256")
+    if source_sha256 and not payload_source_sha256:
+        raise ValueError("sidecar is not bound to the current source lyrics")
+    if (payload_source_sha256 or "") != source_sha256:
+        raise ValueError("sidecar does not match the current source lyrics")
+
+    embedded = payload.get("evidence")
+    if isinstance(embedded, dict):
+        evidence = dict(embedded)
+        claimed = str(evidence.pop("sha256", ""))
+        if not claimed or canonical_json_sha256(evidence) != claimed:
+            raise ValueError("embedded evidence digest is invalid")
+        evidence["sha256"] = claimed
+        if evidence.get("audio_sha256") != str(track["audio_sha256"]):
+            raise ValueError("embedded evidence does not match the archive audio")
+        if evidence.get("source_lyrics_sha256", "") != payload.get(
+            "source_lyrics_sha256", ""
+        ):
+            raise ValueError("embedded evidence does not match the source lyrics")
+        if evidence.get("selected_preprocessing") != (
+            payload.get("generator") or {}
+        ).get("preprocessing"):
+            raise ValueError("embedded evidence does not match preprocessing")
+        return evidence, "embedded"
+
+    generator = payload.get("generator") or {}
+    if generator.get("profile_sha256") != profile_digest(profile):
+        raise ValueError("legacy sidecar profile does not match the comparison profile")
+    preprocessing = str(generator.get("preprocessing") or "")
+    if preprocessing not in {"raw", "ffmpeg", "demucs"}:
+        raise ValueError("legacy sidecar has no supported preprocessing identity")
+    audio = directory / "audio.mp3"
+    if preprocessing == "raw":
+        selected_audio = audio
+    else:
+        selected_audio = (
+            cache_root
+            / "preprocessed"
+            / _cache_key(str(track["audio_sha256"]), profile, "audio")
+            / f"{preprocessing}-{'vocal' if preprocessing == 'ffmpeg' else 'vocals'}.wav"
+        )
+    if not selected_audio.is_file():
+        raise ValueError(f"cached {preprocessing} audio evidence is missing")
+    stable_version = str(generator.get("stable_ts") or "")
+    generated = bool(generator.get("transcriber_model"))
+    transcript_key = _cache_key(
+        sha256_file(selected_audio),
+        profile,
+        (
+            f"transcript-{preprocessing}-{stable_version}-"
+            f"{'heart' if generated else 'anchors'}"
+        ),
+    )
+    cache_path = cache_root / "transcripts" / f"{transcript_key}.json"
+    if not cache_path.is_file():
+        raise ValueError("cached model evidence is missing")
+    cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    candidate = AudioCandidate(
+        preprocessing,
+        selected_audio,
+        raw_transcript=str(
+            cached.get("raw_transcript") or cached.get("transcript") or ""
+        ),
+        transcript=str(cached.get("transcript") or ""),
+        observed=[ObservedWord(**word) for word in cached.get("observed") or []],
+        warning=str(cached.get("warning") or ""),
+    )
+    return model_evidence(track, source_sha256, candidate), "legacy-cache"
+
+
+def _payload_words(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for cue in payload.get("cues") or []:
+        for word in cue.get("words") or []:
+            normalized = normalized_word(str(word.get("text") or ""))
+            if normalized:
+                result.append(
+                    {
+                        "normalized": normalized,
+                        "start": float(word.get("start") or 0),
+                        "confidence": float(word.get("confidence") or 0),
+                    }
+                )
+    return result
+
+
+def _metadata_like_display_line(value: str) -> bool:
+    normalized = _markdown_unwrap(value).strip()
+    return bool(
+        _section_name(normalized)
+        or re.match(
+            r"^[^\w]*(?:title|style|genre|tempo|key|prompt)\s*:",
+            normalized,
+            re.IGNORECASE,
+        )
+        or is_production_cue(normalized)
+        or PRODUCTION_SENTENCE_RE.match(normalized)
+        or _looks_like_prompt_prose(normalized)
+    )
+
+
+def _display_line_audio_supported(
+    payload: dict[str, Any],
+    value: str,
+    minimum_confidence: float = 0.75,
+) -> bool:
+    reference = tokenize(value)
+    if not reference:
+        return False
+    for cue in payload.get("cues") or []:
+        if tokenize(str(cue.get("text") or "")) != reference:
+            continue
+        supported = [
+            normalized_word(str(word.get("text") or ""))
+            for word in cue.get("words") or []
+            if float(word.get("confidence") or 0) >= minimum_confidence
+        ]
+        matched = _matching_token_count(reference, supported)
+        if matched / len(reference) >= 0.8:
+            return True
+    return False
+
+
+def _unsupported_metadata_lines(payload: dict[str, Any]) -> list[str]:
+    return [
+        line.strip()
+        for line in str(payload.get("display_text") or "").splitlines()
+        if line.strip()
+        and _metadata_like_display_line(line)
+        and not _display_line_audio_supported(payload, line)
+    ]
+
+
+def _monotonic_timing(payload: dict[str, Any]) -> bool:
+    previous = -1.0
+    for cue in payload.get("cues") or []:
+        start = float(cue.get("start") or 0)
+        end = float(cue.get("end") or 0)
+        if start < previous or end <= start:
+            return False
+        previous = start
+        word_previous = start
+        for word in cue.get("words") or []:
+            word_start = float(word.get("start") or 0)
+            word_end = float(word.get("end") or 0)
+            if word_start < word_previous - 0.001 or word_end <= word_start:
+                return False
+            word_previous = word_start
+    return True
+
+
+def compare_sidecars(
+    baseline: dict[str, Any],
+    candidate: dict[str, Any],
+    baseline_evidence: dict[str, Any],
+    candidate_evidence: dict[str, Any],
+    maximum_onset_shift: float = 0.5,
+    high_confidence: float = 0.75,
+) -> dict[str, Any]:
+    regressions: list[str] = []
+    improvements: list[str] = []
+    if baseline_evidence.get("sha256") != candidate_evidence.get("sha256"):
+        regressions.append(
+            "baseline and candidate did not use identical frozen evidence"
+        )
+    if baseline.get("track_id") != candidate.get("track_id"):
+        regressions.append("track identity changed")
+    if baseline.get("audio_sha256") != candidate.get("audio_sha256"):
+        regressions.append("audio identity changed")
+    if baseline.get("source_lyrics_sha256", "") != candidate.get(
+        "source_lyrics_sha256", ""
+    ):
+        regressions.append("source lyric identity changed")
+
+    baseline_words = _payload_words(baseline)
+    candidate_words = _payload_words(candidate)
+    protected = [
+        word for word in baseline_words if word["confidence"] >= high_confidence
+    ]
+    candidate_protected = [
+        word for word in candidate_words if word["confidence"] >= high_confidence
+    ]
+    matcher = difflib.SequenceMatcher(
+        None,
+        [word["normalized"] for word in protected],
+        [word["normalized"] for word in candidate_protected],
+        autojunk=False,
+    )
+    protected_matches = sum(block.size for block in matcher.get_matching_blocks())
+    protected_lost = len(protected) - protected_matches
+    if protected_lost:
+        regressions.append(f"{protected_lost} high-confidence baseline words were lost")
+
+    onset_shifts: list[float] = []
+    for block in matcher.get_matching_blocks():
+        for offset in range(block.size):
+            onset_shifts.append(
+                abs(
+                    protected[block.a + offset]["start"]
+                    - candidate_protected[block.b + offset]["start"]
+                )
+            )
+    excessive_shifts = sum(shift > maximum_onset_shift for shift in onset_shifts)
+    if excessive_shifts:
+        regressions.append(
+            f"{excessive_shifts} protected word onsets moved more than "
+            f"{maximum_onset_shift:.3f}s"
+        )
+
+    baseline_quality = baseline.get("quality") or {}
+    candidate_quality = candidate.get("quality") or {}
+    for metric in ("line_coverage", "word_coverage", "mean_confidence"):
+        before = float(baseline_quality.get(metric) or 0)
+        after = float(candidate_quality.get(metric) or 0)
+        if after < before:
+            regressions.append(f"{metric} decreased from {before:.4f} to {after:.4f}")
+        elif after > before:
+            improvements.append(f"{metric} increased from {before:.4f} to {after:.4f}")
+    baseline_alternate = bool(baseline_quality.get("alternate_vocals_detected"))
+    candidate_alternate = bool(candidate_quality.get("alternate_vocals_detected"))
+    if candidate_alternate and not baseline_alternate:
+        improvements.append("surfaced independently detected alternate vocals")
+    elif baseline_alternate and not candidate_alternate:
+        regressions.append("lost an alternate-vocal detection")
+
+    if not _monotonic_timing(candidate):
+        regressions.append("candidate timing is not monotonic")
+
+    baseline_metadata = _unsupported_metadata_lines(baseline)
+    candidate_metadata = _unsupported_metadata_lines(candidate)
+    baseline_metadata_keys = {" ".join(tokenize(line)) for line in baseline_metadata}
+    new_metadata = [
+        line
+        for line in candidate_metadata
+        if " ".join(tokenize(line)) not in baseline_metadata_keys
+    ]
+    if new_metadata:
+        regressions.append(
+            f"{len(new_metadata)} new metadata-like display lines lack audio support"
+        )
+    if len(candidate_metadata) < len(baseline_metadata):
+        improvements.append(
+            f"removed {len(baseline_metadata) - len(candidate_metadata)} "
+            "unsupported metadata-like display lines"
+        )
+
+    status_rank = {"warning": 0, "verified": 1}
+    baseline_status = str(baseline_quality.get("status") or "")
+    candidate_status = str(candidate_quality.get("status") or "")
+    if status_rank.get(candidate_status, 0) > status_rank.get(baseline_status, 0):
+        improvements.append(f"quality status improved to {candidate_status}")
+    elif status_rank.get(candidate_status, 0) < status_rank.get(baseline_status, 0):
+        regressions.append(
+            f"quality status decreased from {baseline_status} to {candidate_status}"
+        )
+
+    if regressions:
+        decision = "abstain"
+        selected = "baseline"
+    elif improvements:
+        decision = "promote"
+        selected = "candidate"
+    else:
+        decision = "retain-baseline"
+        selected = "baseline"
+    return {
+        "decision": decision,
+        "selected": selected,
+        "regressions": regressions,
+        "improvements": improvements,
+        "protected_words": len(protected),
+        "protected_words_lost": protected_lost,
+        "maximum_onset_shift": round(max(onset_shifts), 4) if onset_shifts else 0,
+        "unsupported_metadata_before": baseline_metadata,
+        "unsupported_metadata_after": candidate_metadata,
+    }
+
+
+def run_compare(args: argparse.Namespace) -> int:
+    archive = args.archive.resolve()
+    baseline_root = args.baseline_root.resolve()
+    candidate_root = args.candidate_root.resolve()
+    cache_root = args.cache_root.resolve()
+    profile = Profile.load(args.profile)
+    selected_ids = set(args.track_id)
+    tracks = load_tracks(archive, selected_ids, args.max_tracks)
+    results: list[dict[str, Any]] = []
+    counts = {"promote": 0, "retain-baseline": 0, "abstain": 0}
+    bundle_root = args.bundle_root.resolve() if args.bundle_root else None
+    if bundle_root and bundle_root.exists() and any(bundle_root.iterdir()):
+        raise ValueError("--bundle-root must be absent or empty")
+
+    for track in tracks:
+        baseline_path = output_path(baseline_root, str(track["organized_dir"]))
+        candidate_path = output_path(candidate_root, str(track["organized_dir"]))
+        result: dict[str, Any] = {"id": track["id"]}
+        try:
+            archive_audio = archive / str(track["organized_dir"]) / "audio.mp3"
+            if (
+                not archive_audio.is_file()
+                or sha256_file(archive_audio) != track["audio_sha256"]
+            ):
+                raise ValueError("archive audio does not match its indexed digest")
+            if not baseline_path.is_file():
+                raise ValueError("baseline sidecar is missing")
+            if not candidate_path.is_file():
+                raise ValueError("candidate sidecar is missing")
+            baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+            candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+            baseline_evidence, baseline_evidence_source = _resolved_sidecar_evidence(
+                baseline, track, archive, cache_root, profile
+            )
+            candidate_evidence, candidate_evidence_source = _resolved_sidecar_evidence(
+                candidate, track, archive, cache_root, profile
+            )
+            comparison = compare_sidecars(
+                baseline,
+                candidate,
+                baseline_evidence,
+                candidate_evidence,
+                args.maximum_onset_shift,
+                args.high_confidence,
+            )
+            result.update(
+                comparison,
+                baseline_path=str(baseline_path),
+                candidate_path=str(candidate_path),
+                evidence_sha256=baseline_evidence["sha256"],
+                evidence_sources={
+                    "baseline": baseline_evidence_source,
+                    "candidate": candidate_evidence_source,
+                },
+            )
+            chosen = candidate if comparison["selected"] == "candidate" else baseline
+            if bundle_root:
+                write_json_atomic(bundle_root / f"{track['id']}.json", chosen)
+        except Exception as error:
+            result.update(
+                {
+                    "decision": "abstain",
+                    "selected": "baseline",
+                    "regressions": [str(error)],
+                    "improvements": [],
+                }
+            )
+            if bundle_root and baseline_path.is_file():
+                baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+                write_json_atomic(bundle_root / f"{track['id']}.json", baseline)
+        counts[result["decision"]] += 1
+        results.append(result)
+        print(json.dumps({"event": "compare-track", **result}), flush=True)
+
+    report = {
+        "version": 1,
+        "profile_sha256": profile_digest(profile),
+        "baseline_root": str(baseline_root),
+        "candidate_root": str(candidate_root),
+        "counts": counts,
+        "passed": counts["abstain"] == 0,
+        "tracks": results,
+    }
+    write_json_atomic(args.report.resolve(), report)
+    print(json.dumps({"event": "compare-complete", **counts}), flush=True)
+    return 2 if counts["abstain"] else 0
+
+
 def run_tracks(args: argparse.Namespace, selected: set[str]) -> int:
     archive = args.archive.resolve()
     output_root = args.output_root.resolve()
@@ -1889,13 +3292,20 @@ def run_tracks(args: argparse.Namespace, selected: set[str]) -> int:
             continue
         destination = output_path(output_root, track["organized_dir"])
         payload = json.loads(destination.read_text(encoding="utf-8"))
+        quality = payload.get("quality") or {}
+        generator = payload.get("generator") or {}
         outcomes.append(
             {
                 "id": track["id"],
                 "status": "skipped",
-                "quality_status": (payload.get("quality") or {}).get("status", ""),
+                "quality_status": quality.get("status", ""),
                 "origin": payload.get("origin", ""),
+                "preprocessing": generator.get("preprocessing", ""),
                 "cues": len(payload.get("cues") or []),
+                "line_coverage": quality.get("line_coverage", 0),
+                "word_coverage": quality.get("word_coverage", 0),
+                "mean_confidence": quality.get("mean_confidence", 0),
+                "warnings": quality.get("warnings") or [],
                 "path": str(destination.relative_to(output_root)),
             }
         )
@@ -1913,6 +3323,7 @@ def run_tracks(args: argparse.Namespace, selected: set[str]) -> int:
                 args.cache_root.resolve(),
                 args.preprocess,
                 classifier,
+                args.strategy,
             )
             outcome["seconds"] = round(time.monotonic() - track_started, 2)
             outcomes.append(outcome)
@@ -1946,11 +3357,16 @@ def run_tracks(args: argparse.Namespace, selected: set[str]) -> int:
         status: sum(item.get("status") == status for item in outcomes)
         for status in ("verified", "warning", "text-only", "skipped", "failed")
     }
+    quality_counts = {
+        status: sum(item.get("quality_status") == status for item in outcomes)
+        for status in ("verified", "warning")
+    }
     report = {
         "version": 2,
         "profile": asdict(profile),
         "processed": len(pending),
         "counts": counts,
+        "quality_counts": quality_counts,
         "seconds": round(time.monotonic() - started, 2),
         "tracks": outcomes,
     }
@@ -1958,7 +3374,10 @@ def run_tracks(args: argparse.Namespace, selected: set[str]) -> int:
     if args.bundle_root:
         exported = export_bundle(output_root, args.bundle_root.resolve(), tracks)
         print(json.dumps({"event": "bundle", "exported": exported}), flush=True)
-    print(json.dumps({"event": "complete", **counts}), flush=True)
+    print(
+        json.dumps({"event": "complete", **counts, "quality_counts": quality_counts}),
+        flush=True,
+    )
     return 1 if failures else 0
 
 
@@ -1981,10 +3400,13 @@ def _download(url: str, destination: Path, expected_sha256: str = "") -> None:
         return
     temporary = destination.with_name(destination.name + f".tmp-{os.getpid()}")
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": "zak-radio/lyrics-harness"})
-        with urllib.request.urlopen(request, timeout=60) as response, temporary.open(
-            "wb"
-        ) as output:
+        request = urllib.request.Request(
+            url, headers={"User-Agent": "zak-radio/lyrics-harness"}
+        )
+        with (
+            urllib.request.urlopen(request, timeout=60) as response,
+            temporary.open("wb") as output,
+        ):
             shutil.copyfileobj(response, output)
         if expected_sha256 and sha256_file(temporary) != expected_sha256:
             raise ValueError(f"checksum mismatch for {destination.name}")
@@ -2007,7 +3429,15 @@ def gold_fetch(args: argparse.Namespace) -> int:
         if not marker.exists():
             _safe_extract_zip(archive, extracted)
             marker.touch()
-        print(json.dumps({"event": "gold-fetched", "dataset": args.dataset, "path": str(extracted)}))
+        print(
+            json.dumps(
+                {
+                    "event": "gold-fetched",
+                    "dataset": args.dataset,
+                    "path": str(extracted),
+                }
+            )
+        )
         return 0
     if args.dataset == "musdb18":
         if not args.accept_educational_license:
@@ -2024,7 +3454,11 @@ def gold_fetch(args: argparse.Namespace) -> int:
         )
         for item in metadata["files"]:
             _download(item["links"]["self"], annotations / item["key"])
-        print(json.dumps({"event": "gold-fetched", "dataset": args.dataset, "path": str(cache)}))
+        print(
+            json.dumps(
+                {"event": "gold-fetched", "dataset": args.dataset, "path": str(cache)}
+            )
+        )
         return 0
     if args.dataset == "jamendo":
         root = cache / dataset["directory"]
@@ -2059,20 +3493,21 @@ def parse_hansen_words(path: Path) -> list[dict[str, Any]]:
             normalized = normalized_word(row[2])
             if normalized and not normalized.startswith("breath"):
                 words.append(
-                    {"start": start, "end": end, "text": row[2], "normalized": normalized}
+                    {
+                        "start": start,
+                        "end": end,
+                        "text": row[2],
+                        "normalized": normalized,
+                    }
                 )
     return words
 
 
 def _jamendo_song_id(file_name: str) -> str:
-    return re.sub(
-        r"[^a-z0-9]+", "_", Path(file_name).stem.casefold()
-    ).strip("_")
+    return re.sub(r"[^a-z0-9]+", "_", Path(file_name).stem.casefold()).strip("_")
 
 
-def load_jamendo_songs(
-    root: Path, dataset: dict[str, Any]
-) -> list[dict[str, Any]]:
+def load_jamendo_songs(root: Path, dataset: dict[str, Any]) -> list[dict[str, Any]]:
     metadata_relative = str(dataset["metadata"])
     metadata_path = root / metadata_relative
     songs: list[dict[str, Any]] = []
@@ -2080,7 +3515,9 @@ def load_jamendo_songs(
         for raw in source:
             payload = json.loads(raw)
             song_id = _jamendo_song_id(str(payload["file_name"]))
-            held_out = int(hashlib.sha256(song_id.encode()).hexdigest()[:2], 16) % 4 == 0
+            held_out = (
+                int(hashlib.sha256(song_id.encode()).hexdigest()[:2], 16) % 4 == 0
+            )
             reference = []
             for word in payload.get("words") or []:
                 normalized = normalized_word(str(word.get("text") or ""))
@@ -2229,6 +3666,61 @@ def gold_metrics(
     }
 
 
+def confidence_calibration(
+    reference: Sequence[dict[str, Any]],
+    prediction: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Measure timing accuracy inside fixed ASR-confidence bands."""
+
+    boundaries = (
+        (0.0, 0.50, "0.00-0.49"),
+        (0.50, 0.65, "0.50-0.64"),
+        (0.65, 0.75, "0.65-0.74"),
+        (0.75, 1.01, "0.75-1.00"),
+    )
+    bins = {
+        label: {"label": label, "matched_words": 0, "within_500ms": 0, "error": 0.0}
+        for _, _, label in boundaries
+    }
+    reference_words = [str(word["normalized"]) for word in reference]
+    prediction_words = [
+        normalized_word(str(word.get("text") or word.get("normalized") or ""))
+        for word in prediction
+    ]
+    for reference_index, prediction_index in edit_alignment_pairs(
+        reference_words, prediction_words
+    ):
+        predicted = prediction[prediction_index]
+        confidence = max(0.0, min(1.0, float(predicted.get("confidence") or 0)))
+        error = abs(
+            float(reference[reference_index]["start"]) - float(predicted["start"])
+        )
+        for lower, upper, label in boundaries:
+            if lower <= confidence < upper:
+                current = bins[label]
+                current["matched_words"] += 1
+                current["within_500ms"] += int(error <= 0.5)
+                current["error"] += error
+                break
+    calibrated = []
+    for _, _, label in boundaries:
+        current = bins[label]
+        count = int(current["matched_words"])
+        calibrated.append(
+            {
+                "confidence": label,
+                "matched_words": count,
+                "within_500ms": (
+                    round(float(current["within_500ms"]) / count, 6) if count else None
+                ),
+                "mean_onset_error": (
+                    round(float(current["error"]) / count, 6) if count else None
+                ),
+            }
+        )
+    return calibrated
+
+
 def _prediction_words(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         word
@@ -2274,6 +3766,7 @@ def generate_gold_prediction(
     models: LocalModels,
     cache_root: Path,
     preprocess: str,
+    strategy: str,
 ) -> dict[str, Any]:
     audio = gold_root / song[representation]
     audio_sha256 = sha256_file(audio)
@@ -2333,6 +3826,10 @@ def generate_gold_prediction(
         alignment_cache,
         profile.window_lines,
     )
+    if strategy == "v6":
+        cues, _ = repair_timings_from_consensus(lines, cues, candidates, profile)
+        cues = sanitize_cue_timings(cues)
+    annotate_cue_quality(cues, profile)
     quality["status"] = quality_status(quality, origin, profile)
     quality["warnings"] = list(
         dict.fromkeys(
@@ -2358,6 +3855,7 @@ def generate_gold_prediction(
         "generator": {
             "name": "zak-radio-lyrics-harness",
             "version": HARNESS_VERSION,
+            "strategy": strategy,
             "profile_sha256": profile_digest(profile),
             "stable_ts": models.stable_version,
             "aligner_model": profile.stable_model,
@@ -2435,7 +3933,9 @@ def gold_run(args: argparse.Namespace) -> int:
             else (args.representation,)
         )
         for representation in representations:
-            for lane in args.lane if args.lane != ["both"] else ("alignment", "transcription"):
+            for lane in (
+                args.lane if args.lane != ["both"] else ("alignment", "transcription")
+            ):
                 prediction_path = (
                     predictions / f"{song['id']}-{representation}-{lane}.json"
                 )
@@ -2447,6 +3947,8 @@ def gold_run(args: argparse.Namespace) -> int:
                         != profile_digest(profile)
                         or (existing.get("generator") or {}).get("version")
                         != HARNESS_VERSION
+                        or (existing.get("generator") or {}).get("strategy")
+                        != args.strategy
                     )
                 if regenerate:
                     try:
@@ -2461,6 +3963,7 @@ def gold_run(args: argparse.Namespace) -> int:
                                 models=models,
                                 cache_root=args.cache_root.resolve(),
                                 preprocess=args.preprocess,
+                                strategy=args.strategy,
                             )
                         )
                     except Exception as error:
@@ -2480,6 +3983,9 @@ def gold_run(args: argparse.Namespace) -> int:
                         and float(word["start"]) <= annotated_end + 0.5
                     ]
                 metrics = gold_metrics(reference, predicted_words)
+                metrics["confidence_calibration"] = confidence_calibration(
+                    reference, predicted_words
+                )
                 metrics.update(
                     {
                         "song": song["id"],
@@ -2524,6 +4030,7 @@ def gold_run(args: argparse.Namespace) -> int:
         "dataset": args.dataset,
         "split": args.split,
         "profile": asdict(profile),
+        "strategy": args.strategy,
         "thresholds": thresholds,
         "passed": not failures,
         "failures": failures,
@@ -2531,7 +4038,15 @@ def gold_run(args: argparse.Namespace) -> int:
         "results": results,
     }
     write_json_atomic(args.report.resolve(), report)
-    print(json.dumps({"event": "gold-complete", "passed": not failures, "failures": len(failures)}))
+    print(
+        json.dumps(
+            {
+                "event": "gold-complete",
+                "passed": not failures,
+                "failures": len(failures),
+            }
+        )
+    )
     return 0 if not failures else 2
 
 
@@ -2553,6 +4068,12 @@ def build_parser() -> argparse.ArgumentParser:
         )
         command.add_argument("--force", action="store_true")
         command.add_argument("--verbose-model", action="store_true")
+        command.add_argument(
+            "--strategy",
+            choices=("v5", "v6"),
+            default="v6",
+            help="run the frozen v5 behavior or the tuned v6 behavior",
+        )
 
     song = subcommands.add_parser("song", help="process one archive song")
     common(song)
@@ -2562,6 +4083,22 @@ def build_parser() -> argparse.ArgumentParser:
     common(bulk)
     bulk.add_argument("--track-id", action="append", default=[])
     bulk.add_argument("--max-tracks", type=int, default=0)
+
+    compare = subcommands.add_parser(
+        "compare",
+        help="fail-closed baseline/candidate regression comparison",
+    )
+    compare.add_argument("--archive", type=Path, required=True)
+    compare.add_argument("--baseline-root", type=Path, required=True)
+    compare.add_argument("--candidate-root", type=Path, required=True)
+    compare.add_argument("--report", type=Path, required=True)
+    compare.add_argument("--bundle-root", type=Path)
+    compare.add_argument("--cache-root", type=Path, default=DEFAULT_CACHE_ROOT)
+    compare.add_argument("--profile", type=Path, default=DEFAULT_PROFILE)
+    compare.add_argument("--track-id", action="append", default=[])
+    compare.add_argument("--max-tracks", type=int, default=0)
+    compare.add_argument("--high-confidence", type=float, default=0.75)
+    compare.add_argument("--maximum-onset-shift", type=float, default=0.5)
 
     gold = subcommands.add_parser("gold", help="manage and evaluate gold datasets")
     gold_subcommands = gold.add_subparsers(dest="gold_command", required=True)
@@ -2579,7 +4116,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--dataset", choices=("hansen", "jamendo"), default="hansen")
     run.add_argument("--output-root", type=Path, required=True)
     run.add_argument("--report", type=Path, required=True)
-    run.add_argument("--split", choices=("development", "held-out", "all"), default="held-out")
+    run.add_argument(
+        "--split", choices=("development", "held-out", "all"), default="held-out"
+    )
     run.add_argument("--song", action="append", default=[])
     run.add_argument(
         "--representation",
@@ -2601,6 +4140,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--force", action="store_true")
     run.add_argument("--verbose-model", action="store_true")
+    run.add_argument(
+        "--strategy",
+        choices=("v5", "v6"),
+        default="v6",
+        help="run the frozen v5 behavior or the tuned v6 behavior",
+    )
     return parser
 
 
@@ -2610,6 +4155,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_tracks(args, {args.track_id})
     if args.command == "bulk":
         return run_tracks(args, set(args.track_id))
+    if args.command == "compare":
+        if not 0 <= args.high_confidence <= 1:
+            raise ValueError("--high-confidence must be between 0 and 1")
+        if args.maximum_onset_shift < 0:
+            raise ValueError("--maximum-onset-shift cannot be negative")
+        return run_compare(args)
     if args.command == "gold" and args.gold_command == "fetch":
         return gold_fetch(args)
     if args.command == "gold" and args.gold_command == "run":

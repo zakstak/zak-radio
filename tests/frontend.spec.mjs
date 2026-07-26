@@ -209,9 +209,20 @@ test("timed lyrics follow radio playback, yield to scrolling, and seek the stati
         version: 1,
         track_id: "alpha",
         duration: 1.5,
-        quality: { line_coverage: 1 },
+        quality: {
+          line_coverage: 1,
+          alternate_vocals_detected: true,
+          alternate_vocals_unresolved: true,
+        },
         cues: [
-          { start: 0.05, end: 0.45, section: "Verse", text: "First line" },
+          {
+            start: 0.05,
+            end: 0.45,
+            section: "Verse",
+            text: "First line",
+            secondary_text: "Second singer",
+            quality_status: "warning",
+          },
           { start: 0.55, end: 1.2, section: "Verse", text: "Second line" },
         ],
       },
@@ -226,9 +237,13 @@ test("timed lyrics follow radio playback, yield to scrolling, and seek the stati
 
   await page.goto("/");
   await expect(page.locator(".synced-lyric-cue")).toHaveCount(2);
+  await expect(page.locator(".synced-lyric-cue").first()).toHaveClass(/is-uncertain/);
+  await expect(page.locator(".synced-lyric-secondary")).toHaveText("Second singer");
   await expect(page.locator(".synced-lyrics-heading")).toHaveCount(0);
   await expect(page.getByText("Verse", { exact: true })).toHaveCount(0);
-  await expect(page.locator("#lyricsSyncStatus")).toHaveText("Following the song");
+  await expect(page.locator("#lyricsSyncStatus")).toHaveText(
+    "Alternate vocals detected · exact words need review",
+  );
   await expect(page.locator("#lyricsViewport")).toHaveClass(/has-synced-lyrics/);
   await expect.poll(() => page.locator("#detailsPanels").evaluate((lyrics) => {
     const programming = document.getElementById("radioProgramming");

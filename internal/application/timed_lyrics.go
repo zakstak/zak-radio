@@ -33,22 +33,34 @@ type TimedLyrics struct {
 }
 
 type TimedLyricsQuality struct {
-	Status         string   `json:"status,omitempty"`
-	CandidateLines int      `json:"candidate_lines"`
-	AlignedLines   int      `json:"aligned_lines"`
-	LineCoverage   float64  `json:"line_coverage"`
-	WordCoverage   float64  `json:"word_coverage"`
-	TimingCoverage float64  `json:"timing_coverage,omitempty"`
-	MeanConfidence float64  `json:"mean_confidence"`
-	Warnings       []string `json:"warnings,omitempty"`
+	Status                    string   `json:"status,omitempty"`
+	CandidateLines            int      `json:"candidate_lines"`
+	AlignedLines              int      `json:"aligned_lines"`
+	LineCoverage              float64  `json:"line_coverage"`
+	WordCoverage              float64  `json:"word_coverage"`
+	TimingCoverage            float64  `json:"timing_coverage,omitempty"`
+	MeanConfidence            float64  `json:"mean_confidence"`
+	Warnings                  []string `json:"warnings,omitempty"`
+	AlternateVocalsDetected   bool     `json:"alternate_vocals_detected,omitempty"`
+	AlternateVocalsUnresolved bool     `json:"alternate_vocals_unresolved,omitempty"`
 }
 
 type TimedLyricCue struct {
-	Start   float64          `json:"start"`
-	End     float64          `json:"end"`
-	Section string           `json:"section,omitempty"`
-	Text    string           `json:"text"`
-	Words   []TimedLyricWord `json:"words,omitempty"`
+	Start           float64          `json:"start"`
+	End             float64          `json:"end"`
+	Section         string           `json:"section,omitempty"`
+	Text            string           `json:"text"`
+	SecondaryText   string           `json:"secondary_text,omitempty"`
+	SecondaryOrigin string           `json:"secondary_origin,omitempty"`
+	VocalEvidence   string           `json:"vocal_evidence,omitempty"`
+	Origin          string           `json:"origin,omitempty"`
+	QualityStatus   string           `json:"quality_status,omitempty"`
+	LineCoverage    float64          `json:"line_coverage,omitempty"`
+	MeanConfidence  float64          `json:"mean_confidence,omitempty"`
+	TimingConsensus int              `json:"timing_consensus,omitempty"`
+	TimingRepaired  bool             `json:"timing_repaired,omitempty"`
+	Words           []TimedLyricWord `json:"words,omitempty"`
+	SecondaryWords  []TimedLyricWord `json:"secondary_words,omitempty"`
 }
 
 type TimedLyricWord struct {
@@ -132,11 +144,33 @@ func validateTimedLyrics(
 	previousStart := -1.0
 	for cueIndex, cue := range lyrics.Cues {
 		if cue.Text == "" || len(cue.Text) > maxTimedLyricText ||
+			len(cue.SecondaryText) > maxTimedLyricText ||
 			len(cue.Section) > maxTimedSectionText {
 			return fmt.Errorf("timed lyric cue %d has invalid text", cueIndex)
 		}
 		if lyrics.Version == 2 && cue.Section != "" {
 			return fmt.Errorf("timed lyric cue %d exposes a section label", cueIndex)
+		}
+		if cue.QualityStatus != "" && cue.QualityStatus != "verified" &&
+			cue.QualityStatus != "warning" {
+			return fmt.Errorf("timed lyric cue %d has invalid quality status", cueIndex)
+		}
+		if cue.Origin != "" && cue.Origin != "source" &&
+			cue.Origin != "recovered-source" &&
+			cue.Origin != "transcribed" &&
+			cue.Origin != "transcribed-missing" {
+			return fmt.Errorf("timed lyric cue %d has invalid origin", cueIndex)
+		}
+		if cue.SecondaryOrigin != "" && cue.SecondaryOrigin != "transcribed-missing" {
+			return fmt.Errorf("timed lyric cue %d has invalid secondary origin", cueIndex)
+		}
+		if cue.VocalEvidence != "" && cue.VocalEvidence != "selected" &&
+			cue.VocalEvidence != "backing" {
+			return fmt.Errorf("timed lyric cue %d has invalid vocal evidence", cueIndex)
+		}
+		if !unitInterval(cue.LineCoverage) || !unitInterval(cue.MeanConfidence) ||
+			cue.TimingConsensus < 0 {
+			return fmt.Errorf("timed lyric cue %d has invalid quality", cueIndex)
 		}
 		if !finiteNumber(cue.Start) || !finiteNumber(cue.End) ||
 			cue.Start < 0 || cue.End <= cue.Start ||
@@ -144,7 +178,8 @@ func validateTimedLyrics(
 			return fmt.Errorf("timed lyric cue %d has invalid timing", cueIndex)
 		}
 		previousStart = cue.Start
-		if len(cue.Words) > maxTimedLyricWords {
+		if len(cue.Words) > maxTimedLyricWords ||
+			len(cue.SecondaryWords) > maxTimedLyricWords {
 			return fmt.Errorf("timed lyric cue %d has too many words", cueIndex)
 		}
 		previousWordStart := cue.Start
@@ -158,6 +193,15 @@ func validateTimedLyrics(
 					"timed lyric cue %d word %d is invalid", cueIndex, wordIndex)
 			}
 			previousWordStart = word.Start
+		}
+		for wordIndex, word := range cue.SecondaryWords {
+			if word.Text == "" || len(word.Text) > maxTimedLyricText ||
+				!finiteNumber(word.Start) || !finiteNumber(word.End) ||
+				word.Start < 0 || word.End > duration+0.25 ||
+				word.End <= word.Start || !unitInterval(word.Confidence) {
+				return fmt.Errorf(
+					"timed lyric cue %d secondary word %d is invalid", cueIndex, wordIndex)
+			}
 		}
 	}
 	return nil
