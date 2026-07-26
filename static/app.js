@@ -291,6 +291,27 @@ function routeScrollPosition() {
     : [window.scrollX, window.scrollY];
 }
 
+function scrollPositionFor(container) {
+  return container
+    ? [container.scrollLeft, container.scrollTop]
+    : [window.scrollX, window.scrollY];
+}
+
+function transferRouteScroll(
+  previousContainer,
+  nextContainer,
+  previousPosition = scrollPositionFor(previousContainer),
+) {
+  if (previousContainer === nextContainer) return;
+  const options = {
+    left: previousPosition[0],
+    top: previousPosition[1],
+    behavior: "instant",
+  };
+  if (nextContainer) nextContainer.scrollTo(options);
+  else window.scrollTo(options);
+}
+
 function scrollRoute(options) {
   const container = routeScrollContainer();
   if (container) container.scrollTo(options);
@@ -302,26 +323,45 @@ window.ZakRouteScroll = {
   to: scrollRoute,
 };
 
+let activeRouteScrollContainer = routeScrollContainer();
+let activeRouteScrollPosition = routeScrollPosition();
+
+function rememberActiveRouteScrollPosition(container) {
+  if (
+    container !== activeRouteScrollContainer ||
+    container !== routeScrollContainer()
+  )
+    return;
+  activeRouteScrollPosition = scrollPositionFor(container);
+}
+
+window.addEventListener(
+  "scroll",
+  () => rememberActiveRouteScrollPosition(null),
+  { passive: true },
+);
+els.appShell.addEventListener(
+  "scroll",
+  () => rememberActiveRouteScrollPosition(els.appShell),
+  { passive: true },
+);
+
 function setOwnerBarHidden(hidden) {
   const previousContainer = routeScrollContainer();
-  const previousPosition = routeScrollPosition();
+  const previousPosition = scrollPositionFor(previousContainer);
   const visibilityChanged = els.ownerBar.hidden !== hidden;
   els.ownerBar.hidden = hidden;
   document.body.classList.toggle("has-audio-owner", !hidden);
   if (!visibilityChanged) {
+    activeRouteScrollContainer = routeScrollContainer();
+    activeRouteScrollPosition = scrollPositionFor(activeRouteScrollContainer);
     syncOwnerBarInset();
     return;
   }
   const nextContainer = routeScrollContainer();
-  if (previousContainer !== nextContainer) {
-    const options = {
-      left: previousPosition[0],
-      top: previousPosition[1],
-      behavior: "instant",
-    };
-    if (nextContainer) nextContainer.scrollTo(options);
-    else window.scrollTo(options);
-  }
+  transferRouteScroll(previousContainer, nextContainer, previousPosition);
+  activeRouteScrollContainer = nextContainer;
+  activeRouteScrollPosition = previousPosition;
   syncOwnerBarInset();
   window.requestAnimationFrame(syncOwnerBarInset);
 }
@@ -402,7 +442,25 @@ if ("ResizeObserver" in window) {
   ownerBarResizeObserver = new ResizeObserver(syncOwnerBarInset);
   ownerBarResizeObserver.observe(els.ownerBar);
 }
-window.addEventListener("resize", syncOwnerBarInset, { passive: true });
+let routeResizeFrame = 0;
+window.addEventListener(
+  "resize",
+  () => {
+    syncOwnerBarInset();
+    if (routeResizeFrame) return;
+    const previousContainer = activeRouteScrollContainer;
+    const previousPosition = activeRouteScrollPosition;
+    routeResizeFrame = window.requestAnimationFrame(() => {
+      routeResizeFrame = 0;
+      const nextContainer = routeScrollContainer();
+      transferRouteScroll(previousContainer, nextContainer, previousPosition);
+      activeRouteScrollContainer = nextContainer;
+      activeRouteScrollPosition = previousPosition;
+      syncOwnerBarInset();
+    });
+  },
+  { passive: true },
+);
 
 function syncRouteLinks() {
   document.querySelectorAll("[data-route]").forEach((link) => {
@@ -2459,7 +2517,7 @@ els.progress.addEventListener("change", async () => {
 document.addEventListener("keydown", (event) => {
   const activeTag = document.activeElement?.tagName || "";
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(activeTag);
-  const interactive = /^(BUTTON|A)$/.test(activeTag);
+  const interactive = /^(BUTTON|A|SUMMARY)$/.test(activeTag);
   if (
     typing ||
     interactive ||

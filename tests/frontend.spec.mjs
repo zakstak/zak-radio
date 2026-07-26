@@ -1259,6 +1259,149 @@ test("mobile audio-owner transitions preserve the active route scroll", async ({
     .toBeCloseTo(windowPosition, -1);
 });
 
+test("audio-owner scroll survives crossing the mobile breakpoint", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/library");
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
+  await expect(page.locator("#libraryTracks")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const mobilePosition = await page.locator(".app-shell").evaluate((shell) => {
+    document.querySelector("#libraryView").style.minHeight = "3000px";
+    shell.scrollTo({ top: 420 });
+    return shell.scrollTop;
+  });
+  expect(mobilePosition).toBeGreaterThan(300);
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+
+  await page.setViewportSize({ width: 900, height: 844 });
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeCloseTo(mobilePosition, -1);
+
+  const desktopPosition = await page.evaluate(() => {
+    window.scrollTo({ top: 520 });
+    return window.scrollY;
+  });
+  expect(desktopPosition).toBeGreaterThan(400);
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      page.locator(".app-shell").evaluate((shell) => shell.scrollTop),
+    )
+    .toBeCloseTo(desktopPosition, -1);
+});
+
+test("Reader deferred restoration uses the active mobile scroller", async ({ page }) => {
+  const item = {
+    id: "reader-scroll",
+    title: "Long Reader Item",
+    source_url: "https://example.test/reader-scroll",
+    source_type: "html",
+    status: "ready",
+    voice: "fixture",
+    total_duration: 0,
+    segment_count: 20,
+    audio_bytes: 0,
+    uploaded_at: 1_700_000_000,
+  };
+  await page.route("**/api/reader/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/items") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ items: [item], next_offset: null }),
+      });
+    }
+    if (url.pathname === `/api/reader/items/${item.id}`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ item }),
+      });
+    }
+    if (url.pathname.endsWith("/images")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ images: [] }),
+      });
+    }
+    if (url.pathname.endsWith("/segments")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          segments: Array.from({ length: 20 }, (_, index) => ({
+            segment_index: index,
+            heading_path: [],
+            kind: "paragraph",
+            text: `Reader scroll fixture paragraph ${index}. `.repeat(12),
+            status: "ready",
+            duration: 0,
+            audio_bytes: 0,
+          })),
+          next_offset: null,
+        }),
+      });
+    }
+    if (
+      url.pathname === "/api/reader/playback" &&
+      route.request().method() === "GET"
+    ) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    }
+    return route.fallback();
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/reader");
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
+  await page.evaluate(() => {
+    window.ZakPendingRouteScroll = [0, 420];
+  });
+  await page.locator(`[data-item-id="${item.id}"]`).click();
+  await expect(page.locator("#readerText")).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(() =>
+      page.locator(".app-shell").evaluate((shell) => shell.scrollTop),
+    )
+    .toBeGreaterThan(350);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+test("Space toggles owner-control disclosure without controlling playback", async ({ page }) => {
+  let controlRequests = 0;
+  page.on("request", (request) => {
+    if (
+      new URL(request.url()).pathname === "/api/control" &&
+      request.method() === "POST"
+    ) {
+      controlRequests++;
+    }
+  });
+  await page.goto("/");
+  const disclosure = page.locator("#radioOwnerControls");
+  const summary = disclosure.locator("summary");
+  await expect(disclosure).toHaveAttribute("open", "");
+  await summary.focus();
+  await page.keyboard.press("Space");
+  await expect(disclosure).not.toHaveAttribute("open", "");
+  expect(controlRequests).toBe(0);
+});
+
 test("slash shortcut is scoped to Library", async ({ page }) => {
   await page.goto("/reader");
   const readerCanceled = await page.locator("#readerLibraryTitle").evaluate((heading) => {

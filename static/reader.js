@@ -707,7 +707,7 @@
     const target = pending || fallback;
     if (!target) return;
     const apply = () =>
-      window.scrollTo({
+      (window.ZakRouteScroll?.to || window.scrollTo)({
         left: Number(target[0]) || 0,
         top: Number(target[1]) || 0,
         behavior: "instant",
