@@ -1,5 +1,6 @@
 {
   "name": "zak-radio",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -i ./static/styles.tailwind.css -o ./static/styles.css --minify",
