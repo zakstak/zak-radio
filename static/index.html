@@ -1,32 +1,51 @@
+<!--
+THESIS: Zak Radio is one continuous listening room, not three competing media tools. The shell keeps live radio, private previews, the library, and Reader inside one persistent player.
+OWN-WORLD: Zakstak ink, Indigo signal, chromatic frost, real cover art, crisp controls, Braille identity, and editorial space reserved for lyrics and reading.
+STORY: Join the shared station, shape what plays next, explore the archive without stealing playback, and move into Reader without creating another audio owner.
+FIRST VIEWPORT: Current artwork and track identity lead; live transport and bounded station controls sit beside them while lyrics remain visibly attached below.
+FORM: The established Radio composition with Zakstak identity and product tokens. Existing route, audio, station, queue, preview, lyric, reaction, download, and Reader hooks remain unchanged.
+-->
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#09090b" />
+    <meta name="theme-color" content="#080a0c" />
     <meta
       name="description"
       content="Original music, private previews, and source readings in one persistent player."
     />
     <title>Zak Radio</title>
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 fill=%22%23f5f5f5%22/><path d=%22M17 37V27h5v10zm9 9V18h5v28zm9-5V23h5v18zm9-8v-2h5v2z%22 fill=%22%2309090b%22/></svg>"
-    />
-    <link rel="stylesheet" href="/static/styles.css?v=18" />
+    <link rel="icon" type="image/svg+xml" href="/static/zakstak-mark.svg" />
+    <link rel="stylesheet" href="/static/styles.css?v=20" />
   </head>
   <body>
     <a id="skipToContent" class="skip-link" href="#title">Skip to content</a>
     <main class="app-shell">
       <header class="app-rail" aria-label="Application navigation">
-        <div class="brand">
-          <div class="brand-mark" aria-hidden="true">
-            <i></i><i></i><i></i><i></i>
+        <div class="app-rail-inner">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">
+              <img src="/static/zakstak-mark.svg" alt="" />
+            </div>
+            <div class="brand-copy">
+              <span class="brand-family">Zakstak</span>
+              <div class="brand-product">
+                <h1 class="brand-title">Zak Radio</h1>
+                <span class="brand-separator" aria-hidden="true">·</span>
+                <p id="shellContext" class="brand-subtitle">Shared listening</p>
+              </div>
+            </div>
           </div>
-          <div class="brand-copy">
-            <h1 class="brand-title">Zak Radio</h1>
-            <p id="shellContext" class="brand-subtitle">Shared listening</p>
-          </div>
+          <nav class="primary-nav" aria-label="Zak Radio destinations">
+            <a class="primary-nav-link" data-route="/" href="/">Radio</a>
+            <a class="primary-nav-link" data-route="/library" href="/library"
+              >Library</a
+            >
+            <a class="primary-nav-link" data-route="/reader" href="/reader"
+              >Reader</a
+            >
+          </nav>
           <div
             id="connection"
             class="connection"
@@ -35,72 +54,9 @@
             aria-live="polite"
           >
             <span id="connectionDot" class="connection-dot"></span>
-            <span id="connectionText">Connecting</span>
+            <span id="connectionText">Station updates connecting</span>
           </div>
         </div>
-        <nav class="primary-nav" aria-label="Zak audio">
-          <a class="primary-nav-link" data-route="/" href="/">Radio</a>
-          <a class="primary-nav-link" data-route="/library" href="/library"
-            >Library</a
-          >
-          <a class="primary-nav-link" data-route="/reader" href="/reader"
-            >Reader</a
-          >
-        </nav>
-        <section id="stationCard" class="station-card" aria-label="Station">
-          <div class="station-card-head">
-            <span class="section-label">Listening to</span>
-            <strong id="stationMode" tabindex="-1">Shared station</strong>
-          </div>
-          <label class="station-picker-label" for="stationSelect"
-            >Radio station</label
-          >
-          <select id="stationSelect" class="select-control station-picker">
-            <option value="main">All songs</option>
-          </select>
-          <div class="station-actions">
-            <button
-              id="mainStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Go shared
-            </button>
-            <button
-              id="shareStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Share
-            </button>
-            <button
-              id="createStation"
-              class="station-action station-action-primary"
-              type="button"
-              disabled
-            >
-              New station
-            </button>
-          </div>
-          <p id="stationAccess" class="station-note">
-            Everyone here can turn the dial.
-          </p>
-          <div id="stationShareFallback" class="station-share-fallback" hidden>
-            <label for="stationShareLink">Listen-only station link</label>
-            <div>
-              <input id="stationShareLink" type="text" readonly />
-              <button
-                id="stationShareClose"
-                class="station-action"
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </section>
       </header>
 
       <section id="radioView" class="radio-stage view-panel" data-view="/">
@@ -138,6 +94,19 @@
             <p id="details" class="track-details">
               Original music, live from the archive.
             </p>
+            <section
+              id="stationCapability"
+              class="station-capability"
+              aria-labelledby="stationCapabilityLabel"
+              aria-live="polite"
+            >
+              <span id="stationCapabilityLabel" class="station-capability-label"
+                >Shared control</span
+              >
+              <p id="stationCapabilityDetail">
+                You can hear and control this station from this browser.
+              </p>
+            </section>
             <button id="radioRetry" class="button" type="button" hidden>
               Retry station
             </button>
@@ -264,6 +233,60 @@
             </div>
           </div>
         </div>
+        <section id="stationCard" class="station-card" aria-label="Station">
+          <div class="station-card-head">
+            <span class="section-label">Listening to</span>
+            <strong id="stationMode" tabindex="-1">Shared station</strong>
+          </div>
+          <label class="station-picker-label" for="stationSelect"
+            >Radio station</label
+          >
+          <select id="stationSelect" class="select-control station-picker">
+            <option value="main">All songs</option>
+          </select>
+          <div class="station-actions">
+            <button
+              id="mainStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Go shared
+            </button>
+            <button
+              id="shareStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Share
+            </button>
+            <button
+              id="createStation"
+              class="station-action station-action-primary"
+              type="button"
+              disabled
+            >
+              New station
+            </button>
+          </div>
+          <p id="stationAccess" class="station-note">
+            Everyone here can turn the dial.
+          </p>
+          <div id="stationShareFallback" class="station-share-fallback" hidden>
+            <label for="stationShareLink">Listen-only station link</label>
+            <div>
+              <input id="stationShareLink" type="text" readonly />
+              <button
+                id="stationShareClose"
+                class="station-action"
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </section>
         <div id="detailsPanels" class="details-panels">
           <section class="transcript">
             <div class="transcript-head">
@@ -310,54 +333,70 @@
           </section>
         </div>
         <div class="radio-programming-panel">
-          <fieldset id="radioProgramming" class="radio-programming">
-            <legend class="section-label">Station programming</legend>
-            <div class="station-programming-field">
-              <span id="stationRandomModeLabel" class="programming-label"
-                >Playback order</span
+          <details
+            id="radioOwnerControls"
+            class="owner-controls-disclosure"
+            open
+          >
+            <summary>
+              <span class="section-label">Owner controls</span>
+              <strong id="radioOwnerControlsSummary"
+                >Shape the saved station</strong
               >
-              <div
-                id="stationRandomMode"
-                class="random-mode-options"
-                role="radiogroup"
-                aria-labelledby="stationRandomModeLabel"
-              >
-                <label class="random-mode-option">
-                  <input
-                    type="radio"
-                    name="stationRandomMode"
-                    value="deck"
-                    checked
-                  />
-                  <span class="random-mode-card">
-                    <strong>No repeats</strong>
-                    <small>Shuffle every song once</small>
-                  </span>
-                </label>
-                <label class="random-mode-option">
-                  <input
-                    type="radio"
-                    name="stationRandomMode"
-                    value="true_random"
-                  />
-                  <span class="random-mode-card">
-                    <strong>True random</strong>
-                    <small>Repeats can happen</small>
-                  </span>
-                </label>
+            </summary>
+            <fieldset
+              id="radioProgramming"
+              class="radio-programming"
+              aria-describedby="stationCapabilityDetail"
+            >
+              <legend class="section-label">Station programming</legend>
+              <div class="station-programming-field">
+                <span id="stationRandomModeLabel" class="programming-label"
+                  >Playback order</span
+                >
+                <div
+                  id="stationRandomMode"
+                  class="random-mode-options"
+                  role="radiogroup"
+                  aria-labelledby="stationRandomModeLabel"
+                >
+                  <label class="random-mode-option">
+                    <input
+                      type="radio"
+                      name="stationRandomMode"
+                      value="deck"
+                      checked
+                    />
+                    <span class="random-mode-card">
+                      <strong>No repeats</strong>
+                      <small>Shuffle every song once</small>
+                    </span>
+                  </label>
+                  <label class="random-mode-option">
+                    <input
+                      type="radio"
+                      name="stationRandomMode"
+                      value="true_random"
+                    />
+                    <span class="random-mode-card">
+                      <strong>True random</strong>
+                      <small>Repeats can happen</small>
+                    </span>
+                  </label>
+                </div>
               </div>
-            </div>
-            <label class="station-toggle">
-              <span class="station-toggle-copy">
-                <strong>Skip disliked</strong>
-                <small>Keep them out of rotation</small>
-              </span>
-              <input id="stationSkipDisliked" type="checkbox" />
-              <span class="station-toggle-switch" aria-hidden="true"
-                ><span></span
-              ></span>
-            </label>
-          </fieldset>
+              <label class="station-toggle">
+                <span class="station-toggle-copy">
+                  <strong>Skip disliked</strong>
+                  <small>Keep them out of rotation</small>
+                </span>
+                <input id="stationSkipDisliked" type="checkbox" />
+                <span class="station-toggle-switch" aria-hidden="true"
+                  ><span></span
+                ></span>
+              </label>
+            </fieldset>
+          </details>
           <div id="radioQueue" class="radio-queue" aria-live="polite">
             <span class="section-label">Up next</span>
             <span id="radioQueueSummary">The station queue is empty.</span>
@@ -391,6 +430,78 @@
           </p>
         </div>
         <section aria-labelledby="libraryTitle">
+          <div class="library-tools">
+            <label class="search-field"
+              ><span class="sr-only">Search the music library</span
+              ><svg aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="6.5"></circle>
+                <path d="m16 16 4 4"></path></svg
+              ><input
+                id="librarySearch"
+                type="search"
+                placeholder="Search title, artist, lyrics, prompt…"
+                autocomplete="off"
+            /></label>
+            <label class="sr-only" for="librarySort">Sort tracks</label>
+            <select class="select-control library-sort" id="librarySort">
+              <option value="archive">Archive order</option>
+              <option value="newest">Newest first</option>
+              <option value="title">Title A–Z</option>
+              <option value="duration">Longest first</option>
+              <option value="played">Most played</option>
+            </select>
+            <div class="view-switch" aria-label="Library view">
+              <button
+                type="button"
+                data-library-view="grid"
+                aria-pressed="true"
+              >
+                Grid</button
+              ><button
+                type="button"
+                data-library-view="list"
+                aria-pressed="false"
+              >
+                List
+              </button>
+            </div>
+          </div>
+          <div class="library-results-head">
+            <h2 id="libraryTitle" tabindex="-1">All tracks</h2>
+            <p id="libraryCount" aria-live="polite">Loading the archive…</p>
+          </div>
+          <div class="filter-row" role="group" aria-label="Track filters">
+            <button
+              class="filter-chip"
+              type="button"
+              data-library-filter="all"
+              aria-pressed="true"
+            >
+              All</button
+            ><button
+              class="filter-chip"
+              type="button"
+              data-library-filter="liked"
+              aria-pressed="false"
+            >
+              Liked</button
+            ><button
+              class="filter-chip"
+              type="button"
+              data-library-filter="covers"
+              aria-pressed="false"
+            >
+              With artwork</button
+            ><button
+              class="filter-chip"
+              type="button"
+              data-library-filter="recent"
+              aria-pressed="false"
+            >
+              Recent
+            </button>
+          </div>
+          <div class="track-grid" id="libraryTracks" aria-busy="true"></div>
           <section
             id="stationManager"
             class="station-manager"
@@ -489,78 +600,6 @@
             </form>
             <div id="savedStationList" class="saved-station-list"></div>
           </section>
-          <div class="library-tools">
-            <label class="search-field"
-              ><span class="sr-only">Search the music library</span
-              ><svg aria-hidden="true" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="6.5"></circle>
-                <path d="m16 16 4 4"></path></svg
-              ><input
-                id="librarySearch"
-                type="search"
-                placeholder="Search title, artist, lyrics, prompt…"
-                autocomplete="off"
-            /></label>
-            <label class="sr-only" for="librarySort">Sort tracks</label>
-            <select class="select-control library-sort" id="librarySort">
-              <option value="archive">Archive order</option>
-              <option value="newest">Newest first</option>
-              <option value="title">Title A–Z</option>
-              <option value="duration">Longest first</option>
-              <option value="played">Most played</option>
-            </select>
-            <div class="view-switch" aria-label="Library view">
-              <button
-                type="button"
-                data-library-view="grid"
-                aria-pressed="true"
-              >
-                Grid</button
-              ><button
-                type="button"
-                data-library-view="list"
-                aria-pressed="false"
-              >
-                List
-              </button>
-            </div>
-          </div>
-          <div class="library-results-head">
-            <h2 id="libraryTitle" tabindex="-1">All tracks</h2>
-            <p id="libraryCount" aria-live="polite">Loading the archive…</p>
-          </div>
-          <div class="filter-row" role="group" aria-label="Track filters">
-            <button
-              class="filter-chip"
-              type="button"
-              data-library-filter="all"
-              aria-pressed="true"
-            >
-              All</button
-            ><button
-              class="filter-chip"
-              type="button"
-              data-library-filter="liked"
-              aria-pressed="false"
-            >
-              Liked</button
-            ><button
-              class="filter-chip"
-              type="button"
-              data-library-filter="covers"
-              aria-pressed="false"
-            >
-              With artwork</button
-            ><button
-              class="filter-chip"
-              type="button"
-              data-library-filter="recent"
-              aria-pressed="false"
-            >
-              Recent
-            </button>
-          </div>
-          <div class="track-grid" id="libraryTracks" aria-busy="true"></div>
         </section>
         <aside
           class="preview-dock"
@@ -645,9 +684,9 @@
       </section>
 
       <dialog id="addToStationDialog" class="station-dialog">
-        <form method="dialog">
+        <form method="dialog" aria-labelledby="addToStationTitle">
           <div class="section-label">Add song</div>
-          <h2>Add to station</h2>
+          <h2 id="addToStationTitle">Add to station</h2>
           <p id="addToStationTrack"></p>
           <label>
             Station
@@ -655,10 +694,10 @@
           </label>
           <p id="addToStationStatus" aria-live="polite"></p>
           <div class="station-manager-actions">
+            <button class="button" value="cancel">Cancel</button>
             <button id="confirmAddToStation" class="button" type="button">
               Add song
             </button>
-            <button class="button" value="cancel">Cancel</button>
           </div>
         </form>
       </dialog>
@@ -888,8 +927,8 @@
     ></div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script src="/static/platform.js?v=1"></script>
-    <script src="/static/app.js?v=31"></script>
-    <script src="/static/library.js?v=24"></script>
-    <script src="/static/reader.js?v=26"></script>
+    <script src="/static/app.js?v=34"></script>
+    <script src="/static/library.js?v=25"></script>
+    <script src="/static/reader.js?v=28"></script>
   </body>
 </html>

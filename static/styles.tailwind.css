@@ -4,18 +4,70 @@
 @source "./library.js";
 @source "./reader.js";
 
+/* Zakstak product chrome contract v1: canonical values are local by design. */
+:root {
+  --zs-canvas: #080a0c;
+  --zs-surface: #12161a;
+  --zs-surface-raised: #181d22;
+  --zs-surface-hover: #1d2329;
+  --zs-line-soft: #22282e;
+  --zs-line: #30363d;
+  --zs-line-strong: #4b535b;
+
+  --zs-success: #85c9a0;
+  --zs-success-line: #466b55;
+  --zs-warning: #e7b66a;
+  --zs-warning-line: #765c38;
+  --zs-danger: #e98585;
+  --zs-danger-line: #744646;
+
+  --zs-font-sans: "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --zs-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  --zs-radius-control: 2px;
+  --zs-radius-compact: 10px;
+  --zs-radius-surface: 12px;
+  --zs-radius-identity: 10px;
+  --zs-radius-round: 999px;
+
+  --zs-space-1: 4px;
+  --zs-space-2: 8px;
+  --zs-space-3: 12px;
+  --zs-space-4: 16px;
+  --zs-space-6: 24px;
+  --zs-space-10: 40px;
+  --zs-space-16: 64px;
+
+  --zs-control-height: 44px;
+  --zs-field-height: 48px;
+  --zs-product-bar-height: 64px;
+  --zs-product-bar-compact-height: 56px;
+  --zs-content-max: 1500px;
+  --zs-reading-max: 72ch;
+
+  --zs-signal: #8983e8;
+  --zs-signal-readable: #d7d3ff;
+  --zs-signal-deep: #4d478e;
+  --zs-signal-track: #67639e;
+  --zs-signal-buffer: #504c77;
+  --zs-frost: #d8d4e2;
+  --zs-frost-soft: #c9c5d3;
+  --zs-frost-mid: #b5b1c1;
+  --zs-frost-low: #a49fb0;
+}
+
 @theme {
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: var(--zs-font-sans);
   --font-editorial: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-  --color-radio-bg: #09090b;
-  --color-radio-fg: #f7f7f2;
-  --color-radio-muted: #97978f;
-  --color-radio-soft: #0d0d10;
-  --color-radio-panel: #141417;
-  --color-radio-panel-hover: #1b1b1f;
-  --color-radio-line: #29292e;
-  --color-radio-line-strong: #44444b;
-  --color-radio-accent: #f5f5f5;
+  --color-radio-bg: var(--zs-canvas);
+  --color-radio-fg: var(--zs-frost);
+  --color-radio-muted: var(--zs-frost-low);
+  --color-radio-soft: var(--zs-surface);
+  --color-radio-panel: var(--zs-surface-raised);
+  --color-radio-panel-hover: var(--zs-surface-hover);
+  --color-radio-line: var(--zs-line);
+  --color-radio-line-strong: var(--zs-line-strong);
+  --color-radio-accent: var(--zs-signal);
 }
 
 @layer base {
@@ -44,8 +96,10 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  :where(a, button, input, select, [tabindex="-1"]):focus-visible {
-    @apply outline-2 outline-offset-3 outline-radio-accent;
+  :where(a, button, input, select, textarea, [tabindex="-1"]):focus-visible {
+    outline: 2px solid var(--zs-signal-readable);
+    outline-offset: 3px;
+    transition: none !important;
   }
 
   button:disabled {
@@ -68,54 +122,69 @@
   }
 
   .app-rail {
-    @apply sticky top-0 z-40 flex min-w-0 flex-wrap items-center border-b border-radio-line bg-[#0d0d10ed] px-3 py-2 shadow-[0_12px_36px_rgba(0,0,0,.32)] backdrop-blur-xl sm:px-5 lg:flex-nowrap lg:gap-5 lg:px-7;
+    @apply static top-0 z-40 min-w-0 bg-radio-soft sm:sticky;
+    box-shadow: inset 0 -1px var(--zs-line-soft);
+  }
+
+  .app-rail-inner {
+    @apply mx-auto grid w-full min-w-0 max-w-[1500px] grid-cols-[minmax(0,1fr)_auto] grid-rows-[56px_44px] items-center px-4 sm:grid-cols-[auto_minmax(240px,1fr)_auto] sm:grid-rows-[64px] sm:gap-5 sm:px-6 lg:px-10;
   }
 
   .brand {
-    @apply hidden min-w-0 flex-1 items-center gap-3 p-0 sm:flex lg:flex-none;
+    @apply flex min-w-0 items-center gap-2.5 p-0 sm:gap-3;
   }
 
   .brand-mark {
-    @apply flex size-9 shrink-0 items-center justify-center gap-0.5 bg-radio-accent shadow-[0_0_24px_rgba(245,245,245,.08)];
-    border-radius: 2px 11px 2px 11px;
+    @apply grid size-9 shrink-0 place-items-center sm:size-10;
+    border-radius: var(--zs-radius-identity);
   }
 
-  .brand-mark i {
-    @apply block w-[3px] bg-radio-bg;
-    border-radius: 1px;
-  }
-
-  .brand-mark i:nth-child(1) { @apply h-[9px]; }
-  .brand-mark i:nth-child(2) { @apply h-5; }
-  .brand-mark i:nth-child(3) { @apply h-3.5; }
-  .brand-mark i:nth-child(4) { @apply h-[5px]; }
+  .brand-mark img { @apply size-full; }
 
   .brand-copy {
     @apply min-w-0;
   }
 
+  .brand-family {
+    @apply block text-[11px] leading-[1.4] font-medium tracking-[.06em] text-radio-muted uppercase;
+  }
+
+  .brand-product {
+    @apply flex min-w-0 items-baseline gap-1.5;
+  }
+
   .brand-title {
-    @apply m-0 whitespace-nowrap text-[16px] font-semibold tracking-[-.02em];
+    @apply m-0 whitespace-nowrap text-[16px] leading-[1.2] font-semibold tracking-[-.02em];
+  }
+
+  .brand-separator {
+    @apply hidden text-[12px] text-radio-muted md:inline;
   }
 
   .brand-subtitle {
-    @apply m-0 truncate text-[13px] text-radio-muted;
+    @apply m-0 hidden truncate text-[12px] leading-[1.35] text-radio-muted md:block;
   }
 
   .primary-nav {
-    @apply order-3 mt-2 grid w-full grid-cols-3 gap-1 rounded-lg border border-radio-line bg-[#09090b] p-1 sm:order-none sm:mt-0 sm:w-auto sm:min-w-[300px];
+    @apply col-span-2 row-start-2 grid min-h-11 grid-cols-3 border-t sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:min-w-[240px] sm:border-t-0;
+    border-color: var(--zs-line-soft);
   }
 
   .primary-nav-link {
-    @apply inline-flex min-h-11 items-center justify-center px-3 text-center text-[12px] font-semibold tracking-[.04em] text-radio-muted uppercase no-underline transition-colors hover:text-radio-fg;
+    @apply relative inline-flex min-h-11 items-center justify-center px-3 text-center text-[13px] font-semibold text-radio-muted no-underline transition-colors hover:bg-radio-panel-hover hover:text-radio-fg;
   }
 
   .primary-nav-link[aria-current="page"] {
-    @apply rounded-md bg-radio-fg text-radio-bg;
+    @apply text-radio-fg;
+  }
+
+  .primary-nav-link[aria-current="page"]::after {
+    content: "";
+    @apply absolute inset-x-3 bottom-0 h-[2px] bg-radio-accent;
   }
 
   .section-label {
-    @apply text-[10px] font-bold tracking-[.14em] text-radio-muted uppercase;
+    @apply font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
   }
 
   .rule-heading {
@@ -129,11 +198,13 @@
 
   /* Shared controls */
   .button {
-    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-radio-line bg-radio-panel px-3 text-[13px] text-radio-fg no-underline transition-colors hover:border-radio-line-strong hover:bg-radio-panel-hover;
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 border border-radio-line bg-radio-panel px-3 text-[13px] font-semibold text-radio-fg no-underline transition-colors hover:border-radio-line-strong hover:bg-radio-panel-hover;
+    border-radius: var(--zs-radius-control);
   }
 
   .button-quiet {
-    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 border-0 bg-transparent px-3 text-[13px] text-radio-fg no-underline transition-colors hover:bg-radio-panel-hover;
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 border-0 bg-transparent px-3 text-[13px] font-semibold text-radio-fg no-underline transition-colors hover:bg-radio-panel-hover;
+    border-radius: var(--zs-radius-control);
   }
 
   .icon-button {
@@ -151,7 +222,7 @@
   }
 
   .play-button {
-    @apply grid size-[58px] min-w-[58px] cursor-pointer place-items-center rounded-full border-0 bg-radio-fg text-radio-bg shadow-[0_8px_26px_rgba(245,245,245,.12)] transition hover:scale-105;
+    @apply grid size-[58px] min-w-[58px] cursor-pointer place-items-center rounded-full border-0 bg-radio-accent text-radio-bg transition-colors hover:bg-[#d7d3ff];
   }
 
   .play-button svg {
@@ -159,7 +230,13 @@
   }
 
   .search-field {
-    @apply flex h-11 min-w-0 items-center gap-2 rounded-lg border border-radio-line bg-radio-panel px-3 focus-within:border-radio-accent focus-within:ring-2 focus-within:ring-radio-accent/70;
+    @apply flex h-12 min-w-0 items-center gap-2 border border-radio-line bg-radio-panel px-3 focus-within:border-[#d7d3ff];
+    border-radius: var(--zs-radius-control);
+  }
+
+  .search-field:focus-within {
+    outline: 2px solid var(--zs-signal-readable);
+    outline-offset: 3px;
   }
 
   .search-field svg {
@@ -171,7 +248,8 @@
   }
 
   .select-control {
-    @apply h-11 min-w-0 cursor-pointer rounded-lg border border-radio-line bg-radio-panel px-3 text-sm text-radio-fg;
+    @apply h-11 min-w-0 cursor-pointer border border-radio-line bg-radio-panel px-3 text-[13px] font-semibold text-radio-fg;
+    border-radius: var(--zs-radius-control);
   }
 
   .range-row {
@@ -183,7 +261,8 @@
   }
 
   .range-track:has(input:focus-visible) {
-    @apply ring-2 ring-radio-accent ring-offset-4 ring-offset-radio-bg;
+    outline: 2px solid var(--zs-signal-readable);
+    outline-offset: 4px;
   }
 
   .range-fill {
@@ -200,7 +279,7 @@
 
   /* Radio */
   .connection {
-    @apply ml-auto inline-flex min-w-[92px] items-center justify-end gap-1.5 text-[12px] text-radio-muted;
+    @apply ml-auto inline-flex min-w-[142px] items-center justify-end gap-1.5 text-right text-[12px] leading-4 text-radio-muted sm:min-w-[166px];
   }
 
   .connection-dot {
@@ -208,35 +287,36 @@
   }
 
   .connection-dot.is-connected {
-    @apply bg-[#31c46b] shadow-[0_0_10px_rgba(49,196,107,.55)];
+    background-color: var(--zs-success);
   }
 
   .connection-dot.is-polling {
-    @apply bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,.3)];
+    background-color: var(--zs-warning);
   }
 
   .connection-dot.is-disconnected {
-    @apply bg-[#ff5d5d];
+    background-color: var(--zs-danger);
   }
 
   .station-card {
-    @apply order-4 mt-2 w-full border-t border-radio-line pt-2 sm:ml-auto lg:order-none lg:mt-0 lg:flex lg:w-auto lg:items-center lg:gap-4 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5;
+    @apply mb-7 grid w-full grid-cols-1 gap-3 border-y bg-radio-soft px-4 py-4 sm:grid-cols-[minmax(150px,auto)_minmax(180px,320px)_auto] sm:items-center sm:px-5 lg:mb-9 lg:grid-cols-[minmax(170px,auto)_minmax(220px,360px)_auto_minmax(220px,1fr)] lg:gap-4 lg:px-6;
+    border-color: var(--zs-line-soft);
   }
 
   .station-card-head {
-    @apply flex items-center justify-between gap-3;
+    @apply flex min-w-0 items-center justify-between gap-3 sm:grid sm:justify-start sm:gap-1;
   }
 
   .station-card-head strong {
-    @apply text-[13px];
+    @apply truncate text-[14px] font-semibold;
   }
 
   .station-actions {
-    @apply mt-2 flex flex-wrap gap-1.5 lg:mt-0;
+    @apply flex flex-wrap gap-2;
   }
 
   .station-share-fallback {
-    @apply mt-3 border-t border-radio-line pt-3 text-xs text-radio-muted;
+    @apply border-t border-radio-line pt-3 text-xs text-radio-muted sm:col-span-3 lg:col-span-4;
   }
 
   .station-share-fallback > div {
@@ -244,33 +324,29 @@
   }
 
   .station-share-fallback input {
-    @apply min-w-0 flex-1 border border-radio-line bg-radio-bg px-2 py-1 text-radio-fg;
+    @apply h-12 min-w-0 flex-1 border border-radio-line bg-radio-bg px-3 text-radio-fg;
+    border-radius: var(--zs-radius-control);
   }
 
   .station-action {
-    @apply min-h-11 cursor-pointer rounded-md border border-radio-line bg-transparent px-3 text-xs text-radio-fg hover:bg-radio-panel-hover;
+    @apply min-h-11 cursor-pointer border border-radio-line bg-transparent px-3 text-[13px] font-semibold text-radio-fg transition-colors hover:border-radio-line-strong hover:bg-radio-panel-hover;
+    border-radius: var(--zs-radius-control);
   }
 
   .station-action-primary {
-    @apply border-radio-fg bg-radio-fg text-radio-bg hover:bg-radio-accent;
+    @apply border-radio-fg bg-radio-fg text-radio-bg hover:border-[#d7d3ff] hover:bg-[#d7d3ff];
   }
 
   .station-note {
-    @apply mt-2 mb-0 text-[11px] leading-4 text-radio-muted lg:hidden;
+    @apply m-0 max-w-[65ch] text-[12px] leading-[1.45] text-radio-muted sm:col-span-3 lg:col-span-1;
   }
 
   .radio-stage {
     @apply relative mx-auto min-w-0 max-w-[1600px] overflow-hidden p-4 sm:p-6 lg:p-[clamp(28px,4vw,64px)];
   }
 
-  .radio-stage::before {
-    content: "";
-    @apply pointer-events-none absolute -top-[270px] -right-[220px] -z-10 size-[560px] rounded-full;
-    background: radial-gradient(circle, rgba(245,245,245,.06), transparent 66%);
-  }
-
   .now-playing {
-    @apply grid grid-cols-1 items-start gap-5 pb-7 md:grid-cols-[minmax(220px,340px)_minmax(0,1fr)] md:items-center md:gap-7 lg:grid-cols-[minmax(240px,380px)_minmax(0,680px)] lg:gap-[clamp(26px,4vw,56px)] lg:pb-9 lg:pt-[clamp(6px,1.5vw,18px)];
+    @apply grid grid-cols-1 items-start gap-5 pb-7 md:grid-cols-[minmax(220px,340px)_minmax(0,1fr)] md:items-center md:gap-7 lg:grid-cols-[minmax(240px,380px)_minmax(0,760px)] lg:gap-[clamp(26px,4vw,56px)] lg:pb-9 lg:pt-[clamp(6px,1.5vw,18px)];
   }
 
   .now-playing-copy {
@@ -310,7 +386,7 @@
   }
 
   .cover-fallback {
-    @apply size-full content-center justify-items-center gap-4 bg-[radial-gradient(circle_at_50%_35%,#24242a,#0b0b0e_68%)] text-[10px] font-bold tracking-[.18em] text-radio-muted uppercase;
+    @apply size-full content-center justify-items-center gap-4 bg-radio-panel text-[10px] font-bold tracking-[.18em] text-radio-muted uppercase;
   }
 
   .no-artwork-icon {
@@ -318,7 +394,7 @@
   }
 
   .live-status {
-    @apply mb-[18px] flex items-center gap-2 text-[11px] font-bold tracking-[.1em] text-radio-muted uppercase;
+    @apply mb-[18px] flex items-center gap-2 font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
   }
 
   .live-dot {
@@ -326,19 +402,35 @@
   }
 
   .live-dot.is-live {
-    @apply bg-radio-accent shadow-[0_0_0_5px_rgba(245,245,245,.08)];
+    background-color: var(--zs-success);
   }
 
   .track-source {
-    @apply text-[10px] font-bold tracking-[.14em] text-radio-muted uppercase;
+    @apply font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
   }
 
   .track-title {
-    @apply mt-2 [overflow-wrap:anywhere] text-[clamp(30px,9vw,42px)] font-semibold leading-[1.02] tracking-[-.045em] lg:text-[clamp(38px,4.5vw,62px)];
+    @apply mt-2 [overflow-wrap:anywhere] text-[clamp(30px,9vw,42px)] font-semibold leading-[1.05] tracking-[-.03em] lg:text-[clamp(38px,4.5vw,62px)];
   }
 
   .track-details {
     @apply my-3 max-w-[760px] text-[13px] leading-6 text-radio-muted lg:mb-[18px];
+  }
+
+  .station-capability {
+    @apply my-4 grid max-w-[760px] gap-1 border-y border-radio-line py-3;
+  }
+
+  .station-capability-label {
+    @apply font-mono text-xs font-semibold tracking-[.04em] text-radio-accent;
+  }
+
+  .station-capability p {
+    @apply m-0 max-w-[65ch] text-sm leading-6 text-radio-muted;
+  }
+
+  .radio-stage.is-listen-only .station-capability {
+    @apply border-radio-accent/50 bg-radio-soft px-3;
   }
 
   .transport {
@@ -382,7 +474,7 @@
   }
 
   .transcript-head h3 {
-    @apply m-0 text-[11px] font-bold tracking-[.14em] uppercase;
+    @apply m-0 font-mono text-xs font-semibold tracking-[.04em];
   }
 
   .transcript-head-actions {
@@ -390,7 +482,7 @@
   }
 
   .lyrics-sync-status {
-    @apply mt-1 block text-[10px] tracking-[.05em] text-radio-muted;
+    @apply mt-1 block text-xs tracking-[.02em] text-radio-muted;
   }
 
   .transcript-viewport {
@@ -424,7 +516,8 @@
   }
 
   .synced-lyric-cue:focus-visible {
-    @apply outline-2 outline-offset-[-2px] outline-radio-accent;
+    outline: 2px solid var(--zs-signal-readable);
+    outline-offset: -2px;
   }
 
   .synced-lyric-cue.is-current {
@@ -450,7 +543,7 @@
   }
 
   .transcript-fade {
-    @apply pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-radio-bg to-transparent;
+    @apply pointer-events-none absolute inset-x-0 bottom-0 h-14 border-t border-radio-line bg-radio-bg;
   }
 
   .transcript-more {
@@ -466,7 +559,7 @@
   }
 
   .site-footer {
-    @apply flex flex-wrap justify-between gap-4 pt-7 text-[10px] tracking-[.08em] text-[#a3a39d] uppercase;
+    @apply flex flex-wrap justify-between gap-4 pt-7 font-mono text-xs tracking-[.03em] text-[#a3a39d];
   }
 
   .footer-shortcut {
@@ -486,7 +579,7 @@
   }
 
   .library-back {
-    @apply inline-flex min-h-11 cursor-pointer items-center gap-2 border-0 bg-transparent px-0 text-[11px] font-bold tracking-[.12em] text-radio-fg uppercase;
+    @apply inline-flex min-h-11 cursor-pointer items-center gap-2 border-0 bg-transparent px-0 text-[12px] font-bold tracking-[.12em] text-radio-fg uppercase;
   }
 
   .library-back::before {
@@ -547,14 +640,8 @@
     @apply relative my-12 md:my-18 lg:my-20;
   }
 
-  .library-hero::before {
-    content: "";
-    @apply pointer-events-none absolute -top-52 right-0 -z-10 size-[500px] max-w-full rounded-full;
-    background: radial-gradient(circle, rgba(245,245,245,.07), transparent 68%);
-  }
-
   .library-hero h2 {
-    @apply mt-3 max-w-4xl text-[clamp(42px,6.5vw,82px)] leading-[.92] tracking-[-.065em];
+    @apply mt-3 max-w-4xl text-[clamp(42px,6.5vw,82px)] leading-[.98] font-editorial font-normal tracking-[-.025em] text-balance;
   }
 
   .library-hero p {
@@ -566,7 +653,7 @@
   }
 
   .library-tools {
-    @apply sticky -top-px z-10 mb-6 grid grid-cols-1 items-center gap-3 border-y border-radio-line bg-radio-soft/95 p-3 shadow-[0_16px_40px_rgba(0,0,0,.4)] backdrop-blur-xl sm:grid-cols-[minmax(250px,1fr)_auto_auto];
+    @apply sticky top-0 z-10 mb-6 grid grid-cols-1 items-center gap-3 border-y border-radio-line bg-radio-soft p-3 sm:top-16 sm:grid-cols-[minmax(250px,1fr)_auto_auto];
   }
 
   .view-switch {
@@ -574,7 +661,8 @@
   }
 
   .view-switch button {
-    @apply h-9 min-w-16 cursor-pointer px-3 text-xs text-radio-muted;
+    @apply min-h-11 min-w-16 cursor-pointer px-3 text-[13px] font-semibold text-radio-muted;
+    border-radius: var(--zs-radius-control);
   }
 
   .view-switch button[aria-pressed="true"] {
@@ -598,7 +686,7 @@
   }
 
   .filter-chip {
-    @apply min-h-10 cursor-pointer rounded-full border border-radio-line bg-transparent px-4 text-xs text-radio-fg hover:border-radio-line-strong;
+    @apply min-h-11 cursor-pointer rounded-full border border-radio-line bg-transparent px-4 text-[13px] font-semibold text-radio-fg transition-colors hover:border-radio-line-strong;
   }
 
   .filter-chip[aria-pressed="true"] {
@@ -642,7 +730,7 @@
   }
 
   .track-cover-fallback {
-    @apply grid h-full w-full content-center justify-items-center gap-2 bg-[radial-gradient(circle_at_50%_35%,#24242a,#0b0b0e_68%)] text-[8px] font-bold tracking-[.16em] text-radio-muted uppercase;
+    @apply grid h-full w-full content-center justify-items-center gap-2 bg-radio-panel text-[8px] font-bold tracking-[.16em] text-radio-muted uppercase;
   }
 
   .track-cover-fallback .no-artwork-icon {
@@ -674,7 +762,7 @@
   }
 
   .track-kicker {
-    @apply mb-2 flex justify-between gap-2 text-[10px] font-semibold tracking-[.08em] text-radio-muted uppercase;
+    @apply mb-2 flex justify-between gap-2 font-mono text-xs font-medium tracking-[.02em] text-radio-muted;
   }
 
   .track-card-title {
@@ -718,7 +806,8 @@
 
   .track-queue-action,
   .track-preview-action {
-    @apply min-h-10 cursor-pointer rounded-md border border-radio-line bg-radio-soft px-2.5 text-[11px] font-semibold text-radio-fg transition-colors hover:border-radio-line-strong hover:bg-radio-panel-hover;
+    @apply min-h-11 cursor-pointer border border-radio-line bg-radio-soft px-2.5 text-[12px] font-semibold text-radio-fg transition-colors hover:border-radio-line-strong hover:bg-radio-panel-hover;
+    border-radius: var(--zs-radius-control);
   }
 
   .track-queue-action.is-primary {
@@ -730,11 +819,11 @@
   }
 
   .track-action-status {
-    @apply col-span-full min-h-4 px-1 text-[10px] leading-4 text-radio-muted;
+    @apply col-span-full min-h-4 px-1 text-xs leading-4 text-radio-muted;
   }
 
   .track-badge {
-    @apply rounded-full border border-radio-line bg-radio-soft px-2 py-1 text-[10px] text-radio-muted;
+    @apply rounded-full border border-radio-line bg-radio-soft px-2 py-1 text-xs text-radio-muted;
   }
 
   .track-badge.is-accent {
@@ -754,7 +843,7 @@
   }
 
   .preview-dock {
-    @apply fixed right-2.5 bottom-2.5 left-2.5 z-20 mx-auto grid max-w-[960px] translate-y-[140%] grid-cols-[auto_minmax(100px,1fr)_auto] items-center gap-2.5 border border-radio-line-strong bg-[#17171bf2] p-2.5 opacity-0 shadow-[0_22px_70px_rgba(0,0,0,.8)] backdrop-blur-xl transition duration-300 min-[720px]:right-5 min-[720px]:bottom-5 min-[720px]:left-5 min-[720px]:grid-cols-[auto_minmax(120px,360px)_minmax(160px,1fr)_auto] min-[720px]:gap-4 min-[720px]:p-3.5;
+    @apply fixed right-2.5 bottom-2.5 left-2.5 z-20 mx-auto grid max-w-[960px] translate-y-[140%] grid-cols-[auto_minmax(100px,1fr)_auto] items-center gap-2.5 border border-radio-line-strong bg-radio-panel p-2.5 opacity-0 shadow-[0_22px_70px_rgba(0,0,0,.8)] transition duration-300 min-[720px]:right-5 min-[720px]:bottom-5 min-[720px]:left-5 min-[720px]:grid-cols-[auto_minmax(120px,360px)_minmax(160px,1fr)_auto] min-[720px]:gap-4 min-[720px]:p-3.5;
   }
 
   .preview-dock[hidden] {
@@ -774,7 +863,7 @@
   }
 
   .dock-kicker {
-    @apply text-[9px] font-bold tracking-[.09em] text-radio-accent uppercase;
+    @apply font-mono text-xs font-semibold tracking-[.03em] text-radio-accent;
   }
 
   .dock-title {
@@ -790,7 +879,7 @@
   }
 
   .dock-action {
-    @apply hidden size-[38px] cursor-pointer place-items-center border-0 bg-transparent text-xs text-radio-fg hover:bg-radio-panel-hover min-[720px]:grid;
+    @apply hidden size-11 cursor-pointer place-items-center border-0 bg-transparent text-[13px] text-radio-fg hover:bg-radio-panel-hover min-[720px]:grid;
   }
 
   .preview-play {
@@ -802,18 +891,18 @@
   }
 
   .dock-return-live {
-    @apply whitespace-nowrap px-2.5 py-2 text-[11px] min-[720px]:px-3;
+    @apply whitespace-nowrap px-2.5 py-2 text-[12px] min-[720px]:px-3;
   }
 
   .audio-owner-bar {
-    @apply fixed right-3 bottom-3 left-3 z-30 flex items-center justify-between gap-4 border border-radio-line-strong bg-[#17171bf2] px-4 py-3 shadow-[0_22px_70px_rgba(0,0,0,.8)] backdrop-blur-xl sm:right-5 sm:bottom-5 sm:left-auto sm:min-w-80;
+    @apply fixed right-3 bottom-3 left-3 z-30 flex items-center justify-between gap-4 border border-radio-line-strong bg-radio-panel px-4 py-3 shadow-[0_22px_70px_rgba(0,0,0,.8)] sm:right-5 sm:bottom-5 sm:left-auto sm:min-w-80;
   }
 
   .audio-owner-bar > div {
     @apply grid min-w-0 gap-1;
   }
 
-  .audio-owner-actions {
+  .audio-owner-bar > .audio-owner-actions {
     @apply flex shrink-0 items-center gap-2;
   }
 
@@ -825,12 +914,9 @@
     display: none;
   }
 
-  body.has-audio-owner .radio-stage {
-    @apply pb-36 sm:pb-28;
-  }
-
-  body.has-audio-owner .reader-main {
-    @apply pb-28;
+  body.has-audio-owner .view-panel:not([hidden]) {
+    padding-bottom: calc(var(--audio-owner-height, 72px) + 24px);
+    scroll-padding-bottom: calc(var(--audio-owner-height, 72px) + 24px);
   }
 
   /* Reader */
@@ -842,14 +928,8 @@
     @apply relative py-12 md:py-18 lg:py-20;
   }
 
-  .reader-hero::before {
-    content: "";
-    @apply pointer-events-none absolute -top-52 right-0 -z-10 size-[500px] max-w-full rounded-full;
-    background: radial-gradient(circle, rgba(245,245,245,.07), transparent 68%);
-  }
-
   .reader-hero h2 {
-    @apply mt-3 max-w-5xl text-[clamp(42px,7vw,90px)] leading-[.9] tracking-[-.07em];
+    @apply mt-3 max-w-5xl text-[clamp(42px,7vw,90px)] leading-[.98] font-editorial font-normal tracking-[-.025em] text-balance;
   }
 
   .reader-hero > p {
@@ -857,7 +937,7 @@
   }
 
   .reader-browser {
-    @apply mt-8 grid items-center gap-3 border-y border-radio-line bg-radio-soft/80 p-3 sm:grid-cols-[minmax(260px,1fr)_180px];
+    @apply mt-8 grid items-center gap-3 border-y border-radio-line bg-radio-soft p-3 sm:grid-cols-[minmax(260px,1fr)_180px];
   }
 
   .reader-count {
@@ -885,11 +965,11 @@
   }
 
   .reader-library-back {
-    @apply mb-5 inline-flex min-h-10 items-center text-xs font-semibold text-radio-muted no-underline hover:text-radio-fg;
+    @apply mb-5 inline-flex min-h-11 items-center text-[13px] font-semibold text-radio-muted no-underline hover:text-radio-fg;
   }
 
   .reader-title {
-    @apply my-2 max-w-4xl [overflow-wrap:anywhere] text-[clamp(30px,5vw,52px)] font-semibold leading-none tracking-[-.045em];
+    @apply my-2 max-w-4xl [overflow-wrap:anywhere] text-[clamp(30px,5vw,52px)] font-semibold leading-none tracking-[-.04em];
   }
 
   .reader-details {
@@ -917,7 +997,8 @@
   }
 
   .speed-control:focus-within {
-    @apply outline-2 outline-offset-2 outline-radio-fg;
+    outline: 2px solid var(--zs-signal-readable);
+    outline-offset: 3px;
   }
 
   .source-link {
@@ -945,11 +1026,11 @@
   }
 
   .reader-card.is-active {
-    @apply border-radio-fg;
+    @apply border-radio-accent;
   }
 
   .reader-card-icon {
-    @apply grid aspect-[16/8] place-items-center border-b border-radio-line bg-[radial-gradient(circle_at_50%_25%,#292930,#0a0a0c_72%)];
+    @apply grid aspect-[16/8] place-items-center border-b border-radio-line bg-radio-panel-hover;
   }
 
   .reader-card-icon svg {
@@ -961,7 +1042,7 @@
   }
 
   .reader-card-title {
-    @apply mt-3 text-xl font-semibold leading-6 tracking-[-.025em];
+    @apply mt-3 font-editorial text-2xl leading-7 font-normal tracking-[-.015em];
   }
 
   .reader-card-meta,
@@ -999,7 +1080,8 @@
   }
 
   .reader-segment-button:focus-visible {
-    @apply outline-2 outline-offset-4 outline-radio-accent;
+    outline: 2px solid var(--zs-signal-readable);
+    outline-offset: 4px;
   }
 
   .reader-segment-button:disabled {
@@ -1036,6 +1118,17 @@
 }
 
 @media (max-width: 767px) {
+  body.has-audio-owner {
+    @apply overflow-hidden;
+  }
+
+  body.has-audio-owner .app-shell {
+    height: calc(100dvh - var(--audio-owner-height, 72px));
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
   .reader-head {
     @apply static;
   }
@@ -1063,6 +1156,26 @@
   .transport .play-button {
     @apply size-[54px] min-w-[54px];
   }
+
+  .audio-owner-bar {
+    @apply right-0 bottom-0 left-0 min-h-[60px] gap-2 border-x-0 border-b-0 px-2.5 py-2;
+  }
+
+  .audio-owner-bar > div:first-child {
+    @apply flex min-w-0 items-baseline gap-1.5;
+  }
+
+  .audio-owner-bar > div:first-child .section-label {
+    @apply shrink-0;
+  }
+
+  .audio-owner-bar > .audio-owner-actions {
+    @apply gap-1;
+  }
+
+  .audio-owner-actions .button {
+    @apply min-h-11 px-2.5 text-xs;
+  }
 }
 
 @layer components {
@@ -1071,15 +1184,39 @@
   }
 
   .station-picker {
-    @apply mt-2 min-w-44 lg:mt-0;
+    @apply m-0 w-full min-w-0;
   }
 
   .radio-programming {
-    @apply mt-5 grid max-w-[760px] gap-5 border border-radio-line bg-radio-panel p-4;
+    @apply grid max-w-[760px] gap-5 border border-radio-line bg-radio-panel p-4;
   }
 
   .radio-programming-panel {
     @apply grid gap-5 py-7 lg:grid-cols-[minmax(300px,1fr)_minmax(0,1fr)] lg:items-start;
+  }
+
+  .owner-controls-disclosure {
+    @apply min-w-0 border border-radio-line bg-radio-soft;
+  }
+
+  .owner-controls-disclosure summary {
+    @apply grid min-h-14 cursor-pointer gap-1 px-4 py-3 marker:text-radio-accent hover:bg-radio-panel-hover;
+  }
+
+  .owner-controls-disclosure summary strong {
+    @apply text-sm font-semibold text-radio-fg;
+  }
+
+  .owner-controls-disclosure[open] summary {
+    @apply border-b border-radio-line;
+  }
+
+  .radio-stage.is-listen-only .owner-controls-disclosure {
+    @apply border-radio-line bg-radio-bg;
+  }
+
+  .radio-stage.is-listen-only .owner-controls-disclosure summary strong {
+    @apply text-radio-muted;
   }
 
   .radio-programming-panel .radio-programming,
@@ -1096,7 +1233,7 @@
   }
 
   .programming-label {
-    @apply text-[11px] font-bold tracking-[.1em] text-radio-muted uppercase;
+    @apply font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
   }
 
   .random-mode-options {
@@ -1140,7 +1277,8 @@
 
   .random-mode-option input:focus-visible + .random-mode-card,
   .station-toggle input:focus-visible + .station-toggle-switch {
-    @apply outline-2 outline-offset-3 outline-radio-accent;
+    outline: 2px solid var(--zs-signal-readable);
+    outline-offset: 3px;
   }
 
   .random-mode-option:has(input:disabled),
@@ -1186,7 +1324,7 @@
   }
 
   .station-manager {
-    @apply mb-8 border border-radio-line bg-radio-panel p-4 sm:p-5;
+    @apply mt-14 mb-8 border border-radio-line bg-radio-panel p-4 sm:mt-18 sm:p-5;
   }
 
   .station-manager-head {
@@ -1217,7 +1355,8 @@
   }
 
   .station-editor input[type="text"] {
-    @apply min-h-10 border border-radio-line bg-radio-bg px-3 text-radio-fg;
+    @apply h-12 border border-radio-line bg-radio-bg px-3 text-radio-fg;
+    border-radius: var(--zs-radius-control);
   }
 
   .station-editor-members {
@@ -1246,11 +1385,12 @@
   }
 
   .station-dialog {
-    @apply m-auto w-[min(92vw,480px)] border border-radio-line bg-radio-panel p-5 text-radio-fg shadow-2xl;
+    @apply m-auto max-h-[calc(100dvh-32px)] w-[min(calc(100vw-32px),480px)] overflow-y-auto border border-radio-line bg-radio-panel p-5 text-radio-fg shadow-2xl;
+    border-radius: var(--zs-radius-surface);
   }
 
   .station-dialog::backdrop {
-    @apply bg-black/75 backdrop-blur-sm;
+    background: rgb(8 10 12 / 78%);
   }
 
   .station-dialog form {

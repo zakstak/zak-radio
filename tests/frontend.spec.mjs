@@ -156,6 +156,15 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   await page.locator("#createStation").click();
   await expect(page).toHaveURL(/\/library$/);
   await expect(page.locator("#stationEditor")).toBeVisible();
+  await expect(page.locator("#stationEditorName")).toBeFocused();
+  const editorNameBounds = await page.locator("#stationEditorName").evaluate(
+    (input) => {
+      const rect = input.getBoundingClientRect();
+      return { top: rect.top, bottom: rect.bottom, viewport: window.innerHeight };
+    },
+  );
+  expect(editorNameBounds.top).toBeGreaterThanOrEqual(0);
+  expect(editorNameBounds.bottom).toBeLessThanOrEqual(editorNameBounds.viewport);
 });
 
 test("weak track metadata falls back to its subject and deliberate no-artwork icon", async ({ page }) => {
@@ -185,12 +194,66 @@ test("weak track metadata falls back to its subject and deliberate no-artwork ic
   await expect(page.locator("#emptyCover")).toContainText("No artwork");
 });
 
-test("Polling is an activity state rather than an error state", async ({ page }) => {
+test("station polling is scoped instead of implying whole-product failure", async ({ page }) => {
   await page.route("**/api/station/events**", (route) => route.abort());
   await page.goto("/library");
-  await expect(page.locator("#connectionText")).toHaveText("Polling");
+  await expect(page.locator("#connectionText")).toHaveText(
+    "Station updates polling",
+  );
+  await expect(page.locator("#connection")).toHaveAttribute(
+    "aria-label",
+    /live station stream is reconnecting; station state is still refreshing/,
+  );
+  await expect(page.locator("#libraryCount")).toContainText("matching tracks");
   await expect(page.locator("#connectionDot")).toHaveClass(/is-polling/);
   await expect(page.locator("#connectionDot")).not.toHaveClass(/is-disconnected/);
+});
+
+test("unchanged station capability does not retrigger its live region", async ({ page }) => {
+  await page.goto("/");
+  const stableNodes = await page.evaluate(() => {
+    const label = document.querySelector("#stationCapabilityLabel");
+    const detail = document.querySelector("#stationCapabilityDetail");
+    const labelNode = label.firstChild;
+    const detailNode = detail.firstChild;
+    window.dispatchEvent(
+      new CustomEvent("zak-audio-owner", {
+        detail: { owner: window.ZakAudio.owner, label: window.ZakAudio.label },
+      }),
+    );
+    return {
+      label: label.firstChild === labelNode,
+      detail: detail.firstChild === detailNode,
+    };
+  });
+  expect(stableNodes).toEqual({ label: true, detail: true });
+});
+
+test("Library discovery precedes saved-station administration", async ({ page }) => {
+  await page.goto("/library");
+  await expect(page.locator("#libraryTracks")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const order = await page.evaluate(() => {
+    const tools = document.querySelector(".library-tools");
+    const tracks = document.querySelector("#libraryTracks");
+    const stations = document.querySelector("#stationManager");
+    return {
+      toolsBeforeTracks: Boolean(
+        tools.compareDocumentPosition(tracks) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+      tracksBeforeStations: Boolean(
+        tracks.compareDocumentPosition(stations) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+      tracksTop: tracks.getBoundingClientRect().top,
+      stationsTop: stations.getBoundingClientRect().top,
+    };
+  });
+  expect(order.toolsBeforeTracks).toBe(true);
+  expect(order.tracksBeforeStations).toBe(true);
+  expect(order.stationsTop).toBeGreaterThan(order.tracksTop);
 });
 
 test("timed lyrics follow radio playback, yield to scrolling, and seek the station", async ({ page }) => {
@@ -479,6 +542,210 @@ test("preview dock remains inside the viewport at the former sm breakpoint", asy
   const offRouteTime = await page.locator("#audio").evaluate((audio) => audio.currentTime);
   await expect.poll(() => page.locator("#audio").evaluate((audio) => audio.currentTime))
     .toBeGreaterThan(offRouteTime);
+});
+
+test("product identity and route semantics persist at every required width", async ({ page }) => {
+  for (const [width, height] of [
+    [1440, 1000],
+    [900, 900],
+    [390, 844],
+    [320, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    for (const [path, name] of [
+      ["/", "Radio"],
+      ["/library", "Library"],
+      ["/reader", "Reader"],
+    ]) {
+      await page.goto(path);
+      await expect(page.locator(".brand-mark")).toBeVisible();
+      await expect(page.locator(".brand-family")).toHaveText("Zakstak");
+      await expect(page.locator(".brand-title")).toBeVisible();
+      await expect(page.locator(".brand-title")).toHaveText("Zak Radio");
+      await expect(
+        page.getByRole("navigation", { name: "Zak Radio destinations" })
+          .getByRole("link", { name }),
+      ).toHaveAttribute("aria-current", "page");
+      await expect(page.locator("#connectionText")).toHaveText(
+        /Station updates (live|polling|reconnecting)/,
+      );
+      expect(await page.evaluate(() => ({
+        viewport: document.documentElement.clientWidth,
+        scroll: document.documentElement.scrollWidth,
+      }))).toEqual({ viewport: width, scroll: width });
+    }
+  }
+});
+
+test("phone navigation and station controls follow playback without becoming persistent chrome", async ({ page }) => {
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/");
+    await expect(page.locator("#stationStatus")).not.toHaveText("Connecting…");
+
+    const layout = await page.evaluate(() => {
+      const rail = document.querySelector(".app-rail");
+      const station = document.querySelector("#stationCard");
+      const transport = document.querySelector("#transport");
+      const visibleControls = [
+        ...rail.querySelectorAll(".primary-nav-link"),
+        ...station.querySelectorAll("#stationSelect, .station-action"),
+      ].filter((element) => {
+        const style = getComputedStyle(element);
+        return !element.hidden && style.display !== "none"
+          && element.getClientRects().length > 0;
+      });
+      return {
+        position: getComputedStyle(rail).position,
+        railHeight: rail.getBoundingClientRect().height,
+        identityRows: getComputedStyle(
+          rail.querySelector(".app-rail-inner"),
+        ).gridTemplateRows,
+        stationTop: station.getBoundingClientRect().top,
+        transportBottom: transport.getBoundingClientRect().bottom,
+        viewportWidth: document.documentElement.clientWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        controls: visibleControls.map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            height: rect.height,
+            left: rect.left,
+            right: rect.right,
+          };
+        }),
+      };
+    });
+
+    expect(layout.position).toBe("static");
+    expect(layout.identityRows.split(" ")[0]).toBe("56px");
+    expect(layout.stationTop).toBeGreaterThanOrEqual(layout.transportBottom);
+    expect(layout.documentScrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.controls.length).toBeGreaterThanOrEqual(5);
+    for (const control of layout.controls) {
+      expect(control.height).toBeGreaterThanOrEqual(44);
+      expect(control.left).toBeGreaterThanOrEqual(0);
+      expect(control.right).toBeLessThanOrEqual(layout.viewportWidth);
+    }
+
+    await page.evaluate((distance) => window.scrollTo(0, distance), layout.railHeight + 48);
+    await expect.poll(() => page.locator(".app-rail").evaluate(
+      (rail) => rail.getBoundingClientRect().bottom,
+    )).toBeLessThanOrEqual(0);
+  }
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await expect.poll(() => page.locator(".app-rail").evaluate(
+    (rail) => getComputedStyle(rail).position,
+  )).toBe("sticky");
+  await expect(page.locator(".app-rail")).toHaveCSS("height", "64px");
+});
+
+test("canonical control, focus, dialog, and mobile function geometry stays available", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto("/");
+  await expect(page.locator("#stationStatus")).not.toHaveText("Connecting…");
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(page.locator('[data-route="/"]')).toBeFocused();
+
+  for (const selector of [
+    "#playPause",
+    "#next",
+    "#like",
+    "#dislike",
+    "#download",
+    "#addCurrentToStation",
+    "#stationSelect",
+    "#createStation",
+    "#radioProgramming",
+    "#radioQueue",
+  ]) {
+    await expect(page.locator(selector)).toBeVisible();
+  }
+
+  const geometry = await page.evaluate(() => {
+    const control = document.querySelector("#createStation");
+    const select = document.querySelector("#stationSelect");
+    const route = document.querySelector('[data-route="/"]');
+    const root = getComputedStyle(document.documentElement);
+    const routeStyle = getComputedStyle(route);
+    return {
+      signal: root.getPropertyValue("--zs-signal").trim(),
+      readable: root.getPropertyValue("--zs-signal-readable").trim(),
+      controlHeight: control.getBoundingClientRect().height,
+      controlRadius: getComputedStyle(control).borderRadius,
+      selectHeight: select.getBoundingClientRect().height,
+      outlineColor: routeStyle.outlineColor,
+      outlineWidth: routeStyle.outlineWidth,
+      overflow: document.documentElement.scrollWidth
+        - document.documentElement.clientWidth,
+    };
+  });
+  expect(geometry).toEqual({
+    signal: "#8983e8",
+    readable: "#d7d3ff",
+    controlHeight: 44,
+    controlRadius: "2px",
+    selectHeight: 44,
+    outlineColor: "rgb(215, 211, 255)",
+    outlineWidth: "2px",
+    overflow: 0,
+  });
+
+  await page.locator("#addToStationDialog").evaluate((dialog) => {
+    dialog.showModal();
+  });
+  const dialog = page.locator("#addToStationDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeVisible();
+  const dialogBounds = await dialog.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      backdropFilter: getComputedStyle(element, "::backdrop").backdropFilter,
+    };
+  });
+  expect(dialogBounds.left).toBeGreaterThanOrEqual(16);
+  expect(dialogBounds.right).toBeLessThanOrEqual(304);
+  expect(dialogBounds.top).toBeGreaterThanOrEqual(16);
+  expect(dialogBounds.bottom).toBeLessThanOrEqual(828);
+  expect(dialogBounds.backdropFilter).toBe("none");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  await page.goto("/library");
+  for (const selector of [
+    "#createFilterStation",
+    "#createListStation",
+    "#librarySearch",
+    "#librarySort",
+    "[data-library-view='grid']",
+    "[data-library-filter='all']",
+    ".track-card-actions",
+  ]) {
+    await expect(page.locator(selector).first()).toBeVisible();
+  }
+  expect(await page.evaluate(() =>
+    document.documentElement.scrollWidth
+      - document.documentElement.clientWidth)).toBe(0);
+
+  await page.goto("/reader");
+  for (const selector of [
+    "#readerSearch",
+    "#readerSort",
+    "[data-reader-filter='all']",
+    "[data-reader-filter='ready']",
+    "[data-reader-filter='processing']",
+  ]) {
+    await expect(page.locator(selector)).toBeVisible();
+  }
+  expect(await page.evaluate(() =>
+    document.documentElement.scrollWidth
+      - document.documentElement.clientWidth)).toBe(0);
 });
 
 test("Reader announces filtering and clears current-item semantics in library mode", async ({ page }) => {
@@ -900,6 +1167,241 @@ test("Reader mobile header does not occlude focused segments", async ({ page }) 
   await expect(page.locator(".reader-head")).toHaveCSS("position", "static");
 });
 
+test("mobile audio owner stays compact and reserves its measured inset", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/reader");
+  const ownerBar = page.locator("#audioOwnerBar");
+  await expect(ownerBar).toBeVisible();
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
+  await expect(page.locator("#audioOwnerPlayPause")).toBeVisible();
+  await expect(page.locator("#returnLive")).toHaveAttribute(
+    "aria-label",
+    "Open Radio controls",
+  );
+  const geometry = await page.evaluate(() => {
+    const bar = document.querySelector("#audioOwnerBar");
+    const view = document.querySelector("#readerView");
+    const shell = document.querySelector(".app-shell");
+    const barRect = bar.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
+    return {
+      barHeight: barRect.height,
+      barBottom: barRect.bottom,
+      shellBottom: shellRect.bottom,
+      barTop: barRect.top,
+      viewPaddingBottom: Number.parseFloat(getComputedStyle(view).paddingBottom),
+      controlHeights: [...bar.querySelectorAll("button")].map(
+        (button) => button.getBoundingClientRect().height,
+      ),
+      viewportHeight: window.innerHeight,
+      viewportWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    };
+  });
+  expect(geometry.barHeight).toBeLessThanOrEqual(72);
+  expect(geometry.barBottom).toBeLessThanOrEqual(geometry.viewportHeight);
+  expect(geometry.shellBottom).toBeLessThanOrEqual(geometry.barTop);
+  expect(geometry.viewPaddingBottom).toBeGreaterThanOrEqual(
+    geometry.barHeight + 20,
+  );
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+  for (const height of geometry.controlHeights) {
+    expect(height).toBeGreaterThanOrEqual(44);
+  }
+});
+
+test("mobile audio-owner transitions preserve the active route scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/library");
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
+  await expect(page.locator("#libraryTracks")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect
+    .poll(() =>
+      page.locator(".app-shell").evaluate(
+        (shell) => shell.scrollHeight - shell.clientHeight,
+      ),
+    )
+    .toBeGreaterThan(500);
+  const initial = await page.evaluate(() => {
+    const shell = document.querySelector(".app-shell");
+    shell.scrollTo({ top: 420 });
+    return shell.scrollTop;
+  });
+  expect(initial).toBeGreaterThan(300);
+
+  await page.evaluate(() => {
+    window.ZakAudio.claim(
+      "library",
+      "/media/alpha/audio",
+      "Alpha Sunrise",
+    );
+  });
+  await expect(page.locator("body")).not.toHaveClass(/has-audio-owner/);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeCloseTo(
+    initial,
+    -1,
+  );
+
+  const windowPosition = await page.evaluate(() => {
+    window.scrollTo({ top: 520 });
+    return window.scrollY;
+  });
+  expect(windowPosition).toBeGreaterThan(400);
+  await page.evaluate(() => window.ZakAudio.returnLive(false));
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
+  await expect
+    .poll(() =>
+      page.locator(".app-shell").evaluate((shell) => shell.scrollTop),
+    )
+    .toBeCloseTo(windowPosition, -1);
+});
+
+test("audio-owner scroll survives crossing the mobile breakpoint", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/library");
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
+  await expect(page.locator("#libraryTracks")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const mobilePosition = await page.locator(".app-shell").evaluate((shell) => {
+    document.querySelector("#libraryView").style.minHeight = "3000px";
+    shell.scrollTo({ top: 420 });
+    return shell.scrollTop;
+  });
+  expect(mobilePosition).toBeGreaterThan(300);
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+
+  await page.setViewportSize({ width: 900, height: 844 });
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeCloseTo(mobilePosition, -1);
+
+  const desktopPosition = await page.evaluate(() => {
+    window.scrollTo({ top: 520 });
+    return window.scrollY;
+  });
+  expect(desktopPosition).toBeGreaterThan(400);
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      page.locator(".app-shell").evaluate((shell) => shell.scrollTop),
+    )
+    .toBeCloseTo(desktopPosition, -1);
+});
+
+test("Reader deferred restoration uses the active mobile scroller", async ({ page }) => {
+  const item = {
+    id: "reader-scroll",
+    title: "Long Reader Item",
+    source_url: "https://example.test/reader-scroll",
+    source_type: "html",
+    status: "ready",
+    voice: "fixture",
+    total_duration: 0,
+    segment_count: 20,
+    audio_bytes: 0,
+    uploaded_at: 1_700_000_000,
+  };
+  await page.route("**/api/reader/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/reader/items") {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ items: [item], next_offset: null }),
+      });
+    }
+    if (url.pathname === `/api/reader/items/${item.id}`) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ item }),
+      });
+    }
+    if (url.pathname.endsWith("/images")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ images: [] }),
+      });
+    }
+    if (url.pathname.endsWith("/segments")) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          segments: Array.from({ length: 20 }, (_, index) => ({
+            segment_index: index,
+            heading_path: [],
+            kind: "paragraph",
+            text: `Reader scroll fixture paragraph ${index}. `.repeat(12),
+            status: "ready",
+            duration: 0,
+            audio_bytes: 0,
+          })),
+          next_offset: null,
+        }),
+      });
+    }
+    if (
+      url.pathname === "/api/reader/playback" &&
+      route.request().method() === "GET"
+    ) {
+      return route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+    }
+    return route.fallback();
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/reader");
+  await expect(page.locator("body")).toHaveClass(/has-audio-owner/);
+  await page.evaluate(() => {
+    window.ZakPendingRouteScroll = [0, 420];
+  });
+  await page.locator(`[data-item-id="${item.id}"]`).click();
+  await expect(page.locator("#readerText")).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(() =>
+      page.locator(".app-shell").evaluate((shell) => shell.scrollTop),
+    )
+    .toBeGreaterThan(350);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});
+
+test("Space toggles owner-control disclosure without controlling playback", async ({ page }) => {
+  let controlRequests = 0;
+  page.on("request", (request) => {
+    if (
+      new URL(request.url()).pathname === "/api/control" &&
+      request.method() === "POST"
+    ) {
+      controlRequests++;
+    }
+  });
+  await page.goto("/");
+  const disclosure = page.locator("#radioOwnerControls");
+  const summary = disclosure.locator("summary");
+  await expect(disclosure).toHaveAttribute("open", "");
+  await summary.focus();
+  await page.keyboard.press("Space");
+  await expect(disclosure).not.toHaveAttribute("open", "");
+  expect(controlRequests).toBe(0);
+});
+
 test("slash shortcut is scoped to Library", async ({ page }) => {
   await page.goto("/reader");
   const readerCanceled = await page.locator("#readerLibraryTitle").evaluate((heading) => {
@@ -1063,10 +1565,53 @@ test("rejected private-station token converges to listen-only", async ({ page })
   await expect(page.locator("#stationAccess")).toContainText("Only this browser");
   await page.getByRole("button", { name: "Play", exact: true }).click();
   await expect(page.locator("#stationAccess")).toContainText("Listen-only");
+  await expect(page.locator("#radioView")).toHaveClass(/is-listen-only/);
+  await expect(page.locator("#stationCapabilityLabel")).toHaveText(
+    "Listen-only private station",
+  );
+  await expect(page.locator("#stationCapabilityDetail")).toContainText(
+    "Join live, follow lyrics, react, and download",
+  );
   await expect(page.locator("#next")).toBeDisabled();
+  await expect(page.locator("#next")).toBeVisible();
+  await expect(page.locator("#like")).toBeEnabled();
+  await expect(page.locator("#download")).toBeVisible();
   expect(await page.evaluate(
     (id) => localStorage.getItem(`zak-radio-owner:${id}`), station.station_id,
   )).toBeNull();
+});
+
+test("listen-only saved stations put owner programming behind a capability boundary", async ({ page }) => {
+  const created = await page.request.post("/api/stations", {
+    data: {
+      idempotency_key: "abcdefabcdefabcdefabcdefabcdefab",
+      owner_token: "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdef",
+      name: "Listener deck",
+      source_type: "filter",
+      filter_mode: "all",
+      filter_query: "",
+      random_mode: "deck",
+      skip_disliked: false,
+      track_ids: [],
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const station = await created.json();
+  await page.goto(`/?station=${station.station_id}`);
+  await expect(page.locator("#stationCapabilityLabel")).toHaveText(
+    "Listen-only saved station",
+  );
+  await expect(page.locator("#radioOwnerControls")).toBeVisible();
+  await expect(page.locator("#radioOwnerControls")).not.toHaveAttribute("open");
+  await expect(page.locator("#radioOwnerControlsSummary")).toHaveText(
+    "Station owner controls these settings",
+  );
+  await expect(page.locator("#radioProgramming")).toBeHidden();
+  await expect(
+    page.locator('#stationRandomMode input[value="deck"]'),
+  ).toBeDisabled();
+  await expect(page.locator("#like")).toBeEnabled();
+  await expect(page.locator("#download")).toBeVisible();
 });
 
 test("catalog replacement updates the active Library preview identity", async ({ page }) => {

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Zak Radio by Zakstak</title>
+  <desc id="desc">A signal crossbar passes behind a letter Z resting over three separated layers.</desc>
+  <rect width="128" height="128" fill="#080a0c"/>
+  <g fill-rule="evenodd" stroke="#080a0c" stroke-linejoin="bevel" stroke-width="2">
+    <path fill="#504c77" d="M49 86h46L83 100H26L39 86z"/>
+    <path fill="#67639e" d="M46 77h46L80 91H23L36 77z"/>
+  </g>
+  <path fill="#8983e8" d="M31 50h63v10H31z"/>
+  <path fill="#d8d4e2" d="M25 23h79L91 38H68L42 68h47L77 82H20l13-14 26-30H25z"/>
+</svg>

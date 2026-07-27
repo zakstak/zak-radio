@@ -707,7 +707,7 @@
     const target = pending || fallback;
     if (!target) return;
     const apply = () =>
-      window.scrollTo({
+      (window.ZakRouteScroll?.to || window.scrollTo)({
         left: Number(target[0]) || 0,
         top: Number(target[1]) || 0,
         behavior: "instant",
@@ -1350,7 +1350,7 @@
     url.searchParams.delete("item");
     history.pushState({ scroll: [0, 0] }, "", url);
     renderLibrary();
-    window.scrollTo({ top: 0 });
+    (window.ZakRouteScroll?.to || window.scrollTo)({ top: 0 });
     els.libraryTitle.focus({ preventScroll: true });
   };
 

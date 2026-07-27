@@ -175,7 +175,11 @@
     return `${labels[state.filter] || "Library filter"}${query ? ` matching “${query}”` : ""}`;
   }
 
-  function beginStationEditor(sourceType, definition = null) {
+  function beginStationEditor(
+    sourceType,
+    definition = null,
+    { reveal = false } = {},
+  ) {
     state.editingStation = definition
       ? { ...definition, track_ids: [...(definition.track_ids || [])] }
       : null;
@@ -204,7 +208,12 @@
           : `Live filter: ${currentFilterDescription()}. New matching songs join automatically.`;
     }
     renderEditorMembers();
-    els.stationEditorName.focus({ preventScroll: true });
+    const focusEditor = () => {
+      els.stationEditorName.scrollIntoView({ block: "center" });
+      els.stationEditorName.focus({ preventScroll: true });
+    };
+    if (reveal) window.requestAnimationFrame(focusEditor);
+    else focusEditor();
   }
 
   function renderEditorMembers() {
@@ -800,10 +809,10 @@
   window.addEventListener("zak-station", updateStationTarget);
   window.addEventListener("zak-stations", renderSavedStations);
   window.addEventListener("zak-new-station", () =>
-    beginStationEditor("filter"),
+    beginStationEditor("filter", null, { reveal: true }),
   );
   window.addEventListener("zak-new-list-station", () =>
-    beginStationEditor("list"),
+    beginStationEditor("list", null, { reveal: true }),
   );
   els.createFilterStation.addEventListener("click", () =>
     beginStationEditor("filter"),
