@@ -221,6 +221,10 @@
     @apply bg-radio-fg text-radio-bg;
   }
 
+  .icon-button.is-confirming {
+    @apply bg-radio-soft text-radio-accent outline outline-2 outline-offset-2 outline-radio-accent;
+  }
+
   .play-button {
     @apply grid size-[58px] min-w-[58px] cursor-pointer place-items-center rounded-full border-0 bg-radio-accent text-radio-bg transition-colors hover:bg-[#d7d3ff];
   }

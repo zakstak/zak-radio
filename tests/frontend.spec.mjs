@@ -167,6 +167,60 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   expect(editorNameBounds.bottom).toBeLessThanOrEqual(editorNameBounds.viewport);
 });
 
+test("shared radio skips require an explicit second tap", async ({ page }) => {
+  const controls = [];
+  await page.route("**/api/control", async (route) => {
+    controls.push(route.request().postDataJSON());
+    await route.continue();
+  });
+  await page.goto("/");
+  const next = page.locator("#next");
+
+  await next.click();
+  expect(controls).toEqual([]);
+  await expect(next).toHaveAttribute(
+    "aria-label",
+    "Confirm skip for everyone",
+  );
+  await expect(page.locator("#toast")).toContainText(
+    "skip this song for everyone listening",
+  );
+
+  await next.click();
+  await expect.poll(() => controls.length).toBe(1);
+  expect(controls[0].action).toBe("next");
+  await expect(next).toHaveAttribute("aria-label", "Next track");
+});
+
+test("radio refreshes and resynchronizes as soon as connectivity returns", async ({ page }) => {
+  const authoritative = await (await page.request.get("/api/station")).json();
+  authoritative.playing = true;
+  authoritative.position = 0;
+  authoritative.server_time = Date.now() / 1000;
+  let stationRequests = 0;
+  await page.route("**/api/station?*", async (route) => {
+    stationRequests++;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        ...authoritative,
+        server_time: Date.now() / 1000,
+      }),
+    });
+  });
+  await page.route("**/api/station/events?*", async (route) => {
+    await route.fulfill({ status: 500, body: "offline" });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Join live", exact: true }).click();
+  const beforeRecovery = stationRequests;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect.poll(() => stationRequests).toBeGreaterThan(beforeRecovery);
+  await expect(page.locator("#audio")).toHaveAttribute("preload", "auto");
+  await expect(page.locator("#audio")).toHaveAttribute("playsinline", "");
+});
+
 test("weak track metadata falls back to its subject and deliberate no-artwork icon", async ({ page }) => {
   const original = await (await page.request.get("/api/tracks")).json();
   const weakTrack = {

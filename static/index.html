@@ -17,7 +17,7 @@ FORM: The established Radio composition with Zakstak identity and product tokens
     />
     <title>Zak Radio</title>
     <link rel="icon" type="image/svg+xml" href="/static/zakstak-mark.svg" />
-    <link rel="stylesheet" href="/static/styles.css?v=20" />
+    <link rel="stylesheet" href="/static/styles.css?v=21" />
   </head>
   <body>
     <a id="skipToContent" class="skip-link" href="#title">Skip to content</a>
@@ -192,7 +192,7 @@ FORM: The established Radio composition with Zakstak identity and product tokens
               <button
                 id="next"
                 class="icon-button"
-                title="Next track"
+                title="Next track; shared stations require confirmation"
                 aria-label="Next track"
                 disabled
               >
@@ -892,7 +892,7 @@ FORM: The established Radio composition with Zakstak identity and product tokens
       </section>
     </main>
 
-    <audio id="audio" preload="metadata"></audio>
+    <audio id="audio" preload="auto" playsinline></audio>
     <aside
       id="audioOwnerBar"
       class="audio-owner-bar"
@@ -927,7 +927,7 @@ FORM: The established Radio composition with Zakstak identity and product tokens
     ></div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script src="/static/platform.js?v=1"></script>
-    <script src="/static/app.js?v=34"></script>
+    <script src="/static/app.js?v=35"></script>
     <script src="/static/library.js?v=25"></script>
     <script src="/static/reader.js?v=28"></script>
   </body>

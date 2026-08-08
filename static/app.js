@@ -18,6 +18,11 @@ const state = {
   stationRequestInFlight: null,
   localPlaybackBlocked: false,
   localRadioSuspended: false,
+  playbackRecoveryTimer: 0,
+  playbackRecoveryAttempt: 0,
+  playbackRecoveryInFlight: false,
+  sharedSkipArmedUntil: 0,
+  sharedSkipTimer: 0,
   pollTimer: 0,
   controlQueue: Promise.resolve(),
   controlGeneration: 0,
@@ -129,6 +134,8 @@ let toastType = "";
 let scrollStateTimer = 0;
 let ownerAnnouncement = "Audio stopped";
 let ownerBarResizeObserver = null;
+
+const sharedSkipConfirmationMS = 4000;
 
 function setText(element, value) {
   if (element.textContent !== value) element.textContent = value;
@@ -814,6 +821,52 @@ function reportAudioError(error) {
   }
 }
 
+function radioShouldBeAudible() {
+  return Boolean(
+    audioController.is("radio") &&
+      state.station?.playing &&
+      state.userActivatedAudio &&
+      !state.localRadioSuspended,
+  );
+}
+
+function clearPlaybackRecovery(resetAttempt = true) {
+  window.clearTimeout(state.playbackRecoveryTimer);
+  state.playbackRecoveryTimer = 0;
+  if (resetAttempt) state.playbackRecoveryAttempt = 0;
+}
+
+function schedulePlaybackRecovery(delay = 0) {
+  if (!radioShouldBeAudible() || navigator.onLine === false) return;
+  window.clearTimeout(state.playbackRecoveryTimer);
+  state.playbackRecoveryTimer = window.setTimeout(() => {
+    state.playbackRecoveryTimer = 0;
+    void recoverRadioPlayback();
+  }, Math.max(0, delay));
+}
+
+async function recoverRadioPlayback() {
+  if (state.playbackRecoveryInFlight || !radioShouldBeAudible()) return;
+  state.playbackRecoveryInFlight = true;
+  try {
+    await refreshStation(true);
+    if (!radioShouldBeAudible()) return;
+    audioController.reloadIfFailed();
+    await syncAudioToStation();
+    if (!els.audio.paused && !els.audio.error) {
+      clearPlaybackRecovery();
+      return;
+    }
+    const delay = Math.min(
+      30_000,
+      750 * 2 ** state.playbackRecoveryAttempt++,
+    );
+    schedulePlaybackRecovery(delay);
+  } finally {
+    state.playbackRecoveryInFlight = false;
+  }
+}
+
 function durationOf(track) {
   const n = Number(track?.duration);
   return Number.isFinite(n) && n > 0 ? n : 0;
@@ -994,6 +1047,7 @@ function setConnected(connected) {
 }
 
 function setStationLoading() {
+  resetSharedSkipConfirmation();
   if (audioController.is("radio")) {
     audioController.clear("radio");
     state.localRadioSuspended = false;
@@ -1318,6 +1372,7 @@ function updateLyricsOverflow() {
 function renderTrack(track) {
   if (!track) return;
   const changed = state.current?.id !== track.id;
+  if (changed) resetSharedSkipConfirmation();
   const displayTitle = trackDisplayTitle(track);
   state.current = track;
   els.title.textContent = displayTitle;
@@ -1361,6 +1416,42 @@ function renderTrack(track) {
     els.nowPlayingAnnouncement.textContent = `Now playing ${displayTitle}`;
   }
   updateNowPlayingMetadata();
+}
+
+function resetSharedSkipConfirmation() {
+  state.sharedSkipArmedUntil = 0;
+  window.clearTimeout(state.sharedSkipTimer);
+  state.sharedSkipTimer = 0;
+  els.next.classList.remove("is-confirming");
+  els.next.title = "Next track";
+  els.next.setAttribute("aria-label", "Next track");
+  dismissToast("shared-skip");
+}
+
+function requestNextTrack() {
+  if (!state.station?.saved) {
+    void postControl("next");
+    return;
+  }
+  const now = performance.now();
+  if (now <= state.sharedSkipArmedUntil) {
+    resetSharedSkipConfirmation();
+    void postControl("next");
+    return;
+  }
+  state.sharedSkipArmedUntil = now + sharedSkipConfirmationMS;
+  els.next.classList.add("is-confirming");
+  els.next.title = "Tap again to skip for everyone";
+  els.next.setAttribute("aria-label", "Confirm skip for everyone");
+  showToast("Tap Next again to skip this song for everyone listening.", {
+    priority: 5,
+    duration: sharedSkipConfirmationMS,
+    type: "shared-skip",
+  });
+  state.sharedSkipTimer = window.setTimeout(
+    resetSharedSkipConfirmation,
+    sharedSkipConfirmationMS,
+  );
 }
 
 function renderStation() {
@@ -2178,7 +2269,7 @@ els.forward10.addEventListener("click", () =>
   postControl("relative_seek", { position: 10 }),
 );
 els.prev.addEventListener("click", () => postControl("prev"));
-els.next.addEventListener("click", () => postControl("next"));
+els.next.addEventListener("click", requestNextTrack);
 els.random.addEventListener("click", toggleShuffle);
 els.repeatOne.addEventListener("click", toggleRepeatOne);
 els.like.addEventListener("click", () => addReaction("like"));
@@ -2411,8 +2502,12 @@ els.radioRetry.addEventListener("click", async () => {
     els.radioRetry.disabled = false;
   }
 });
-els.audio.addEventListener("error", () => reportAudioError(els.audio.error));
+els.audio.addEventListener("error", () => {
+  reportAudioError(els.audio.error);
+  schedulePlaybackRecovery(750);
+});
 els.audio.addEventListener("play", () => {
+  clearPlaybackRecovery();
   dismissToast("audio-error");
   if (audioController.is("radio")) renderStation();
   updateNowPlayingMetadata();
@@ -2422,7 +2517,12 @@ els.audio.addEventListener("pause", () => {
   if (audioController.is("radio")) renderStation();
   updateNowPlayingMetadata();
   renderOwnerBar();
+  if (radioShouldBeAudible()) schedulePlaybackRecovery(1500);
 });
+els.audio.addEventListener("playing", () => clearPlaybackRecovery());
+els.audio.addEventListener("canplay", () => clearPlaybackRecovery());
+els.audio.addEventListener("waiting", () => schedulePlaybackRecovery(2500));
+els.audio.addEventListener("stalled", () => schedulePlaybackRecovery(1000));
 if ("mediaSession" in navigator) {
   try {
     navigator.mediaSession.setActionHandler("play", async () => {
@@ -2481,6 +2581,7 @@ if ("mediaSession" in navigator) {
 window.addEventListener("zak-audio-owner", renderStation);
 els.audio.addEventListener("timeupdate", () => {
   if (audioController.is("radio")) {
+    if (!els.audio.paused) clearPlaybackRecovery();
     updateProgressFromAudio();
     updateSyncedLyrics();
   }
@@ -2497,7 +2598,13 @@ els.audio.addEventListener("ended", () => {
   // Track boundaries are server-authoritative. Every listener receives the
   // resulting revision through SSE; refresh immediately as a degraded-path
   // fallback when the stream is temporarily unavailable.
-  refreshStation();
+  schedulePlaybackRecovery(0);
+});
+
+window.addEventListener("online", () => schedulePlaybackRecovery(0));
+window.addEventListener("pageshow", () => schedulePlaybackRecovery(0));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") schedulePlaybackRecovery(0);
 });
 els.progress.addEventListener("input", () => {
   state.syncingProgress = true;
