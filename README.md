@@ -98,8 +98,8 @@ manifest="$(scripts/prepare-kiln-package.sh)"
 For a routed package, use the exact hostnames and the exact Kiln ingress peer:
 
 ```bash
-route_hosts="music-314a5651.home.zakstak.com,zak-radio-c4c4cc7a.home.zakstak.com"
-route_origins="https://music-314a5651.home.zakstak.com,https://zak-radio-c4c4cc7a.home.zakstak.com"
+route_hosts="music.home.zakstak.com"
+route_origins="https://music.home.zakstak.com"
 ingress_ips="<exact-Kiln-ingress-IP-or-dedicated-small-CIDR>"
 
 manifest="$(scripts/prepare-kiln-package.sh \

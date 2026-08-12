@@ -167,7 +167,7 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   expect(editorNameBounds.bottom).toBeLessThanOrEqual(editorNameBounds.viewport);
 });
 
-test("shared radio skips require an explicit second tap", async ({ page }) => {
+test("shared radio skips on the first tap", async ({ page }) => {
   const controls = [];
   await page.route("**/api/control", async (route) => {
     controls.push(route.request().postDataJSON());
@@ -175,16 +175,6 @@ test("shared radio skips require an explicit second tap", async ({ page }) => {
   });
   await page.goto("/");
   const next = page.locator("#next");
-
-  await next.click();
-  expect(controls).toEqual([]);
-  await expect(next).toHaveAttribute(
-    "aria-label",
-    "Confirm skip for everyone",
-  );
-  await expect(page.locator("#toast")).toContainText(
-    "skip this song for everyone listening",
-  );
 
   await next.click();
   await expect.poll(() => controls.length).toBe(1);

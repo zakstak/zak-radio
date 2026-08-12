@@ -21,8 +21,6 @@ const state = {
   playbackRecoveryTimer: 0,
   playbackRecoveryAttempt: 0,
   playbackRecoveryInFlight: false,
-  sharedSkipArmedUntil: 0,
-  sharedSkipTimer: 0,
   pollTimer: 0,
   controlQueue: Promise.resolve(),
   controlGeneration: 0,
@@ -134,8 +132,6 @@ let toastType = "";
 let scrollStateTimer = 0;
 let ownerAnnouncement = "Audio stopped";
 let ownerBarResizeObserver = null;
-
-const sharedSkipConfirmationMS = 4000;
 
 function setText(element, value) {
   if (element.textContent !== value) element.textContent = value;
@@ -1047,7 +1043,6 @@ function setConnected(connected) {
 }
 
 function setStationLoading() {
-  resetSharedSkipConfirmation();
   if (audioController.is("radio")) {
     audioController.clear("radio");
     state.localRadioSuspended = false;
@@ -1372,7 +1367,6 @@ function updateLyricsOverflow() {
 function renderTrack(track) {
   if (!track) return;
   const changed = state.current?.id !== track.id;
-  if (changed) resetSharedSkipConfirmation();
   const displayTitle = trackDisplayTitle(track);
   state.current = track;
   els.title.textContent = displayTitle;
@@ -1418,40 +1412,8 @@ function renderTrack(track) {
   updateNowPlayingMetadata();
 }
 
-function resetSharedSkipConfirmation() {
-  state.sharedSkipArmedUntil = 0;
-  window.clearTimeout(state.sharedSkipTimer);
-  state.sharedSkipTimer = 0;
-  els.next.classList.remove("is-confirming");
-  els.next.title = "Next track";
-  els.next.setAttribute("aria-label", "Next track");
-  dismissToast("shared-skip");
-}
-
 function requestNextTrack() {
-  if (!state.station?.saved) {
-    void postControl("next");
-    return;
-  }
-  const now = performance.now();
-  if (now <= state.sharedSkipArmedUntil) {
-    resetSharedSkipConfirmation();
-    void postControl("next");
-    return;
-  }
-  state.sharedSkipArmedUntil = now + sharedSkipConfirmationMS;
-  els.next.classList.add("is-confirming");
-  els.next.title = "Tap again to skip for everyone";
-  els.next.setAttribute("aria-label", "Confirm skip for everyone");
-  showToast("Tap Next again to skip this song for everyone listening.", {
-    priority: 5,
-    duration: sharedSkipConfirmationMS,
-    type: "shared-skip",
-  });
-  state.sharedSkipTimer = window.setTimeout(
-    resetSharedSkipConfirmation,
-    sharedSkipConfirmationMS,
-  );
+  void postControl("next");
 }
 
 function renderStation() {
