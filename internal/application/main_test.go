@@ -776,6 +776,40 @@ func TestPlayerUsesSinglePlayPauseAndRepeatControls(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := string(page)
+	signalStack, err := os.ReadFile(filepath.Join("static", "signal-stack.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceSwitcher, err := os.ReadFile(filepath.Join("static", "service-switcher.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{
+		`data-zs-theme="radio"`,
+		`href="/static/signal-stack.css?v=2"`,
+		`app-rail zs-product-bar`,
+		`primary-nav zs-nav`,
+		`data-zs-service-switcher`,
+		`data-current-service="zak-radio"`,
+		`src="/static/service-switcher.js"`,
+	} {
+		if !strings.Contains(html, marker) {
+			t.Fatalf("index.html is missing shared chrome marker %s", marker)
+		}
+	}
+	if !strings.Contains(string(signalStack), "Zakstak Signal Stack CSS 2.1.0") ||
+		!strings.Contains(string(signalStack), "--zs-signal: #8983e8") {
+		t.Fatal("vendored Signal Stack CSS is missing the Radio pack")
+	}
+	for _, marker := range []string{
+		"https://services.home.zakstak.com/v1/services.json",
+		`credentials: "omit"`,
+		`root.dataset.directoryState = "fallback"`,
+	} {
+		if !strings.Contains(string(serviceSwitcher), marker) {
+			t.Fatalf("service switcher is missing %q", marker)
+		}
+	}
 	for _, id := range []string{`id="playPause"`, `id="repeatOne"`} {
 		if !strings.Contains(html, id) {
 			t.Fatalf("index.html is missing %s", id)
@@ -826,6 +860,9 @@ func TestTailwindV4BuildConfigured(t *testing.T) {
 	}
 	if !strings.Contains(string(source), "@apply") {
 		t.Fatal("Tailwind source is missing the component layer")
+	}
+	if strings.Contains(string(source), "--zs-canvas:") || strings.Contains(string(source), "--zs-signal:") {
+		t.Fatal("Radio source duplicates canonical Signal Stack tokens")
 	}
 	for _, contentSource := range []string{`@source "./index.html"`, `@source "./app.js"`, `@source "./library.js"`, `@source "./reader.js"`} {
 		if !strings.Contains(string(source), contentSource) {

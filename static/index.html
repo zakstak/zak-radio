@@ -6,7 +6,7 @@ FIRST VIEWPORT: Current artwork and track identity lead; live transport and boun
 FORM: The established Radio composition with Zakstak identity and product tokens. Existing route, audio, station, queue, preview, lyric, reaction, download, and Reader hooks remain unchanged.
 -->
 <!doctype html>
-<html lang="en">
+<html lang="en" data-zs-theme="radio">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -18,43 +18,109 @@ FORM: The established Radio composition with Zakstak identity and product tokens
     <title>Zak Radio</title>
     <link rel="icon" type="image/svg+xml" href="/static/zakstak-mark.svg" />
     <link rel="stylesheet" href="/static/styles.css?v=21" />
+    <link rel="stylesheet" href="/static/signal-stack.css?v=2" />
+    <script type="module" src="/static/service-switcher.js"></script>
   </head>
   <body>
-    <a id="skipToContent" class="skip-link" href="#title">Skip to content</a>
+    <a id="skipToContent" class="skip-link zs-skip-link" href="#title"
+      >Skip to content</a
+    >
     <main class="app-shell">
-      <header class="app-rail" aria-label="Application navigation">
-        <div class="app-rail-inner">
-          <div class="brand">
-            <div class="brand-mark" aria-hidden="true">
+      <header
+        class="app-rail zs-product-bar"
+        aria-label="Application navigation"
+      >
+        <div class="app-rail-inner zs-product-bar__inner">
+          <div class="brand zs-brand">
+            <div class="brand-mark zs-brand__mark" aria-hidden="true">
               <img src="/static/zakstak-mark.svg" alt="" />
             </div>
-            <div class="brand-copy">
-              <span class="brand-family">Zakstak</span>
-              <div class="brand-product">
-                <h1 class="brand-title">Zak Radio</h1>
+            <div class="brand-copy zs-brand__copy">
+              <span class="brand-family zs-brand__family">Zakstak</span>
+              <div class="brand-product zs-brand__line">
+                <h1 class="brand-title zs-brand__name">Zak Radio</h1>
                 <span class="brand-separator" aria-hidden="true">·</span>
-                <p id="shellContext" class="brand-subtitle">Shared listening</p>
+                <p id="shellContext" class="brand-subtitle zs-brand__role">
+                  Shared listening
+                </p>
               </div>
             </div>
           </div>
-          <nav class="primary-nav" aria-label="Zak Radio destinations">
-            <a class="primary-nav-link" data-route="/" href="/">Radio</a>
-            <a class="primary-nav-link" data-route="/library" href="/library"
+          <nav class="primary-nav zs-nav" aria-label="Zak Radio destinations">
+            <a class="primary-nav-link zs-nav__item" data-route="/" href="/"
+              >Radio</a
+            >
+            <a
+              class="primary-nav-link zs-nav__item"
+              data-route="/library"
+              href="/library"
               >Library</a
             >
-            <a class="primary-nav-link" data-route="/reader" href="/reader"
+            <a
+              class="primary-nav-link zs-nav__item"
+              data-route="/reader"
+              href="/reader"
               >Reader</a
             >
           </nav>
-          <div
-            id="connection"
-            class="connection"
-            title="Station connection"
-            role="status"
-            aria-live="polite"
-          >
-            <span id="connectionDot" class="connection-dot"></span>
-            <span id="connectionText">Station updates connecting</span>
+          <div class="product-context zs-context">
+            <div
+              id="connection"
+              class="connection"
+              title="Station connection"
+              role="status"
+              aria-live="polite"
+            >
+              <span id="connectionDot" class="connection-dot"></span>
+              <span id="connectionText">Station updates connecting</span>
+            </div>
+            <details
+              class="zs-service-switcher"
+              data-zs-service-switcher
+              data-current-service="zak-radio"
+            >
+              <summary>
+                Services
+                <svg
+                  class="zs-service-switcher__chevron"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path d="m4 6 4 4 4-4"></path>
+                </svg>
+              </summary>
+              <div class="zs-service-switcher__panel">
+                <header class="zs-service-switcher__header">
+                  <span>Zakstak</span><strong>Services</strong>
+                </header>
+                <p class="zs-service-switcher__intro">
+                  Move directly between private tools and product surfaces.
+                </p>
+                <nav
+                  class="zs-service-switcher__list"
+                  data-zs-service-list
+                  aria-label="Zakstak services"
+                >
+                  <a
+                    class="zs-service-switcher__link"
+                    href="https://fleet.home.zakstak.com/"
+                  >
+                    <span class="zs-service-switcher__identity"
+                      ><strong>Saga Fleet</strong
+                      ><small>Service directory fallback</small></span
+                    >
+                    <span class="zs-service-switcher__route">Directory</span>
+                  </a>
+                </nav>
+                <p
+                  class="zs-service-switcher__status"
+                  data-zs-service-status
+                  aria-live="polite"
+                >
+                  Loading central directory…
+                </p>
+              </div>
+            </details>
           </div>
         </div>
       </header>
@@ -62,7 +128,7 @@ FORM: The established Radio composition with Zakstak identity and product tokens
       <section id="radioView" class="radio-stage view-panel" data-view="/">
         <div class="now-playing">
           <div class="cover-frame">
-            <img id="cover" class="cover-image" alt="" />
+            <img id="cover" class="cover-image hidden" alt="" />
             <div
               id="emptyCover"
               class="cover-fallback hidden"
