@@ -11,7 +11,7 @@ in this repository are the product source of truth. See
 
 ## Run locally
 
-Install Go 1.26+ and Node 24+, then point the service at a complete data root:
+Install Go 1.26.8+ and Node 24+, then point the service at a complete data root:
 
 ```bash
 npm ci
