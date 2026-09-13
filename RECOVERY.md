@@ -54,7 +54,7 @@ transactions or be combined with stale `-wal`/`-shm` files.
 ## Quiesced volume backup
 
 Run the maintenance commands on a Linux operator host with this repository, Go
-1.26+, Python 3, `bash`, `sqlite3`, `rsync`, GNU `tar`, GNU `sha256sum`, and
+1.26.8+, Python 3, `bash`, `sqlite3`, `rsync`, GNU `tar`, GNU `sha256sum`, and
 Linux `flock` installed. The scratch application container intentionally
 contains none of those administration tools. Rootful ownership provisioning
 additionally requires util-linux (`setpriv`).
