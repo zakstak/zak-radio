@@ -1376,3 +1376,45 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Product composition: Ballast's compact header, without changing vendor tokens. */
+.app-rail.zs-product-bar { height: 56px; position: sticky; top: 0; background: var(--zs-canvas); }
+.app-rail.zs-product-bar .app-rail-inner {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: 56px; min-height: 56px; gap: 16px; padding-inline: 24px;
+}
+.app-rail.zs-product-bar .brand { gap: 8px; }
+.app-rail.zs-product-bar .brand-mark { width: 24px; min-width: 24px; height: 24px; }
+.app-rail.zs-product-bar .brand-mark img { width: 24px; height: 24px; }
+.app-rail.zs-product-bar .brand-family,
+.app-rail.zs-product-bar .brand-separator,
+.app-rail.zs-product-bar .brand-subtitle { display: none; }
+.app-rail.zs-product-bar .brand-title { font-size: 14px; }
+.app-rail.zs-product-bar .primary-nav {
+  grid-column: 2; grid-row: 1; min-width: 0; min-height: 44px;
+  display: flex; justify-content: center; border: 0; gap: 4px;
+}
+.app-rail.zs-product-bar .primary-nav-link { min-height: 44px; padding-inline: 12px; }
+.app-rail.zs-product-bar .product-context { grid-column: 3; grid-row: 1; }
+.app-rail.zs-product-bar .zs-service-switcher > summary { min-height: 44px; }
+.app-rail.zs-product-bar .zs-service-switcher__panel { top: 52px; }
+@media (max-width: 650px) {
+  .app-rail.zs-product-bar { height: 52px; }
+  .app-rail.zs-product-bar .app-rail-inner {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    grid-template-rows: 52px; min-height: 52px; gap: 4px; padding-inline: 12px;
+  }
+  .app-rail.zs-product-bar .brand { width: 44px; min-height: 44px; justify-content: center; }
+  .app-rail.zs-product-bar .brand-copy,
+  .app-rail.zs-product-bar #connection {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip-path: inset(50%); white-space: nowrap;
+  }
+  .app-rail.zs-product-bar .primary-nav { gap: 0; }
+  .app-rail.zs-product-bar .primary-nav-link { flex: 1; padding-inline: 4px; font-size: 12px; }
+  .app-rail.zs-product-bar .product-context { display: flex; width: 44px; gap: 0; }
+  .app-rail.zs-product-bar #connection { display: flex; }
+  .app-rail.zs-product-bar .zs-service-switcher > summary { width: 44px; padding: 0; justify-content: center; }
+  .app-rail.zs-product-bar .zs-service-switcher__chevron { display: none; }
+  .app-rail.zs-product-bar .zs-service-switcher__panel { top: 48px; }
+}

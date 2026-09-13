@@ -621,7 +621,7 @@ test("product identity and route semantics persist at every required width", asy
   }
 });
 
-test("phone navigation and station controls follow playback without becoming persistent chrome", async ({ page }) => {
+test("compact phone navigation keeps station controls accessible", async ({ page }) => {
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/");
@@ -660,8 +660,8 @@ test("phone navigation and station controls follow playback without becoming per
       };
     });
 
-    expect(layout.position).toBe("static");
-    expect(layout.identityRows.split(" ")[0]).toBe("56px");
+    expect(layout.position).toBe("sticky");
+    expect(layout.railHeight).toBe(52);
     expect(layout.stationTop).toBeGreaterThanOrEqual(layout.transportBottom);
     expect(layout.documentScrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
     expect(layout.controls.length).toBeGreaterThanOrEqual(5);
@@ -674,7 +674,7 @@ test("phone navigation and station controls follow playback without becoming per
     await page.evaluate((distance) => window.scrollTo(0, distance), layout.railHeight + 48);
     await expect.poll(() => page.locator(".app-rail").evaluate(
       (rail) => rail.getBoundingClientRect().bottom,
-    )).toBeLessThanOrEqual(0);
+    )).toBeGreaterThan(0);
   }
 
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -682,7 +682,7 @@ test("phone navigation and station controls follow playback without becoming per
   await expect.poll(() => page.locator(".app-rail").evaluate(
     (rail) => getComputedStyle(rail).position,
   )).toBe("sticky");
-  await expect(page.locator(".app-rail")).toHaveCSS("height", "64px");
+  await expect(page.locator(".app-rail")).toHaveCSS("height", "56px");
 });
 
 test("canonical control, focus, dialog, and mobile function geometry stays available", async ({ page }) => {
