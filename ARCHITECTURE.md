@@ -30,7 +30,7 @@ while `library.js` and `reader.js` own their respective views.
 The release may also carry an immutable timed-lyrics directory. Its sidecars are
 audio-digest-bound, schema-validated during startup, and digest-verified again
 when served. `subjects.json` in the same directory can replace only weak
-imported display titles. Neither artifact modifies the recovered archive or the
+imported display titles. Neither artifact modifies the media archive or the
 retained database.
 
 The retained-volume contract is product-owned and provider-neutral. The current

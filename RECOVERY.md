@@ -1,9 +1,11 @@
 # Data recovery and rollback
 
 Production state lives in the Kiln retained volume mounted at `/data/zak-radio`.
-The source was originally recovered on 2026-07-16 from the disabled Zak Radio
-runtime on `saga-runtime-v2`; no media, database, credential, or environment
-data is stored in this repository.
+Media, databases, credentials, and environment data are not stored in this
+repository. Current Kiln containers use rootless namespace UID 0; the explicit
+UID 65532 provisioning and migration examples below apply to the rootful
+runtime lane. Do not apply those host IDs to a rootless Kiln volume. Use the
+platform's retained-volume recovery with its existing ownership mapping.
 
 ## Required backup layers
 
@@ -26,26 +28,11 @@ The automatic file protects schema rollback. The platform snapshot or the
 repository snapshot scripts protect the database, media, Reader artifacts,
 trusted media digests, and curated metadata together.
 
-Schema 11 retires legacy temporary stations that predate creator attribution.
-Those rows cannot be assigned honestly to the per-creator fairness bucket, so
-they are removed during upgrade; the shared station and newly attributed
-temporary stations are retained.
-
-Schema 12 adds bounded, JSON-safe revision headroom for station, track-stat,
-skip-count, and Reader playback state. Out-of-range retained counters are
-normalized during that one-time upgrade; subsequent mutations fail atomically
-instead of wrapping or silently changing SQLite storage type.
-
-Schema 13 reserves the terminal revision value so exhausted station, track,
-skip, and Reader state cannot be admitted as healthy. It also adds a durable
-logical-clock high-water mark, periodically checkpointed and flushed during
-orderly shutdown so a host wall-clock rollback cannot replay station time across
-restart.
-
-Schema 14 adds durable temporary-station creation keys. A client-generated
-idempotency key and owner token bind one creation attempt to one station, so a
-timeout followed by a retry returns the original result instead of allocating
-another station.
+The current schema and ordered migrations are defined in
+[`migration_schema.go`](internal/application/migration_schema.go). Restore with
+the release that authored the snapshot, then let a newer release migrate a
+separate copy. An upgrade from before creator attribution retires temporary
+stations that cannot be assigned to a creator; the main station is retained.
 
 Never copy or rsync `station.sqlite3` or the volume while the service is
 running. SQLite uses WAL mode, so a lone main-file copy can omit committed
