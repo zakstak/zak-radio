@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
 
 test("date-only metadata stays in its catalog month", async ({ page }) => {
   await page.goto("/library");
@@ -102,6 +104,149 @@ test("Library completes saved station CRUD and list membership", async ({ page }
   page.once("dialog", (dialog) => dialog.accept());
   await listRow.getByRole("button", { name: "Delete" }).click();
   await expect(listRow).toHaveCount(0);
+});
+
+test.describe("first station from a song", () => {
+  test.afterEach(async ({ page }) => {
+    const owned = await page.evaluate(() =>
+      (window.ZakStations?.owned() || []).map((station) => ({
+        id: station.station_id,
+        token: window.ZakStorage.get(`zak-radio-owner:${station.station_id}`, ""),
+      })),
+    );
+    for (const station of owned) {
+      const removed = await page.request.delete(`/api/stations/${station.id}`, {
+        data: { owner_token: station.token },
+      });
+      expect(removed.ok()).toBe(true);
+    }
+  });
+
+  for (const entry of [
+    { path: "/", button: "Add to station", width: 390 },
+    { path: "/library", button: "Add Alpha Sunrise to a saved station", width: 1280 },
+  ]) {
+    test(`adding a song from ${entry.path} creates a station containing it`, async ({ page }) => {
+      await page.setViewportSize({ width: entry.width, height: 844 });
+      await page.goto(entry.path);
+      await page.getByRole("button", { name: entry.button, exact: true }).click();
+      await expect(page).toHaveURL(/\/library$/);
+      const editor = page.locator("#stationEditor");
+      await expect(editor).toBeVisible();
+      await expect(page.locator("#stationEditorName")).toBeFocused();
+      await expect(page.locator("#stationEditorMembers")).toContainText("Alpha Sunrise");
+      await page.getByRole("textbox", { name: "Station name", exact: true })
+        .fill("My first station");
+      await page.getByRole("button", { name: "Save station", exact: true }).click();
+      await expect(editor).toBeHidden();
+      const row = page.locator(".saved-station", { hasText: "My first station" });
+      await expect(row).toContainText("1 song ·");
+      await page.reload();
+      await expect(row).toContainText("1 song ·");
+      await row.getByRole("link", { name: "Listen", exact: true }).click();
+      await expect(page.locator("#stationMode")).toHaveText("My first station");
+      await expect(page.locator("#title")).toHaveText("Alpha Sunrise");
+      await expect(page.locator("#stationCapabilityLabel"))
+        .toHaveText("Saved station owner controls");
+      await page.getByRole("button", { name: "Play", exact: true }).click();
+      await expect.poll(() => page.locator("#audio").evaluate((audio) =>
+        !audio.paused && !audio.error && audio.currentTime > 0.05 &&
+        new URL(audio.currentSrc).pathname === "/media/alpha/audio",
+      )).toBe(true);
+      await page.getByRole("button", { name: "Pause", exact: true }).click();
+    });
+  }
+
+  test("canceling an add-song draft does not seed the next new station", async ({ page }) => {
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Add Alpha Sunrise to a saved station" }).click();
+    await expect(page.locator("#stationEditorMembers")).toContainText("Alpha Sunrise");
+    await page.locator("#stationEditorCancel").click();
+    await page.getByRole("button", { name: "New hand-picked station" }).click();
+    await expect(page.locator("#stationEditorMembers")).not.toContainText("Alpha Sunrise");
+    await page.getByRole("textbox", { name: "Station name", exact: true }).fill("Empty on purpose");
+    await page.getByRole("button", { name: "Save station", exact: true }).click();
+    await expect(page.locator(".saved-station", { hasText: "Empty on purpose" }))
+      .toContainText("0 songs");
+  });
+
+  test("a failed station save retains the selected song for retry", async ({ page }) => {
+    let creates = 0;
+    await page.route("**/api/stations", async (route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      creates++;
+      if (creates === 1) {
+        return route.fulfill({ status: 503, contentType: "text/plain", body: "Try again" });
+      }
+      return route.fallback();
+    });
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Add Alpha Sunrise to a saved station" }).click();
+    await page.getByRole("textbox", { name: "Station name", exact: true }).fill("Retry station");
+    const save = page.getByRole("button", { name: "Save station", exact: true });
+    await save.click();
+    await expect(page.locator("#stationEditorStatus")).toContainText("Try again");
+    await expect(page.locator("#stationEditorMembers")).toContainText("Alpha Sunrise");
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect(page.locator(".saved-station", { hasText: "Retry station" }))
+      .toContainText("1 song ·");
+    expect(creates).toBe(2);
+  });
+
+  for (const failure of ["create response", "list refresh"]) {
+    test(`retry after a lost ${failure} updates the original station`, async ({ page }) => {
+      let committed;
+      let failRefresh = false;
+      await page.route("**/api/stations", async (route) => {
+        if (route.request().method() === "POST" && !committed) {
+          const response = await route.fetch();
+          expect(response.ok()).toBe(true);
+          committed = await response.json();
+          if (failure === "create response") return route.abort("failed");
+          failRefresh = true;
+          return route.fulfill({ response });
+        }
+        if (route.request().method() === "GET" && failRefresh) {
+          failRefresh = false;
+          return route.fulfill({ status: 503, body: "Refresh unavailable" });
+        }
+        return route.fallback();
+      });
+      try {
+        await page.goto("/library");
+        await page.getByRole("button", { name: "Add Alpha Sunrise to a saved station" }).click();
+        const name = page.getByRole("textbox", { name: "Station name", exact: true });
+        const save = page.getByRole("button", { name: "Save station", exact: true });
+        await name.fill("Before retry");
+        await save.click();
+        await expect(page.locator("#stationEditorStatus"))
+          .toContainText(failure === "create response" ? "Failed to fetch" : "Refresh unavailable");
+        await expect(save).toBeEnabled();
+        await name.fill("Recovered station");
+        await save.click();
+        await expect(page.locator("#stationEditor")).toBeHidden();
+        const row = page.locator(".saved-station", { hasText: "Recovered station" });
+        await expect(row).toContainText("1 song ·");
+        await expect(row.getByRole("link", { name: "Listen" }))
+          .toHaveAttribute("href", `/?station=${committed.station_id}`);
+        const response = await page.request.get("/api/stations");
+        const stations = (await response.json()).stations;
+        expect(stations.filter((station) =>
+          ["Before retry", "Recovered station"].includes(station.name),
+        ).map((station) => station.station_id)).toEqual([committed.station_id]);
+      } finally {
+        // Also reclaim a committed station if a failed regression never saved its token.
+        if (committed && !await page.evaluate((id) =>
+          window.ZakStorage.get(`zak-radio-owner:${id}`, ""), committed.station_id)) {
+          const removed = await page.request.delete(`/api/stations/${committed.station_id}`, {
+            data: { owner_token: committed.owner_token },
+          });
+          expect(removed.ok()).toBe(true);
+        }
+      }
+    });
+  }
 });
 
 test("Radio has cumulative reactions and a reduced transport", async ({ page }) => {
@@ -209,6 +354,88 @@ test("radio refreshes and resynchronizes as soon as connectivity returns", async
   await expect.poll(() => stationRequests).toBeGreaterThan(beforeRecovery);
   await expect(page.locator("#audio")).toHaveAttribute("preload", "auto");
   await expect(page.locator("#audio")).toHaveAttribute("playsinline", "");
+});
+
+for (const stalledRequests of [1, 2]) {
+  test(`radio resumes the same MP3 after ${stalledRequests} stalled request(s)`, async ({ page }) => {
+    const mp3 = await readFile(new URL("./fixtures/tone.mp3", import.meta.url));
+    let mediaRequests = 0;
+    const server = createServer((_request, response) => {
+      response.writeHead(200, {
+        "Content-Type": "audio/mpeg",
+        "Content-Length": mp3.length,
+        "Cache-Control": "no-store",
+      });
+      if (++mediaRequests <= stalledRequests) {
+        response.write(mp3.subarray(0, 12000));
+      } else {
+        response.end(mp3);
+      }
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const authoritative = await (await page.request.get("/api/station")).json();
+      await page.route("**/api/station?*", (route) => route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...authoritative, track_id: "alpha", playing: true, position: 0,
+          server_time: Date.now() / 1000,
+        }),
+      }));
+      await page.route("**/api/station/events?*", (route) => route.abort());
+      await page.route("**/media/alpha/audio*", (route) => route.continue({
+        url: `http://127.0.0.1:${server.address().port}/audio.mp3`,
+      }));
+      await page.setViewportSize({ width: 393, height: 851 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "Join live", exact: true }).click();
+      await expect.poll(() => page.locator("#audio").evaluate((audio) =>
+        !audio.paused && audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA,
+      )).toBe(true);
+      await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+      await expect.poll(() => mediaRequests, { timeout: 18_000 })
+        .toBeGreaterThan(stalledRequests);
+      await expect.poll(() => page.locator("#audio").evaluate((audio) =>
+        !audio.paused && !audio.error && audio.readyState === HTMLMediaElement.HAVE_ENOUGH_DATA &&
+        audio.currentTime > 0.05,
+      )).toBe(true);
+      await expect(page.locator("#title")).toHaveText("Alpha Sunrise");
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+}
+
+test("foreground recovery respects a local pause and Library playback", async ({ page }) => {
+  const authoritative = await (await page.request.get("/api/station")).json();
+  await page.route("**/api/station?*", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      ...authoritative, playing: true, position: 0,
+      server_time: Date.now() / 1000,
+    }),
+  }));
+  await page.route("**/api/station/events?*", (route) => route.abort());
+  await page.goto("/");
+  await page.getByRole("button", { name: "Join live", exact: true }).click();
+  await expect.poll(() => page.locator("#audio").evaluate((audio) => !audio.paused)).toBe(true);
+  await page.getByRole("link", { name: "Library", exact: true }).click();
+  await page.locator("#audioOwnerPlayPause").click();
+  await expect.poll(() => page.locator("#audio").evaluate((audio) => audio.paused)).toBe(true);
+  let plays = 0;
+  await page.exposeFunction("recordUnexpectedPlay", () => plays++);
+  await page.locator("#audio").evaluate((audio) =>
+    audio.addEventListener("play", window.recordUnexpectedPlay));
+  await page.evaluate(() => window.dispatchEvent(new Event("pageshow")));
+  // Observe longer than the recovery timer rather than checking the immediate state.
+  await page.waitForTimeout(1700);
+  expect(plays).toBe(0);
+  await page.getByRole("button", { name: "Preview Alpha Sunrise" }).click();
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect.poll(() => page.locator("#audio").evaluate((audio) =>
+    window.ZakAudio.is("library") && !audio.paused && audio.currentTime > 0.05,
+  )).toBe(true);
 });
 
 test("weak track metadata falls back to its subject and deliberate no-artwork icon", async ({ page }) => {

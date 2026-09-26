@@ -178,11 +178,12 @@
   function beginStationEditor(
     sourceType,
     definition = null,
-    { reveal = false } = {},
+    { reveal = false, track = null } = {},
   ) {
+    if (state.stationSavePending) return;
     state.editingStation = definition
       ? { ...definition, track_ids: [...(definition.track_ids || [])] }
-      : null;
+      : { source_type: sourceType, track_ids: track ? [track.id] : [] };
     els.stationEditor.hidden = false;
     els.stationEditorID.value = definition?.station_id || "";
     els.stationEditorSource.value =
@@ -196,16 +197,15 @@
     );
     els.stationEditorSkip.checked = Boolean(definition?.skip_disliked);
     els.stationEditorStatus.textContent = "";
-    if (definition) {
+    if (sourceType === "list") {
       els.stationEditorSummary.textContent =
-        definition.source_type === "list"
-          ? `${definition.track_ids.length} saved songs.`
-          : `Live filter: ${definition.filter_mode}${definition.filter_query ? ` matching “${definition.filter_query}”` : ""}.`;
+        "Choose the songs to save in this station.";
+    } else if (definition) {
+      els.stationEditorSummary.textContent =
+        `Live filter: ${definition.filter_mode}${definition.filter_query ? ` matching “${definition.filter_query}”` : ""}.`;
     } else {
       els.stationEditorSummary.textContent =
-        sourceType === "list"
-          ? "Start empty, then use Add to station on any song."
-          : `Live filter: ${currentFilterDescription()}. New matching songs join automatically.`;
+        `Live filter: ${currentFilterDescription()}. New matching songs join automatically.`;
     }
     renderEditorMembers();
     const focusEditor = () => {
@@ -250,7 +250,8 @@
 
   function stationSummary(station) {
     if (station.source_type === "list") {
-      return `${station.track_ids.length} songs · ${station.random_mode === "deck" ? "no repeats" : "true random"}`;
+      const count = station.track_ids.length;
+      return `${count} ${count === 1 ? "song" : "songs"} · ${station.random_mode === "deck" ? "no repeats" : "true random"}`;
     }
     const filter = {
       all: "All songs",
@@ -329,6 +330,8 @@
     state.stationSavePending = true;
     const submit = els.stationEditor.querySelector('[type="submit"]');
     submit.disabled = true;
+    els.stationEditorCancel.disabled = true;
+    const draft = state.editingStation;
     const id = els.stationEditorID.value;
     const sourceType = els.stationEditorSource.value;
     els.stationEditorStatus.textContent = "Saving…";
@@ -344,7 +347,8 @@
         }
         await window.ZakStations.update(id, body);
       } else {
-        const attempt = {
+        const retryingCreate = Boolean(draft.creationAttempt);
+        draft.creationAttempt ||= {
           idempotency_key: randomBrowserHex(16),
           owner_token: randomBrowserHex(24),
         };
@@ -352,18 +356,25 @@
           source_type: sourceType,
           filter_mode: sourceType === "filter" ? state.filter : "all",
           filter_query: sourceType === "filter" ? els.search.value.trim() : "",
-          track_ids: [],
-          ...attempt,
+          track_ids: sourceType === "list" ? state.editingStation.track_ids : [],
         });
         const created = await window.ZakAPI("/api/stations", {
           method: "POST",
-          body,
+          body: { ...body, ...draft.creationAttempt },
         });
         window.ZakStorage.set(
           `zak-radio-owner:${created.station_id}`,
           created.owner_token,
         );
-        await window.ZakStations.reload();
+        // The create may have committed even when its response was lost.
+        // Keep its identity before refreshing, and apply any edits made on retry.
+        els.stationEditorID.value = created.station_id;
+        draft.station_id = created.station_id;
+        if (retryingCreate) {
+          await window.ZakStations.update(created.station_id, body);
+        } else {
+          await window.ZakStations.reload();
+        }
       }
       els.stationEditor.hidden = true;
       state.editingStation = null;
@@ -374,6 +385,7 @@
     } finally {
       state.stationSavePending = false;
       submit.disabled = false;
+      els.stationEditorCancel.disabled = false;
     }
   }
 
@@ -811,8 +823,8 @@
   window.addEventListener("zak-new-station", () =>
     beginStationEditor("filter", null, { reveal: true }),
   );
-  window.addEventListener("zak-new-list-station", () =>
-    beginStationEditor("list", null, { reveal: true }),
+  window.addEventListener("zak-new-list-station", (event) =>
+    beginStationEditor("list", null, { reveal: true, track: event.detail?.track }),
   );
   els.createFilterStation.addEventListener("click", () =>
     beginStationEditor("filter"),
@@ -822,6 +834,7 @@
   );
   els.stationEditor.addEventListener("submit", saveStation);
   els.stationEditorCancel.addEventListener("click", () => {
+    if (state.stationSavePending) return;
     els.stationEditor.hidden = true;
     state.editingStation = null;
     els.createFilterStation.focus();

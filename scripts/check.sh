@@ -5,24 +5,36 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 scratch_dir="$(mktemp -d)"
 runtime_containers=()
 ops_image=""
-review_user_id="$(id -u)"
-review_group_id="$(id -g)"
 cleanup() {
   local container
   for container in "${runtime_containers[@]}"; do
     docker rm --force "$container" >/dev/null 2>&1 || true
   done
   if [[ -n "$ops_image" && -d "$scratch_dir/runtime-volume" ]]; then
+    # Resolve the caller's ownership inside Docker's user namespace, which can
+    # differ from host IDs when the daemon is rootless.
     docker run --rm --user 0:0 \
       --mount "type=bind,source=$scratch_dir/runtime-volume,target=/volume" \
+      --mount "type=bind,source=$scratch_dir,target=/scratch" \
       "$ops_image" \
-      chown -R "$review_user_id:$review_group_id" /volume >/dev/null 2>&1 || true
+      chown -R --reference=/scratch /volume >/dev/null 2>&1 || true
   fi
   rm -rf -- "$scratch_dir"
 }
 trap cleanup EXIT
 
 cd "$repo_root"
+
+echo "==> prerequisites"
+for command in go gofmt gitleaks npm node python3 rsync docker curl; do
+  command -v "$command" >/dev/null 2>&1 || {
+    echo "Required command is missing: $command" >&2
+    exit 1
+  }
+done
+gitleaks git --help >/dev/null
+docker buildx version >/dev/null
+docker info >/dev/null
 
 echo "==> formatting"
 unformatted="$(
@@ -85,6 +97,7 @@ bash -n \
   scripts/backup-volume.sh \
   scripts/bootstrap-volume.sh \
   scripts/check-retained-budget.sh \
+  scripts/check.sh \
   scripts/migrate-volume-ownership.sh \
   scripts/prepare-kiln-package.sh \
   scripts/provision-current-volume.sh \
@@ -100,7 +113,7 @@ echo "==> Python syntax"
 PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
   python3 -m py_compile \
   scripts/lyrics_harness.py scripts/lyrics-harness.py \
-  scripts/generate-timed-lyrics.py scripts/generate-track-subjects.py \
+  scripts/generate-track-subjects.py \
   scripts/test_generate_track_subjects.py \
   scripts/test_generate_timed_lyrics.py \
   scripts/verify-runtime.py scripts/test_verify_runtime.py \
@@ -120,11 +133,6 @@ if find ./static -mindepth 1 \( -type l -o \( ! -type f ! -type d \) \) \
   echo "static package input has an unsupported file type" >&2
   exit 1
 fi
-
-command -v docker >/dev/null 2>&1 || {
-  echo "Docker is required for privileged recovery and image validation" >&2
-  exit 1
-}
 
 echo "==> privileged clean-install and recovery drill"
 ops_image="$(docker build --quiet -f scripts/Dockerfile.test-tools scripts)"
@@ -308,4 +316,6 @@ docker stop --time 10 "$runtime_container" >/dev/null
 echo "==> patch hygiene"
 git diff --check
 
+trap - EXIT
+cleanup
 echo "checks: PASS"

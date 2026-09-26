@@ -676,9 +676,16 @@ const audioController = {
   },
   async play({ generation = this.generation, valid = () => true } = {}) {
     this.reloadIfFailed();
+    let timeout;
     try {
-      await els.audio.play();
-      return true;
+      // A suspended mobile decoder can leave play() pending indefinitely.
+      // Let the caller retry instead of blocking station refresh and recovery.
+      return await Promise.race([
+        els.audio.play().then(() => true),
+        new Promise((resolve) => {
+          timeout = window.setTimeout(() => resolve(false), 4000);
+        }),
+      ]);
     } catch (error) {
       if (
         error?.name !== "AbortError" &&
@@ -688,12 +695,17 @@ const audioController = {
         reportAudioError(error);
       }
       return false;
+    } finally {
+      window.clearTimeout(timeout);
     }
   },
-  reloadIfFailed() {
+  reloadIfFailed({ stalled = false } = {}) {
     if (
       els.audio.error ||
-      els.audio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE
+      els.audio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE ||
+      (stalled &&
+        !els.audio.ended &&
+        els.audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA)
     ) {
       els.audio.load();
       return true;
@@ -845,11 +857,17 @@ async function recoverRadioPlayback() {
   if (state.playbackRecoveryInFlight || !radioShouldBeAudible()) return;
   state.playbackRecoveryInFlight = true;
   try {
-    await refreshStation(true);
+    // Reload before refreshing: refresh also awaits play(), which may be stuck
+    // on the interrupted request even though the media element has no error.
+    audioController.reloadIfFailed({ stalled: true });
+    const refreshed = await refreshStation(true);
     if (!radioShouldBeAudible()) return;
-    audioController.reloadIfFailed();
-    await syncAudioToStation();
-    if (!els.audio.paused && !els.audio.error) {
+    if (!refreshed) await syncAudioToStation();
+    if (
+      !els.audio.paused &&
+      !els.audio.error &&
+      els.audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+    ) {
       clearPlaybackRecovery();
       return;
     }
@@ -958,9 +976,11 @@ function openAddToStation(track) {
     (station) => station.source_type === "list",
   );
   if (!stations.length) {
-    showToast("Create a list station in Library first.");
+    showToast("Create a station with this song.");
     navigate("/library");
-    window.dispatchEvent(new CustomEvent("zak-new-list-station"));
+    window.dispatchEvent(
+      new CustomEvent("zak-new-list-station", { detail: { track } }),
+    );
     return false;
   }
   addToStationTrack = track;
@@ -1504,7 +1524,9 @@ function renderStation() {
         ? "Private owner controls"
         : "Listen-only private station"
       : canControl
-        ? "Shared station control"
+        ? state.stationId === "main"
+          ? "Shared station control"
+          : "Saved station owner controls"
         : "Listen-only saved station",
   );
   setText(
@@ -2469,7 +2491,6 @@ els.audio.addEventListener("error", () => {
   schedulePlaybackRecovery(750);
 });
 els.audio.addEventListener("play", () => {
-  clearPlaybackRecovery();
   dismissToast("audio-error");
   if (audioController.is("radio")) renderStation();
   updateNowPlayingMetadata();
@@ -2482,7 +2503,6 @@ els.audio.addEventListener("pause", () => {
   if (radioShouldBeAudible()) schedulePlaybackRecovery(1500);
 });
 els.audio.addEventListener("playing", () => clearPlaybackRecovery());
-els.audio.addEventListener("canplay", () => clearPlaybackRecovery());
 els.audio.addEventListener("waiting", () => schedulePlaybackRecovery(2500));
 els.audio.addEventListener("stalled", () => schedulePlaybackRecovery(1000));
 if ("mediaSession" in navigator) {
@@ -2543,7 +2563,13 @@ if ("mediaSession" in navigator) {
 window.addEventListener("zak-audio-owner", renderStation);
 els.audio.addEventListener("timeupdate", () => {
   if (audioController.is("radio")) {
-    if (!els.audio.paused) clearPlaybackRecovery();
+    if (
+      !els.audio.paused &&
+      !els.audio.seeking &&
+      els.audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+    ) {
+      clearPlaybackRecovery();
+    }
     updateProgressFromAudio();
     updateSyncedLyrics();
   }

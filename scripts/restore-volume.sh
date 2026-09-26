@@ -235,8 +235,13 @@ flock -n -x "$target_lock_fd" || {
 }
 export ZAK_RADIO_VOLUME_ROOT_FD="$target_fd"
 export ZAK_RADIO_VOLUME_LOCK_FD="$target_lock_fd"
-rsync --archive --numeric-ids --sparse --exclude='.zak-radio-volume.lock' \
-  "$sealed/volume/" "$pinned_target/"
+(
+  # Pin the working directory before rsync applies its no-follow path checks.
+  # Newer rsync versions reject /proc/self/fd magic links as destinations.
+  cd -- "$pinned_target"
+  rsync --archive --numeric-ids --sparse --exclude='.zak-radio-volume.lock' \
+    "$sealed/volume/" ./
+)
 if [[ "$ownership_mode" == "current" ]]; then
   "$script_root/provision-current-volume.sh" "$pinned_target"
 else
