@@ -1412,9 +1412,8 @@
 .app-rail.zs-product-bar .zs-service-switcher__icon {
   width: 24px;
   height: 24px;
-  fill: currentColor;
 }
-.app-rail.zs-product-bar .zs-service-switcher__panel { top: 52px; }
+.app-rail.zs-product-bar .zs-service-switcher__panel { top: 52px; left: 0; right: auto; width: min(420px, calc(100vw - 32px)); }
 @media (max-width: 650px) {
   .app-rail.zs-product-bar { height: 52px; }
   .app-rail.zs-product-bar .app-rail-inner {
@@ -1431,5 +1430,5 @@
   .app-rail.zs-product-bar .primary-nav-link { flex: 1; padding-inline: 4px; font-size: 12px; }
   .app-rail.zs-product-bar .product-context { display: flex; width: 44px; gap: 0; }
   .app-rail.zs-product-bar #connection { display: flex; }
-  .app-rail.zs-product-bar .zs-service-switcher__panel { top: 48px; }
+  .app-rail.zs-product-bar .zs-service-switcher__panel { top: 48px; left: 16px; }
 }
