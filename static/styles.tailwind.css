@@ -1455,3 +1455,24 @@
 #radioQueue { border: 0; padding: 0; }
 #radioQueueTracks { list-style: none; padding: 0; gap: 0; }
 #radioQueueTracks li { padding: 10px 0; border-bottom: 1px solid var(--zs-line-soft); font-size: 14px; }
+
+/* Compact app launcher, using the central directory's names and destinations. */
+.app-rail .zs-service-switcher__panel { box-shadow: 0 12px 30px rgb(0 0 0 / 25%); }
+.app-rail .zs-service-switcher__list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 8px;
+}
+.app-rail .zs-service-switcher__link {
+  justify-content: center;
+  min-height: 64px;
+  padding: 12px 6px;
+  border: 0;
+  text-align: center;
+}
+.app-rail .zs-service-switcher__identity strong { font-size: 13px; font-weight: 550; }
+.app-rail .zs-service-switcher__link.is-current {
+  background: var(--zs-surface-hover);
+  color: var(--zs-signal-readable);
+  box-shadow: none;
+}
