@@ -32,9 +32,42 @@ FORM: The established Radio composition with Zakstak identity and product tokens
       >
         <div class="app-rail-inner zs-product-bar__inner">
           <div class="brand zs-brand">
-            <div class="brand-mark zs-brand__mark" aria-hidden="true">
-              <img src="/static/radio-braille.svg" alt="" />
-            </div>
+            <details
+              class="zs-service-switcher"
+              data-zs-service-switcher
+              data-current-service="zak-radio"
+            >
+              <summary aria-label="Open apps">
+                <img
+                  class="zs-service-switcher__icon"
+                  src="/static/radio-braille.svg"
+                  alt=""
+                />
+              </summary>
+              <div class="zs-service-switcher__panel">
+                <nav
+                  class="zs-service-switcher__list"
+                  data-zs-service-list
+                  aria-label="Apps"
+                >
+                  <a
+                    class="zs-service-switcher__link"
+                    href="https://fleet.home.zakstak.com/"
+                  >
+                    <span class="zs-service-switcher__identity"
+                      ><strong>Saga Fleet</strong></span
+                    >
+                  </a>
+                </nav>
+                <p
+                  class="zs-service-switcher__status"
+                  data-zs-service-status
+                  aria-live="polite"
+                >
+                  Loading apps…
+                </p>
+              </div>
+            </details>
             <div class="brand-copy zs-brand__copy">
               <span class="brand-family zs-brand__family">Zakstak</span>
               <div class="brand-product zs-brand__line">
@@ -74,58 +107,65 @@ FORM: The established Radio composition with Zakstak identity and product tokens
               <span id="connectionDot" class="connection-dot"></span>
               <span id="connectionText">Station updates connecting</span>
             </div>
-            <details
-              class="zs-service-switcher"
-              data-zs-service-switcher
-              data-current-service="zak-radio"
-            >
-              <summary aria-label="Open apps">
-                Apps
-                <svg
-                  class="zs-service-switcher__chevron"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true"
-                >
-                  <path d="m4 6 4 4 4-4"></path>
-                </svg>
-              </summary>
-              <div class="zs-service-switcher__panel">
-                <header class="zs-service-switcher__header">
-                  <span>Zakstak</span><strong>Services</strong>
-                </header>
-                <p class="zs-service-switcher__intro">
-                  Move directly between private tools and product surfaces.
-                </p>
-                <nav
-                  class="zs-service-switcher__list"
-                  data-zs-service-list
-                  aria-label="Zakstak services"
-                >
-                  <a
-                    class="zs-service-switcher__link"
-                    href="https://fleet.home.zakstak.com/"
-                  >
-                    <span class="zs-service-switcher__identity"
-                      ><strong>Saga Fleet</strong
-                      ><small>Service directory fallback</small></span
-                    >
-                    <span class="zs-service-switcher__route">Directory</span>
-                  </a>
-                </nav>
-                <p
-                  class="zs-service-switcher__status"
-                  data-zs-service-status
-                  aria-live="polite"
-                >
-                  Loading central directory…
-                </p>
-              </div>
-            </details>
           </div>
         </div>
       </header>
 
       <section id="radioView" class="radio-stage view-panel" data-view="/">
+        <section id="stationCard" class="station-card" aria-label="Station">
+          <div class="station-card-head">
+            <span class="section-label">Listening to</span>
+            <strong id="stationMode" tabindex="-1">Shared station</strong>
+          </div>
+          <label class="station-picker-label" for="stationSelect"
+            >Radio station</label
+          >
+          <select id="stationSelect" class="select-control station-picker">
+            <option value="main">All songs</option>
+          </select>
+          <div class="station-actions">
+            <button
+              id="mainStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Go shared
+            </button>
+            <button
+              id="shareStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Share
+            </button>
+            <button
+              id="createStation"
+              class="station-action"
+              type="button"
+              disabled
+            >
+              New station
+            </button>
+          </div>
+          <p id="stationAccess" class="station-note">
+            Everyone here can turn the dial.
+          </p>
+          <div id="stationShareFallback" class="station-share-fallback" hidden>
+            <label for="stationShareLink">Listen-only station link</label>
+            <div>
+              <input id="stationShareLink" type="text" readonly />
+              <button
+                id="stationShareClose"
+                class="station-action"
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </section>
         <div class="now-playing">
           <div class="cover-frame">
             <img id="cover" class="cover-image hidden" alt="" />
@@ -173,6 +213,8 @@ FORM: The established Radio composition with Zakstak identity and product tokens
                 You can hear and control this station from this browser.
               </p>
             </section>
+          </div>
+          <div class="player-controls">
             <button id="radioRetry" class="button" type="button" hidden>
               Retry station
             </button>
@@ -284,7 +326,7 @@ FORM: The established Radio composition with Zakstak identity and product tokens
             </div>
             <div class="track-actions">
               <button id="like" class="button" aria-pressed="false" disabled>
-                <span aria-hidden="true">♡</span> Like
+                Like
               </button>
               <button id="dislike" class="button" aria-pressed="false" disabled>
                 Dislike
@@ -299,60 +341,6 @@ FORM: The established Radio composition with Zakstak identity and product tokens
             </div>
           </div>
         </div>
-        <section id="stationCard" class="station-card" aria-label="Station">
-          <div class="station-card-head">
-            <span class="section-label">Listening to</span>
-            <strong id="stationMode" tabindex="-1">Shared station</strong>
-          </div>
-          <label class="station-picker-label" for="stationSelect"
-            >Radio station</label
-          >
-          <select id="stationSelect" class="select-control station-picker">
-            <option value="main">All songs</option>
-          </select>
-          <div class="station-actions">
-            <button
-              id="mainStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Go shared
-            </button>
-            <button
-              id="shareStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Share
-            </button>
-            <button
-              id="createStation"
-              class="station-action station-action-primary"
-              type="button"
-              disabled
-            >
-              New station
-            </button>
-          </div>
-          <p id="stationAccess" class="station-note">
-            Everyone here can turn the dial.
-          </p>
-          <div id="stationShareFallback" class="station-share-fallback" hidden>
-            <label for="stationShareLink">Listen-only station link</label>
-            <div>
-              <input id="stationShareLink" type="text" readonly />
-              <button
-                id="stationShareClose"
-                class="station-action"
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </section>
         <div id="detailsPanels" class="details-panels">
           <section class="transcript">
             <div class="transcript-head">
@@ -399,23 +387,16 @@ FORM: The established Radio composition with Zakstak identity and product tokens
           </section>
         </div>
         <div class="radio-programming-panel">
-          <details
-            id="radioOwnerControls"
-            class="owner-controls-disclosure"
-            open
-          >
+          <details id="radioOwnerControls" class="owner-controls-disclosure">
             <summary>
-              <span class="section-label">Owner controls</span>
-              <strong id="radioOwnerControlsSummary"
-                >Shape the saved station</strong
-              >
+              <strong id="radioOwnerControlsSummary">Playback settings</strong>
             </summary>
             <fieldset
               id="radioProgramming"
               class="radio-programming"
               aria-describedby="stationCapabilityDetail"
             >
-              <legend class="section-label">Station programming</legend>
+              <legend class="station-picker-label">Playback settings</legend>
               <div class="station-programming-field">
                 <span id="stationRandomModeLabel" class="programming-label"
                   >Playback order</span
@@ -469,12 +450,6 @@ FORM: The established Radio composition with Zakstak identity and product tokens
             <ol id="radioQueueTracks" class="radio-queue-tracks"></ol>
           </div>
         </div>
-        <footer class="site-footer">
-          <span>Zak Radio</span><span>Original tracks, always on.</span
-          ><span id="footerShortcut" class="footer-shortcut"
-            >Space play · live radio</span
-          >
-        </footer>
       </section>
 
       <section

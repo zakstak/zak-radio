@@ -834,7 +834,6 @@ func TestPlayerUsesSinglePlayPauseAndRepeatControls(t *testing.T) {
 		`rel="icon"`,
 		`href="/reader"`,
 		`id="toast"`,
-		`id="footerShortcut"`,
 		`id="createStation"`,
 		`id="toggleDetails"`,
 		`id="promptPanel"`,

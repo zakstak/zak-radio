@@ -1,7 +1,7 @@
 /*
  * Zakstak Service Switcher 1.0.0
  * Canonical source: zakstak/saga-product/design-system/service-switcher.js
- * Consumers vendor this file byte-for-byte and serve it locally.
+ * Product adaptation: compact names-only launcher; directory validation unchanged.
  */
 
 export const SERVICE_DIRECTORY_SCHEMA = "zakstak.service-directory.v1";
@@ -111,20 +111,13 @@ function serviceLink(documentRef, service, currentService) {
   identity.className = "zs-service-switcher__identity";
   const name = documentRef.createElement("strong");
   name.textContent = service.name;
-  const role = documentRef.createElement("small");
-  role.textContent = service.enabled
-    ? service.role
-    : `${service.role} · Unavailable`;
-  identity.append(name, role);
-
-  const route = documentRef.createElement("span");
-  route.className = "zs-service-switcher__route";
-  route.textContent = current
-    ? "Current"
-    : service.enabled
-      ? "Open"
-      : "Unavailable";
-  node.append(identity, route);
+  identity.append(name);
+  if (!service.enabled) {
+    const unavailable = documentRef.createElement("small");
+    unavailable.textContent = "Unavailable";
+    identity.append(unavailable);
+  }
+  node.append(identity);
   return node;
 }
 
@@ -139,7 +132,8 @@ export async function loadServiceSwitcher(
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   root.dataset.directoryState = "loading";
-  status.textContent = "Updating directory…";
+  status.hidden = false;
+  status.textContent = "Loading apps…";
   try {
     const response = await fetchImpl(
       root.dataset.directoryUrl || SERVICE_DIRECTORY_URL,
@@ -160,12 +154,12 @@ export async function loadServiceSwitcher(
       ),
     );
     root.dataset.directoryState = "current";
-    status.textContent = "Central directory · navigation only";
+    status.textContent = "";
+    status.hidden = true;
     return true;
   } catch {
     root.dataset.directoryState = "fallback";
-    status.textContent =
-      "Live directory unavailable · Fleet link remains available";
+    status.textContent = "Apps unavailable. Open Fleet to browse.";
     return false;
   } finally {
     globalThis.clearTimeout(timeout);
