@@ -42,7 +42,6 @@ const els = {
   appShell: document.querySelector(".app-shell"),
   skipToContent: document.getElementById("skipToContent"),
   shellContext: document.getElementById("shellContext"),
-  footerShortcut: document.getElementById("footerShortcut"),
   connection: document.getElementById("connection"),
   connectionDot: document.getElementById("connectionDot"),
   connectionText: document.getElementById("connectionText"),
@@ -832,9 +831,9 @@ function reportAudioError(error) {
 function radioShouldBeAudible() {
   return Boolean(
     audioController.is("radio") &&
-      state.station?.playing &&
-      state.userActivatedAudio &&
-      !state.localRadioSuspended,
+    state.station?.playing &&
+    state.userActivatedAudio &&
+    !state.localRadioSuspended,
   );
 }
 
@@ -847,10 +846,13 @@ function clearPlaybackRecovery(resetAttempt = true) {
 function schedulePlaybackRecovery(delay = 0) {
   if (!radioShouldBeAudible() || navigator.onLine === false) return;
   window.clearTimeout(state.playbackRecoveryTimer);
-  state.playbackRecoveryTimer = window.setTimeout(() => {
-    state.playbackRecoveryTimer = 0;
-    void recoverRadioPlayback();
-  }, Math.max(0, delay));
+  state.playbackRecoveryTimer = window.setTimeout(
+    () => {
+      state.playbackRecoveryTimer = 0;
+      void recoverRadioPlayback();
+    },
+    Math.max(0, delay),
+  );
 }
 
 async function recoverRadioPlayback() {
@@ -871,10 +873,7 @@ async function recoverRadioPlayback() {
       clearPlaybackRecovery();
       return;
     }
-    const delay = Math.min(
-      30_000,
-      750 * 2 ** state.playbackRecoveryAttempt++,
-    );
+    const delay = Math.min(30_000, 750 * 2 ** state.playbackRecoveryAttempt++);
     schedulePlaybackRecovery(delay);
   } finally {
     state.playbackRecoveryInFlight = false;
@@ -1468,7 +1467,7 @@ function renderStation() {
   if (audioController.is("radio")) els.audio.loop = repeatOne;
   const likes = Number(station.like_count || 0);
   const dislikes = Number(station.dislike_count || 0);
-  els.like.textContent = `♡ Like · ${likes}`;
+  els.like.textContent = `Like · ${likes}`;
   els.like.setAttribute(
     "aria-label",
     `Like this song. ${likes} ${likes === 1 ? "like" : "likes"}`,
@@ -1547,11 +1546,9 @@ function renderStation() {
       ? "Only this browser can turn this dial. The share link is listen-only."
       : "Listen-only. The creator controls this dial."
     : canControl
-      ? "A persistent radio station. Changes to its programming are saved."
+      ? ""
       : "Listen-only. The station owner controls its programming.";
-  els.footerShortcut.textContent = temporary
-    ? "Space play · ←/→ seek"
-    : "Space play · live radio";
+  els.stationAccess.hidden = !els.stationAccess.textContent;
   renderStationIdentityActions();
   els.random.hidden = !temporary;
   els.prev.hidden = !temporary;
@@ -1564,10 +1561,10 @@ function renderStation() {
   els.transport.classList.toggle("is-radio", !temporary);
   els.radioProgramming.hidden = !radio;
   els.radioOwnerControls.hidden = !radio;
-  if (radio && capabilityChanged) els.radioOwnerControls.open = canControl;
+  if (radio && capabilityChanged) els.radioOwnerControls.open = false;
   els.radioOwnerControlsSummary.textContent = canControl
-    ? "Shape the saved station"
-    : "Station owner controls these settings";
+    ? "Playback settings"
+    : "Playback settings · listen-only";
   els.addCurrentToStation.hidden = !radio;
   setRadioGroupValue(els.stationRandomMode, station.random_mode || "deck");
   setRadioGroupDisabled(els.stationRandomMode, !canControl);

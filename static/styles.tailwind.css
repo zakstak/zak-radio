@@ -261,12 +261,12 @@
   }
 
   .station-card {
-    @apply mb-7 grid w-full grid-cols-1 gap-3 border-y bg-radio-soft px-4 py-4 sm:grid-cols-[minmax(150px,auto)_minmax(180px,320px)_auto] sm:items-center sm:px-5 lg:mb-9 lg:grid-cols-[minmax(170px,auto)_minmax(220px,360px)_auto_minmax(220px,1fr)] lg:gap-4 lg:px-6;
+    @apply mb-7 flex w-full flex-wrap items-center gap-3 py-3 lg:mb-9;
     border-color: var(--zs-line-soft);
   }
 
   .station-card-head {
-    @apply flex min-w-0 items-center justify-between gap-3 sm:grid sm:justify-start sm:gap-1;
+    @apply sr-only;
   }
 
   .station-card-head strong {
@@ -520,13 +520,7 @@
     @apply m-0 min-h-30 whitespace-pre-wrap break-words py-5 font-mono text-xs leading-6 text-[#c8c8c3];
   }
 
-  .site-footer {
-    @apply flex flex-wrap justify-between gap-4 pt-7 font-mono text-xs tracking-[.03em] text-[#a3a39d];
-  }
 
-  .footer-shortcut {
-    @apply hidden sm:inline;
-  }
 
   .library-overlay {
     @apply fixed inset-0 z-40 hidden flex-col bg-radio-bg;
@@ -1146,7 +1140,7 @@
   }
 
   .station-picker {
-    @apply m-0 w-full min-w-0;
+    @apply m-0 min-w-0 flex-1 basis-[180px] max-w-[360px];
   }
 
   .radio-programming {
@@ -1154,15 +1148,15 @@
   }
 
   .radio-programming-panel {
-    @apply grid gap-5 py-7 lg:grid-cols-[minmax(300px,1fr)_minmax(0,1fr)] lg:items-start;
+    @apply grid gap-6 py-6;
   }
 
   .owner-controls-disclosure {
-    @apply min-w-0 border border-radio-line bg-radio-soft;
+    @apply min-w-0;
   }
 
   .owner-controls-disclosure summary {
-    @apply grid min-h-14 cursor-pointer gap-1 px-4 py-3 marker:text-radio-accent hover:bg-radio-panel-hover;
+    @apply min-h-11 cursor-pointer py-3 marker:text-radio-muted;
   }
 
   .owner-controls-disclosure summary strong {
@@ -1170,7 +1164,7 @@
   }
 
   .owner-controls-disclosure[open] summary {
-    @apply border-b border-radio-line;
+    @apply border-0;
   }
 
   .radio-stage.is-listen-only .owner-controls-disclosure {
@@ -1432,3 +1426,32 @@
   .app-rail.zs-product-bar #connection { display: flex; }
   .app-rail.zs-product-bar .zs-service-switcher__panel { top: 48px; left: 16px; }
 }
+
+/* Radio settings stay quiet until requested; editor controls retain their layout. */
+#radioProgramming {
+  border: 0;
+  background: transparent;
+  padding: 12px 0;
+  gap: 16px;
+  max-width: 520px;
+}
+#radioProgramming .random-mode-options { display: flex; flex-wrap: wrap; gap: 24px; }
+#radioProgramming .random-mode-option { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+#radioProgramming .random-mode-option input,
+#radioProgramming .station-toggle input {
+  position: static; opacity: 1; width: 18px; height: 18px; accent-color: var(--zs-signal-readable);
+}
+#radioProgramming .random-mode-card,
+#radioProgramming .random-mode-option input:checked + .random-mode-card {
+  min-height: 0; padding: 0; border: 0; background: transparent;
+}
+#radioProgramming .random-mode-option input:checked + .random-mode-card strong { color: var(--zs-frost); }
+#radioProgramming .random-mode-option input:checked + .random-mode-card small { color: var(--zs-frost-mid); }
+#radioProgramming .station-toggle {
+  justify-content: flex-start; flex-direction: row-reverse; width: fit-content;
+  min-height: 44px; padding: 0; border: 0; background: transparent;
+}
+#radioProgramming .station-toggle-switch { display: none; }
+#radioQueue { border: 0; padding: 0; }
+#radioQueueTracks { list-style: none; padding: 0; gap: 0; }
+#radioQueueTracks li { padding: 10px 0; border-bottom: 1px solid var(--zs-line-soft); font-size: 14px; }

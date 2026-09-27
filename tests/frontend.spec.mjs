@@ -267,6 +267,7 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   await expect(page.locator("#like")).toBeVisible();
   await expect(page.locator("#dislike")).toBeVisible();
   await expect(page.locator("#download")).toBeVisible();
+  await page.locator("#radioOwnerControls > summary").click();
   await expect(page.locator("#radioProgramming")).toBeVisible();
   await expect(page.locator("#radioQueue")).toBeVisible();
   const trueRandom = page.getByRole("radio", { name: /True random/ });
@@ -290,7 +291,7 @@ test("Radio has cumulative reactions and a reduced transport", async ({ page }) 
   await page.locator("#like").click();
   await page.locator("#like").click();
   await page.locator("#dislike").click();
-  await expect(page.locator("#like")).toHaveText(`♡ Like · ${before.likes + 2}`);
+  await expect(page.locator("#like")).toHaveText(`Like · ${before.likes + 2}`);
   await expect(page.locator("#dislike")).toHaveText(
     `Dislike · ${before.dislikes + 1}`,
   );
@@ -829,7 +830,7 @@ test("product identity and route semantics persist at every required width", asy
       ["/reader", "Reader"],
     ]) {
       await page.goto(path);
-      await expect(page.locator(".brand-mark")).toBeVisible();
+      await expect(page.locator(".brand .zs-service-switcher__icon")).toBeVisible();
       await expect(page.locator(".brand-family")).toHaveText("Zakstak");
       await expect(page.locator(".brand-title")).toBeVisible();
       await expect(page.locator(".brand-title")).toHaveText("Zak Radio");
@@ -918,7 +919,10 @@ test("canonical control, focus, dialog, and mobile function geometry stays avail
   await expect(page.locator("#stationStatus")).not.toHaveText("Connecting…");
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
+  await expect(page.locator('.brand summary')).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.locator('[data-route="/"]')).toBeFocused();
+  await page.locator("#radioOwnerControls > summary").click();
 
   for (const selector of [
     "#playPause",
@@ -935,6 +939,8 @@ test("canonical control, focus, dialog, and mobile function geometry stays avail
     await expect(page.locator(selector)).toBeVisible();
   }
 
+  await page.locator(".brand summary").focus();
+  await page.keyboard.press("Tab");
   const geometry = await page.evaluate(() => {
     const control = document.querySelector("#createStation");
     const select = document.querySelector("#stationSelect");
@@ -1666,10 +1672,10 @@ test("Space toggles owner-control disclosure without controlling playback", asyn
   await page.goto("/");
   const disclosure = page.locator("#radioOwnerControls");
   const summary = disclosure.locator("summary");
-  await expect(disclosure).toHaveAttribute("open", "");
+  await expect(disclosure).not.toHaveAttribute("open", "");
   await summary.focus();
   await page.keyboard.press("Space");
-  await expect(disclosure).not.toHaveAttribute("open", "");
+  await expect(disclosure).toHaveAttribute("open", "");
   expect(controlRequests).toBe(0);
 });
 
@@ -1875,7 +1881,7 @@ test("listen-only saved stations put owner programming behind a capability bound
   await expect(page.locator("#radioOwnerControls")).toBeVisible();
   await expect(page.locator("#radioOwnerControls")).not.toHaveAttribute("open");
   await expect(page.locator("#radioOwnerControlsSummary")).toHaveText(
-    "Station owner controls these settings",
+    "Playback settings · listen-only",
   );
   await expect(page.locator("#radioProgramming")).toBeHidden();
   await expect(

@@ -278,7 +278,7 @@ FORM: The established Radio composition with Zakstak identity and product tokens
             </div>
             <div class="track-actions">
               <button id="like" class="button" aria-pressed="false" disabled>
-                <span aria-hidden="true">♡</span> Like
+                Like
               </button>
               <button id="dislike" class="button" aria-pressed="false" disabled>
                 Dislike
@@ -323,7 +323,7 @@ FORM: The established Radio composition with Zakstak identity and product tokens
             </button>
             <button
               id="createStation"
-              class="station-action station-action-primary"
+              class="station-action"
               type="button"
               disabled
             >
@@ -393,23 +393,16 @@ FORM: The established Radio composition with Zakstak identity and product tokens
           </section>
         </div>
         <div class="radio-programming-panel">
-          <details
-            id="radioOwnerControls"
-            class="owner-controls-disclosure"
-            open
-          >
+          <details id="radioOwnerControls" class="owner-controls-disclosure">
             <summary>
-              <span class="section-label">Owner controls</span>
-              <strong id="radioOwnerControlsSummary"
-                >Shape the saved station</strong
-              >
+              <strong id="radioOwnerControlsSummary">Playback settings</strong>
             </summary>
             <fieldset
               id="radioProgramming"
               class="radio-programming"
               aria-describedby="stationCapabilityDetail"
             >
-              <legend class="section-label">Station programming</legend>
+              <legend class="station-picker-label">Playback settings</legend>
               <div class="station-programming-field">
                 <span id="stationRandomModeLabel" class="programming-label"
                   >Playback order</span
@@ -463,12 +456,6 @@ FORM: The established Radio composition with Zakstak identity and product tokens
             <ol id="radioQueueTracks" class="radio-queue-tracks"></ol>
           </div>
         </div>
-        <footer class="site-footer">
-          <span>Zak Radio</span><span>Original tracks, always on.</span
-          ><span id="footerShortcut" class="footer-shortcut"
-            >Space play · live radio</span
-          >
-        </footer>
       </section>
 
       <section
