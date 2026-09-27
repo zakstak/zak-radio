@@ -112,6 +112,60 @@ FORM: The established Radio composition with Zakstak identity and product tokens
       </header>
 
       <section id="radioView" class="radio-stage view-panel" data-view="/">
+        <section id="stationCard" class="station-card" aria-label="Station">
+          <div class="station-card-head">
+            <span class="section-label">Listening to</span>
+            <strong id="stationMode" tabindex="-1">Shared station</strong>
+          </div>
+          <label class="station-picker-label" for="stationSelect"
+            >Radio station</label
+          >
+          <select id="stationSelect" class="select-control station-picker">
+            <option value="main">All songs</option>
+          </select>
+          <div class="station-actions">
+            <button
+              id="mainStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Go shared
+            </button>
+            <button
+              id="shareStation"
+              class="station-action"
+              type="button"
+              hidden
+            >
+              Share
+            </button>
+            <button
+              id="createStation"
+              class="station-action"
+              type="button"
+              disabled
+            >
+              New station
+            </button>
+          </div>
+          <p id="stationAccess" class="station-note">
+            Everyone here can turn the dial.
+          </p>
+          <div id="stationShareFallback" class="station-share-fallback" hidden>
+            <label for="stationShareLink">Listen-only station link</label>
+            <div>
+              <input id="stationShareLink" type="text" readonly />
+              <button
+                id="stationShareClose"
+                class="station-action"
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </section>
         <div class="now-playing">
           <div class="cover-frame">
             <img id="cover" class="cover-image hidden" alt="" />
@@ -159,6 +213,8 @@ FORM: The established Radio composition with Zakstak identity and product tokens
                 You can hear and control this station from this browser.
               </p>
             </section>
+          </div>
+          <div class="player-controls">
             <button id="radioRetry" class="button" type="button" hidden>
               Retry station
             </button>
@@ -285,60 +341,6 @@ FORM: The established Radio composition with Zakstak identity and product tokens
             </div>
           </div>
         </div>
-        <section id="stationCard" class="station-card" aria-label="Station">
-          <div class="station-card-head">
-            <span class="section-label">Listening to</span>
-            <strong id="stationMode" tabindex="-1">Shared station</strong>
-          </div>
-          <label class="station-picker-label" for="stationSelect"
-            >Radio station</label
-          >
-          <select id="stationSelect" class="select-control station-picker">
-            <option value="main">All songs</option>
-          </select>
-          <div class="station-actions">
-            <button
-              id="mainStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Go shared
-            </button>
-            <button
-              id="shareStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Share
-            </button>
-            <button
-              id="createStation"
-              class="station-action"
-              type="button"
-              disabled
-            >
-              New station
-            </button>
-          </div>
-          <p id="stationAccess" class="station-note">
-            Everyone here can turn the dial.
-          </p>
-          <div id="stationShareFallback" class="station-share-fallback" hidden>
-            <label for="stationShareLink">Listen-only station link</label>
-            <div>
-              <input id="stationShareLink" type="text" readonly />
-              <button
-                id="stationShareClose"
-                class="station-action"
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </section>
         <div id="detailsPanels" class="details-panels">
           <section class="transcript">
             <div class="transcript-head">

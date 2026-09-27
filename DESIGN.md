@@ -29,3 +29,8 @@ without repeating the selected name. Playback settings live in a collapsed plain
 disclosure; use simple radio and checkbox controls rather than nested cards.
 Reaction actions use text without decorative icons. The existing braille mark at
 the top left opens the app switcher on desktop and mobile.
+
+Keep the listening surface compact: station selection above the song, modest
+artwork beside its identity, and playback grouped with reactions and song
+actions. On phones, controls wrap below the artwork/title row while retaining
+44px touch targets. Permission details should not separate the song from play.

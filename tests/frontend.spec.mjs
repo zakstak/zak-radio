@@ -890,7 +890,7 @@ test("compact phone navigation keeps station controls accessible", async ({ page
 
     expect(layout.position).toBe("sticky");
     expect(layout.railHeight).toBe(52);
-    expect(layout.stationTop).toBeGreaterThanOrEqual(layout.transportBottom);
+    expect(layout.stationTop).toBeLessThan(layout.transportBottom);
     expect(layout.documentScrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
     expect(layout.controls.length).toBeGreaterThanOrEqual(5);
     for (const control of layout.controls) {

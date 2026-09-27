@@ -1476,3 +1476,45 @@
   color: var(--zs-signal-readable);
   box-shadow: none;
 }
+
+/* One compact listening surface, with secondary actions beside playback. */
+.radio-stage { max-width: 1120px; padding: 24px 32px; }
+.radio-stage .station-card { margin-bottom: 20px; padding: 0; gap: 8px; }
+.radio-stage .station-picker { max-width: 280px; }
+.radio-stage .station-actions .station-action { border-color: transparent; }
+.radio-stage .now-playing {
+  grid-template-columns: 200px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px 28px;
+  padding: 0 0 24px;
+}
+.radio-stage .cover-frame { grid-row: span 2; max-width: none; box-shadow: none; border-radius: 4px; }
+.radio-stage .live-status { margin-bottom: 8px; }
+.radio-stage .track-title { font-size: clamp(26px, 3vw, 38px); line-height: 1.12; }
+.radio-stage .track-details { margin: 8px 0; line-height: 1.5; }
+.radio-stage .station-capability { margin: 8px 0 0; padding: 0; border: 0; background: transparent; }
+.radio-stage:not(.is-listen-only) .station-capability p {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+}
+.radio-stage .station-capability-label { font: 400 12px/1.5 var(--zs-font-sans); color: var(--zs-frost-mid); }
+.player-controls { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
+.player-controls .transport { margin: 0; }
+.player-controls .transport.is-radio { width: auto; grid-template-columns: 48px 44px; gap: 4px; }
+.player-controls .transport.is-radio .play-button { width: 48px; height: 48px; min-width: 48px; }
+.player-controls .track-actions { margin: 0; gap: 4px; }
+.player-controls .track-actions .button { border-color: transparent; background: transparent; padding-inline: 8px; font-size: 13px; }
+.player-controls .track-actions .button:hover { background: var(--zs-surface-hover); }
+.player-controls .station-progress { flex-basis: 100%; }
+.radio-stage .details-panels { padding-top: 16px; }
+@media (max-width: 767px) {
+  .radio-stage { padding: 16px; }
+  .radio-stage .station-card { margin-bottom: 16px; }
+  .radio-stage .now-playing { grid-template-columns: 88px minmax(0, 1fr); gap: 16px; padding-bottom: 20px; }
+  .radio-stage .now-playing .cover-frame { grid-row: 1; width: 88px; max-width: 88px; margin: 0; }
+  .radio-stage .track-title { font-size: 24px; }
+  .radio-stage .track-source { font-size: 10px; }
+  .radio-stage .live-status { font-size: 10px; margin-bottom: 6px; }
+  .radio-stage .track-details { font-size: 12px; }
+  .radio-stage .player-controls { grid-column: 1 / -1; gap: 8px; }
+  .radio-stage .cover-fallback { font-size: 8px; gap: 4px; }
+}
