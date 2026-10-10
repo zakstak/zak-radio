@@ -1,4 +1,6 @@
-(() => {
+import { timeLabel as t } from "./format.js";
+
+export function initReader({ router }) {
   const supportedPlaybackRates = [1, 1.15, 1.25, 1.5, 1.75, 2];
   const storedPlaybackRate = Number(
     window.ZakStorage.get("readerPlaybackRate", "1.15"),
@@ -81,12 +83,6 @@
     duration: document.getElementById("readerDuration"),
     libraryBack: document.getElementById("readerLibraryBack"),
   };
-
-  function t(seconds) {
-    seconds = Number(seconds) || 0;
-    const m = Math.floor(seconds / 60);
-    return `${m}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
-  }
 
   function sizeLabel(bytes) {
     const value = Number(bytes);
@@ -689,7 +685,7 @@
 
   function updateReaderURL(id, mode) {
     if (mode === "none") return;
-    window.ZakCommitScrollState?.();
+    router.commitScroll();
     const url = new URL(window.location.href);
     url.pathname = "/reader";
     url.searchParams.set("item", id);
@@ -707,11 +703,11 @@
   }
 
   function restoreRouteScroll(fallback = null) {
-    const pending = window.ZakPendingRouteScroll;
+    const pending = router.pendingScroll;
     const target = pending || fallback;
     if (!target) return;
     const apply = () =>
-      (window.ZakRouteScroll?.to || window.scrollTo)({
+      router.scrollTo({
         left: Number(target[0]) || 0,
         top: Number(target[1]) || 0,
         behavior: "instant",
@@ -720,9 +716,7 @@
       apply();
       window.requestAnimationFrame(() => {
         apply();
-        if (window.ZakPendingRouteScroll === pending) {
-          window.ZakPendingRouteScroll = null;
-        }
+        router.finishRestore(pending);
       });
     });
   }
@@ -997,7 +991,7 @@
           restoreRouteScroll([0, priorScroll]);
         }
       }
-      if (!background && window.ZakPendingRouteScroll) {
+      if (!background && router.pendingScroll) {
         restoreRouteScroll();
       }
       if (focusDetail) {
@@ -1349,12 +1343,12 @@
   });
   els.libraryBack.onclick = (event) => {
     event.preventDefault();
-    window.ZakCommitScrollState?.();
+    router.commitScroll();
     const url = new URL(window.location.href);
     url.searchParams.delete("item");
     history.pushState({ scroll: [0, 0] }, "", url);
     renderLibrary();
-    (window.ZakRouteScroll?.to || window.scrollTo)({ top: 0 });
+    router.scrollTo({ top: 0 });
     els.libraryTitle.focus({ preventScroll: true });
   };
 
@@ -1552,4 +1546,4 @@
       seekAbsolute(Number(position || 0));
     },
   };
-})();
+}

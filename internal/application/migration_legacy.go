@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	_ "modernc.org/sqlite"
 )
 
 func aggregateSkipCounts(ctx context.Context, tx *sql.Tx) error {

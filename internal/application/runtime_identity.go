@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	appconfig "zak-radio/internal/config"
 )
 
 const runtimeIdentity = 65532
@@ -16,7 +18,7 @@ const runtimeIdentity = 65532
 // prepareRuntimeIdentity verifies bootstrap/restore provisioned the retained
 // volume, then drops root before catalog parsing, database access, or listener
 // creation. It never recursively mutates a runtime-supplied path.
-func prepareRuntimeIdentity(cfg Config) error {
+func prepareRuntimeIdentity(cfg appconfig.Config) error {
 	enforce := os.Getenv("ZAK_RADIO_DROP_PRIVILEGES") == "1"
 	if os.Geteuid() == 0 && !enforce {
 		if os.Getenv("ZAK_RADIO_ALLOW_ROOTLESS_CONTAINER") != "1" {

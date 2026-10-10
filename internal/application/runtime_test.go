@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	appconfig "zak-radio/internal/config"
 	"zak-radio/internal/httpguard"
 )
 
@@ -57,7 +58,7 @@ func TestMigrationSourceValidatorAdmitsSupportedProductionShapedLegacyVolume(t *
 	); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{
+	cfg := appconfig.Config{
 		MetadataRoot: root, Archive: archive,
 		DBPath:        filepath.Join(root, "station.sqlite3"),
 		ReaderLibrary: reader, StaticDir: static,
@@ -142,7 +143,7 @@ func TestBootstrapAndBackupPreflightFreeSpaceBeforeTargetMutation(t *testing.T) 
 			t.Fatal(err)
 		}
 	}
-	cfg := Config{
+	cfg := appconfig.Config{
 		MetadataRoot: source, Archive: archive,
 		DBPath:        filepath.Join(source, "station.sqlite3"),
 		ReaderLibrary: reader, StaticDir: static,
@@ -511,7 +512,7 @@ func TestHealthFailsWithoutMainStation(t *testing.T) {
 func TestHealthFailsAfterPartialMediaLoss(t *testing.T) {
 	t.Run("non-first music track", func(t *testing.T) {
 		app := newTestApp(t)
-		if err := os.Remove(app.byID["two"].AudioPath); err != nil {
+		if err := os.Remove(app.catalog.ByID["two"].AudioPath); err != nil {
 			t.Fatal(err)
 		}
 		app.auditAllIntegrity(context.Background())
@@ -542,7 +543,7 @@ func TestHealthFailsAfterPartialMediaLoss(t *testing.T) {
 	})
 	t.Run("same-size music corruption", func(t *testing.T) {
 		app := newTestApp(t)
-		path := app.byID["one"].AudioPath
+		path := app.catalog.ByID["one"].AudioPath
 		info, err := os.Stat(path)
 		if err != nil {
 			t.Fatal(err)
@@ -600,7 +601,7 @@ select audio_path from reader_segments where item_id='reader-corrupt'`).Scan(&pa
 
 func TestMediaOpenRejectsPostStartupSymlinkSwap(t *testing.T) {
 	app := newTestApp(t)
-	path := app.byID["one"].AudioPath
+	path := app.catalog.ByID["one"].AudioPath
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
@@ -665,8 +666,8 @@ func TestPrivateMusicMediaCachePolicy(t *testing.T) {
 	if err := os.WriteFile(cover, []byte("image"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	app.byID["one"].CoverPath = cover
-	app.byID["one"].HasCover = true
+	app.catalog.ByID["one"].CoverPath = cover
+	app.catalog.ByID["one"].HasCover = true
 	for _, endpoint := range []string{"audio", "cover"} {
 		for _, method := range []string{http.MethodGet, http.MethodHead} {
 			req := httptest.NewRequest(method, "/media/one/"+endpoint, nil)
@@ -689,13 +690,13 @@ func TestTrustedProxyClientIdentity(t *testing.T) {
 	trusted := httptest.NewRequest(http.MethodGet, "/", nil)
 	trusted.RemoteAddr = "10.2.3.4:12345"
 	trusted.Header.Set("X-Real-IP", "192.0.2.10")
-	if got := clientAddress(trusted, "10.0.0.0/8"); got != "192.0.2.10" {
+	if got := httpguard.ClientAddress(trusted, "10.0.0.0/8"); got != "192.0.2.10" {
 		t.Fatalf("trusted proxy identity=%q", got)
 	}
 	untrusted := httptest.NewRequest(http.MethodGet, "/", nil)
 	untrusted.RemoteAddr = "203.0.113.5:54321"
 	untrusted.Header.Set("X-Real-IP", "192.0.2.11")
-	if got := clientAddress(untrusted, "10.0.0.0/8"); got != "203.0.113.5" {
+	if got := httpguard.ClientAddress(untrusted, "10.0.0.0/8"); got != "203.0.113.5" {
 		t.Fatalf("untrusted spoof identity=%q", got)
 	}
 }
@@ -707,7 +708,7 @@ func TestListenerRejectsEveryMalformedTrustedProxyToken(t *testing.T) {
 		",172.16.0.1",
 		"172.16.0.0/99",
 	} {
-		if err := validateListenerConfig(Config{
+		if err := appconfig.ValidateListener(appconfig.Config{
 			Port: 8787, AllowedHosts: "loopback,music.example", TrustedProxies: proxies,
 		}); err == nil {
 			t.Fatalf("malformed trusted proxies %q were accepted", proxies)
@@ -722,7 +723,7 @@ func TestMediaRejectsMultipleRanges(t *testing.T) {
 		path string
 		size int64
 	}{
-		{"/media/one/audio", mustFileSize(t, app.byID["one"].AudioPath)},
+		{"/media/one/audio", mustFileSize(t, app.catalog.ByID["one"].AudioPath)},
 		{"/reader-media/range-reader/0.mp3",
 			mustFileSize(t, filepath.Join(app.cfg.ReaderLibrary, "range-reader", "audio", "0.mp3"))},
 	} {
@@ -755,7 +756,7 @@ func TestMiddlewareRejectsMultipleRangesForEveryFileSurface(t *testing.T) {
 		"/reader-image/item/000.png", "/reader-source/item/source",
 	} {
 		called := false
-		handler := secureHTTP(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		handler := httpguard.Wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 			called = true
 		}), "loopback", "loopback", "")
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -848,7 +849,7 @@ func TestVolumeValidationRejectsSQLiteSidecarsInProcess(t *testing.T) {
 
 func TestTemporaryStationIDsUseModernEntropyAndRejectMalformedInput(t *testing.T) {
 	app := newTestApp(t)
-	id, _, _, err := app.station.Create(context.Background(), "one", strings.Repeat("a", 64))
+	id, _, _, err := createTemporaryStationForTest(t, app.station, context.Background(), "one", strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1017,28 +1018,28 @@ func TestListenerConfigurationFailsClosed(t *testing.T) {
 	for _, value := range []string{"invalid", "0", "-1", "65536"} {
 		t.Run("environment "+value, func(t *testing.T) {
 			t.Setenv("ZAK_RADIO_PORT", value)
-			if _, err := defaultConfig(); err == nil {
+			if _, err := appconfig.Load(); err == nil {
 				t.Fatalf("invalid environment port %q was accepted", value)
 			}
 		})
 	}
 	for _, port := range []int{0, -1, 65536} {
-		if err := validateListenerConfig(Config{Port: port, AllowedHosts: "loopback"}); err == nil {
+		if err := appconfig.ValidateListener(appconfig.Config{Port: port, AllowedHosts: "loopback"}); err == nil {
 			t.Fatalf("invalid listener port %d was accepted", port)
 		}
 	}
-	if err := validateListenerConfig(Config{
+	if err := appconfig.ValidateListener(appconfig.Config{
 		Port: 8787, AllowedHosts: "loopback,music.example", TrustedProxies: "",
 	}); err == nil {
 		t.Fatal("external deployment without trusted proxy identity was accepted")
 	}
-	if err := validateListenerConfig(Config{
+	if err := appconfig.ValidateListener(appconfig.Config{
 		Port: 8787, AllowedHosts: "loopback,music.example",
 		TrustedProxies: "172.16.0.0/12", TrustedIngress: "172.16.0.2",
 	}); err != nil {
 		t.Fatalf("validated external listener rejected: %v", err)
 	}
-	if err := validateListenerConfig(Config{
+	if err := appconfig.ValidateListener(appconfig.Config{
 		Port: 8787, AllowedHosts: "loopback", TrustedIngress: "*",
 	}); err != nil {
 		t.Fatalf("Kiln loopback health ingress rejected: %v", err)
@@ -1056,7 +1057,7 @@ func TestCrossSitePrivateReadsAreRejectedBeforeHandlers(t *testing.T) {
 			"/reader-source/item/source",
 		} {
 			called := false
-			handler := secureHTTP(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			handler := httpguard.Wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 				called = true
 			}), "loopback", "loopback", "")
 			req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -1070,7 +1071,7 @@ func TestCrossSitePrivateReadsAreRejectedBeforeHandlers(t *testing.T) {
 		}
 	}
 	called := false
-	handler := secureHTTP(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := httpguard.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusNoContent)
 	}), "loopback", "loopback", "")
@@ -1125,7 +1126,7 @@ func TestStreamAndRateLimiterStateIsBounded(t *testing.T) {
 		"/health", "/library/", "/reader/", "/api/station", "/api/reader/playback", "/media/one/audio",
 		"/reader-media/id/0.mp3", "/reader-image/id/0.png", "/reader-source/id/source",
 	} {
-		if !isContentRoute(path) {
+		if !httpguard.IsContentRoute(path) {
 			t.Fatalf("content route %q is not limited", path)
 		}
 	}
@@ -1142,7 +1143,7 @@ func TestStreamAndRateLimiterStateIsBounded(t *testing.T) {
 func TestDBBackedReadAdmissionRejectsBeforeHandlerQueueGrowth(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})
-	handler := secureHTTP(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := httpguard.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		entered <- struct{}{}
 		<-release
 		w.WriteHeader(http.StatusNoContent)
@@ -1181,7 +1182,7 @@ func TestDBBackedReadAdmissionRejectsBeforeHandlerQueueGrowth(t *testing.T) {
 func TestWriteAdmissionRejectsBeforeHandlerQueueGrowth(t *testing.T) {
 	entered := make(chan struct{}, 32)
 	release := make(chan struct{})
-	handler := secureHTTPConfig(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := httpguard.WrapConfig(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		entered <- struct{}{}
 		<-release
 		w.WriteHeader(http.StatusNoContent)

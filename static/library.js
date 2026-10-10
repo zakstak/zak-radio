@@ -1,4 +1,6 @@
-(() => {
+import { timeLabel } from "./format.js";
+
+export function initLibrary() {
   const state = {
     tracks: [],
     visible: [],
@@ -63,14 +65,6 @@
     group.querySelectorAll('input[type="radio"]').forEach((input) => {
       input.checked = input.value === value;
     });
-  }
-
-  function timeLabel(seconds) {
-    const value = number(seconds);
-    if (value <= 0) return "0:00";
-    return `${Math.floor(value / 60)}:${Math.floor(value % 60)
-      .toString()
-      .padStart(2, "0")}`;
   }
 
   function sizeLabel(bytes) {
@@ -972,4 +966,4 @@
   loadLibrary();
   updateStationTarget();
   renderSavedStations();
-})();
+}

@@ -13,11 +13,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	appconfig "zak-radio/internal/config"
 )
 
 var descriptorVolumeRoot = regexp.MustCompile(`^/(?:proc/self|dev)/fd/[0-9]+$`)
 
-func validateVolumeDataPaths(cfg Config) error {
+func validateVolumeDataPaths(cfg appconfig.Config) error {
 	if !descriptorVolumeRoot.MatchString(filepath.Clean(cfg.MetadataRoot)) {
 		return validateDataPaths(cfg)
 	}
@@ -44,7 +46,7 @@ func validateVolume(ctx context.Context, root string) error {
 	if err := validateRetainedTreeBudget(root); err != nil {
 		return fmt.Errorf("validate retained-volume budget: %w", err)
 	}
-	cfg := Config{
+	cfg := appconfig.Config{
 		MetadataRoot:  root,
 		Archive:       filepath.Join(root, "music-library"),
 		DBPath:        filepath.Join(root, "station.sqlite3"),
@@ -162,7 +164,7 @@ func validateMigrationSourceVolume(ctx context.Context, root string) error {
 	if err != nil || root == string(filepath.Separator) {
 		return fmt.Errorf("invalid retained volume root")
 	}
-	cfg := Config{
+	cfg := appconfig.Config{
 		MetadataRoot:  root,
 		Archive:       filepath.Join(root, "music-library"),
 		DBPath:        filepath.Join(root, "station.sqlite3"),

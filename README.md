@@ -10,19 +10,14 @@ in this repository are the product source of truth. See
 
 ## Run locally
 
-Install Go 1.26.8+ and Node 24+. Start with a disposable sandbox:
+Install Go 1.26.8+ and Node 24+. Build the browser assets:
 
 ```bash
 npm ci
 npm run build:css
-./scripts/start-browser-fixture.sh
 ```
 
-Open <http://127.0.0.1:28799> on the same host. The fixture uses a temporary
-SQLite database and the committed test MP3; Ctrl-C removes its data. It contains
-no Reader items. If working remotely, this loopback URL is local to that host.
-
-To use your own media, point the service at a separate development data root:
+Run the service against a separate development data root:
 
 ```bash
 export ZAK_RADIO_METADATA_ROOT=/path/to/zak-radio-data
@@ -59,28 +54,17 @@ Local endpoints:
 
 ```bash
 go build ./cmd/zak-radio
-go test ./...
-npm run test:browser
-```
-
-Install the browser once with `npx playwright install chromium`. The complete
-gate also needs Python 3, rsync, curl, a Gitleaks version with the `git`
-command, and Docker with Buildx and a running daemon. It tests Go with the race
-detector, browser behavior, security scans, backup/restore, and the packaged
-service's restart and retained state:
-
-```bash
-./scripts/check.sh
+go test -race ./cmd/... ./internal/...
 ```
 
 `static/styles.tailwind.css` is the editable Tailwind v4 source.
 `static/styles.css` is generated, served by the application, and must match it.
 
-For a smoke test of the sandbox above (use your actual counts for other data):
+For a smoke test, use your development catalog and Reader counts:
 
 ```bash
 scripts/verify-runtime.py \
-  --base http://127.0.0.1:28799 \
+  --base http://127.0.0.1:8793 \
   --expected-tracks 1 \
   --expected-reader-items 0 \
   --expected-release development
@@ -146,9 +130,6 @@ promoting a route.
 
 See [ARCHITECTURE](ARCHITECTURE.md) for package and data boundaries and
 [RECOVERY](RECOVERY.md) before moving, migrating, backing up, or restoring data.
-Offline lyrics alignment, evaluation, and title generation are documented in
-[the lyrics guide](docs/lyrics.md). Interface constraints live in
-[DESIGN](DESIGN.md).
 
 ## Station model
 

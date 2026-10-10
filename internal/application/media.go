@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	httpguard "zak-radio/internal/httpguard"
 )
 
 func (a *App) media(w http.ResponseWriter, r *http.Request) {
@@ -16,7 +18,7 @@ func (a *App) media(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	track := a.byID[parts[0]]
+	track := a.catalog.ByID[parts[0]]
 	if track == nil {
 		http.NotFound(w, r)
 		return
@@ -59,7 +61,7 @@ func serveRootRange(w http.ResponseWriter, r *http.Request, rootHandle *os.Root,
 		return
 	}
 	defer file.Close()
-	if ranges := r.Header.Get("Range"); invalidRangeRequest(ranges) {
+	if ranges := r.Header.Get("Range"); httpguard.InvalidRangeRequest(ranges) {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", stat.Size()))
 		http.Error(w, "only one byte range is supported", http.StatusRequestedRangeNotSatisfiable)
 		return

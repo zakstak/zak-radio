@@ -18,6 +18,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	catalogmodel "zak-radio/internal/catalog"
+	appevents "zak-radio/internal/events"
+	httpguard "zak-radio/internal/httpguard"
+	lifecycle "zak-radio/internal/lifecycle"
+	stationmodel "zak-radio/internal/station"
 )
 
 func TestNamespaceRootMappingDetection(t *testing.T) {
@@ -43,7 +49,7 @@ func TestNamespaceRootMappingDetection(t *testing.T) {
 }
 
 func TestLoopbackHealthAllowsOnlyExplicitRootlessIngressPeer(t *testing.T) {
-	handler := secureHTTPConfig(
+	handler := httpguard.WrapConfig(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}),
@@ -75,7 +81,7 @@ func TestLoopbackHealthAllowsOnlyExplicitRootlessIngressPeer(t *testing.T) {
 }
 
 func TestTrustedKilnProxyPreservesBrowserOriginThroughForwardedHost(t *testing.T) {
-	handler := secureHTTPConfig(
+	handler := httpguard.WrapConfig(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}),
@@ -100,7 +106,7 @@ func TestTrustedKilnProxyPreservesBrowserOriginThroughForwardedHost(t *testing.T
 }
 
 func TestForwardedHostRequiresTrustedProxyAndAllowedHost(t *testing.T) {
-	handler := secureHTTPConfig(
+	handler := httpguard.WrapConfig(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}),
@@ -242,7 +248,7 @@ func TestStationNormalizationIsBoundedAcrossLargeElapsedCycles(t *testing.T) {
 	row.Playing = true
 	row.Position = 0
 	row.UpdatedAt = 0
-	changed, err := app.station.normalizeElapsed(&row, 1e12)
+	changed, err := app.station.normalizeElapsedWithQueue(context.Background(), nil, &row, 1e12)
 	if err != nil || !changed || row.Position < 0 || row.Position >= app.station.duration(row.TrackID) {
 		t.Fatalf("large elapsed normalization changed=%v row=%#v err=%v", changed, row, err)
 	}
@@ -510,11 +516,11 @@ update app_metadata set value=? where key='track_stats_revision'`,
 		strconv.FormatInt(boundary, 10)); err != nil {
 		t.Fatal(err)
 	}
-	request = httptest.NewRequest(http.MethodPost, "/api/like",
-		strings.NewReader(`{"track_id":"one"}`))
+	request = httptest.NewRequest(http.MethodPost, "/api/reaction",
+		strings.NewReader(`{"track_id":"one","reaction":"like"}`))
 	request.Header.Set("Content-Type", "application/json")
 	result = httptest.NewRecorder()
-	app.apiLike(result, request)
+	app.apiReaction(result, request)
 	if result.Code != http.StatusInternalServerError {
 		t.Fatalf("boundary track-stat mutation status=%d body=%s",
 			result.Code, result.Body.String())
@@ -564,8 +570,8 @@ func TestCatalogIdentityVersionsStationAndMedia(t *testing.T) {
 	tracks := httptest.NewRecorder()
 	app.apiTracks(tracks, httptest.NewRequest(http.MethodGet, "/api/tracks", nil))
 	var payload struct {
-		CatalogRevision string  `json:"catalog_revision"`
-		Tracks          []Track `json:"tracks"`
+		CatalogRevision string               `json:"catalog_revision"`
+		Tracks          []catalogmodel.Track `json:"tracks"`
 	}
 	if err := json.Unmarshal(tracks.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
@@ -688,11 +694,11 @@ func TestMigrationFinalizationIsScopedAndRetryable(t *testing.T) {
 
 func TestRuntimeVolumeLockAllowsRollingDeploymentPeer(t *testing.T) {
 	cfg := newTestConfig(t)
-	first, err := acquireRuntimeVolumeLock(cfg.MetadataRoot)
+	first, err := lifecycle.AcquireRuntimeVolumeLock(cfg.MetadataRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := acquireRuntimeVolumeLock(cfg.MetadataRoot)
+	second, err := lifecycle.AcquireRuntimeVolumeLock(cfg.MetadataRoot)
 	if err != nil {
 		first.Close()
 		t.Fatalf("rolling deployment peer could not acquire runtime lock: %v", err)
@@ -704,7 +710,7 @@ func TestRuntimeVolumeLockAllowsRollingDeploymentPeer(t *testing.T) {
 	if err := first.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := acquireRuntimeVolumeLock(cfg.MetadataRoot)
+	reopened, err := lifecycle.AcquireRuntimeVolumeLock(cfg.MetadataRoot)
 	if err != nil {
 		t.Fatalf("released lifecycle lock could not be reacquired: %v", err)
 	}
@@ -980,7 +986,7 @@ update stations set track_id='one', position=10, playing=0, updated_at=?,
 	track_changed_at=? where id=?`, unixTime(fixed), unixTime(fixed)-10, mainStationID); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := app.station.Execute(context.Background(), Command{Action: "play"})
+	snapshot, err := app.station.Execute(context.Background(), stationmodel.Command{Action: "play"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1000,7 +1006,7 @@ update stations set track_id='one', position=10, playing=0, updated_at=?,
 }
 
 func TestBroadcasterForgetReleasesTopicRevision(t *testing.T) {
-	events := NewBroadcaster()
+	events := appevents.NewBroadcaster()
 	events.PublishValue("expired", map[string]any{"revision": int64(7)})
 	events.Forget("expired")
 	_, retained := events.Revision("expired")
@@ -1013,7 +1019,7 @@ func TestStationEventReconnectStartsFromCurrentRevision(t *testing.T) {
 	app := newTestApp(t)
 	server := httptest.NewServer(app.routes())
 	defer server.Close()
-	readInitial := func() Snapshot {
+	readInitial := func() stationmodel.Snapshot {
 		t.Helper()
 		ctx, cancel := context.WithCancel(context.Background())
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
@@ -1034,7 +1040,7 @@ func TestStationEventReconnectStartsFromCurrentRevision(t *testing.T) {
 			if !strings.HasPrefix(line, "data: ") {
 				continue
 			}
-			var snapshot Snapshot
+			var snapshot stationmodel.Snapshot
 			if json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &snapshot) == nil &&
 				snapshot.StationID == mainStationID {
 				cancel()
@@ -1043,10 +1049,10 @@ func TestStationEventReconnectStartsFromCurrentRevision(t *testing.T) {
 		}
 		cancel()
 		t.Fatalf("station stream ended before its initial snapshot: %v", scanner.Err())
-		return Snapshot{}
+		return stationmodel.Snapshot{}
 	}
 	first := readInitial()
-	if _, err := app.station.Execute(context.Background(), Command{Action: "play"}); err != nil {
+	if _, err := app.station.Execute(context.Background(), stationmodel.Command{Action: "play"}); err != nil {
 		t.Fatal(err)
 	}
 	reconnected := readInitial()
@@ -1076,7 +1082,7 @@ func TestStartupReadinessWaitsForCompleteDigestAudit(t *testing.T) {
 
 func TestExternalHostsRequireAuthorizedIngressAndIPv6Buckets(t *testing.T) {
 	called := false
-	handler := secureHTTPConfig(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := httpguard.WrapConfig(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusNoContent)
 	}), "radio.example", "https://radio.example", "10.0.0.2", "10.0.0.2", 64)
@@ -1099,11 +1105,11 @@ func TestExternalHostsRequireAuthorizedIngressAndIPv6Buckets(t *testing.T) {
 	}
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.RemoteAddr = "[2001:db8::10]:1234"
-	if got := clientAddressWithPrefix(request, "", 64); got != "2001:db8::/64" {
+	if got := httpguard.ClientAddressWithPrefix(request, "", 64); got != "2001:db8::/64" {
 		t.Fatalf("IPv6 client bucket=%q", got)
 	}
 	request.RemoteAddr = "[2001:db8::20]:1234"
-	if got := clientAddressWithPrefix(request, "", 64); got != "2001:db8::/64" {
+	if got := httpguard.ClientAddressWithPrefix(request, "", 64); got != "2001:db8::/64" {
 		t.Fatalf("rotated IPv6 client bucket=%q", got)
 	}
 }
@@ -1131,18 +1137,18 @@ func TestHealthUsesMaintainedReadinessSnapshot(t *testing.T) {
 
 func TestTrailingOversizedJSONMapsToPayloadTooLarge(t *testing.T) {
 	app := newTestApp(t)
-	body := `{"track_id":"one"}` + strings.Repeat(" ", maxJSONBodyBytes)
-	req := httptest.NewRequest(http.MethodPost, "/api/like", strings.NewReader(body))
+	body := `{"track_id":"one","reaction":"like"}` + strings.Repeat(" ", httpguard.MaxJSONBodyBytes)
+	req := httptest.NewRequest(http.MethodPost, "/api/reaction", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	res := httptest.NewRecorder()
-	app.apiLike(res, req)
+	app.apiReaction(res, req)
 	if res.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("trailing oversized JSON status=%d body=%s", res.Code, res.Body.String())
 	}
 }
 
 func TestStationEventStartsAreRateLimited(t *testing.T) {
-	handler := secureHTTPConfig(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := httpguard.WrapConfig(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}), "loopback", "loopback", "", "", 64)
 	for attempt := 1; attempt <= 25; attempt++ {

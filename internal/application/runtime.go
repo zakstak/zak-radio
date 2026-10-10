@@ -12,10 +12,13 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	appconfig "zak-radio/internal/config"
+	lifecycle "zak-radio/internal/lifecycle"
 )
 
 func Run() error {
-	cfg, err := defaultConfig()
+	cfg, err := appconfig.Load()
 	if err != nil {
 		return err
 	}
@@ -49,13 +52,13 @@ func Run() error {
 		fmt.Printf("validated migration source volume %s\n", *validateMigrationRoot)
 		return nil
 	}
-	if err := validateListenerConfig(cfg); err != nil {
+	if err := appconfig.ValidateListener(cfg); err != nil {
 		return err
 	}
 	if err := prepareRuntimeIdentity(cfg); err != nil {
 		return err
 	}
-	volumeLock, err := acquireRuntimeVolumeLock(cfg.MetadataRoot)
+	volumeLock, err := lifecycle.AcquireRuntimeVolumeLock(cfg.MetadataRoot)
 	if err != nil {
 		return err
 	}
@@ -82,7 +85,7 @@ func Run() error {
 	}
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	log.Printf("Zak Radio Go serving %d tracks from %s", len(app.tracks), app.cfg.Archive)
+	log.Printf("Zak Radio Go serving %d tracks from %s", len(app.catalog.Tracks), app.cfg.Archive)
 	log.Printf("Listening on http://%s", server.Addr)
 	serveFailure := serveUntilStopped(server, listener, stop.Done())
 	app.cancel()

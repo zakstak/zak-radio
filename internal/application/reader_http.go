@@ -16,6 +16,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	httpguard "zak-radio/internal/httpguard"
+	readermodel "zak-radio/internal/reader"
 )
 
 const (
@@ -86,7 +89,7 @@ func (a *App) readerItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		parseWarnings(item)
-		items = append(items, publicReaderItem(item))
+		items = append(items, readermodel.PublicItem(item))
 	}
 	if err := rows.Err(); err != nil {
 		internalError(w)
@@ -158,7 +161,7 @@ func (a *App) readerItemSubroute(w http.ResponseWriter, r *http.Request) {
 		}
 		public := make([]map[string]any, 0, len(segments))
 		for _, segment := range segments {
-			public = append(public, publicReaderSegment(segment))
+			public = append(public, readermodel.PublicSegment(segment))
 		}
 		payload := map[string]any{"item_id": id, "segments": public}
 		if len(public) == limit {
@@ -196,7 +199,7 @@ func (a *App) readerItemSubroute(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, map[string]any{"item": publicReaderItem(item)})
+	writeJSON(w, map[string]any{"item": readermodel.PublicItem(item)})
 }
 
 func readerPage(w http.ResponseWriter, r *http.Request, maximum int) (int, int, bool) {
@@ -485,7 +488,7 @@ func (a *App) setReaderPlayback(w http.ResponseWriter, r *http.Request) {
 		WriterID       string  `json:"writer_id"`
 		WriterSequence int64   `json:"writer_sequence"`
 	}
-	if !decodeJSON(w, r, &request, false) {
+	if !httpguard.DecodeJSON(w, r, &request, false) {
 		return
 	}
 	if !validRouteID(request.ItemID) || request.SegmentIndex < 0 ||

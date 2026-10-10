@@ -15,7 +15,7 @@ internal/lifecycle/     retained-volume lifecycle locking
 internal/reader/        Reader public domain models
 internal/station/       station commands, snapshots, and retained state models
 static/                 browser shell and feature modules
-scripts/                operator, packaging, recovery, and validation tools
+scripts/                deployment packaging, verification, and data recovery tools
 ```
 
 The command package contains no product behavior. It starts
@@ -23,11 +23,12 @@ The command package contains no product behavior. It starts
 Application code may depend on those packages; they must not import the
 application package.
 
-The browser loads `platform.js` before feature code. That module owns shared
-storage, HTTP behavior, and the Vessel native playback bridge described in
-[docs/native-playback.md](docs/native-playback.md). `app.js` owns the persistent
-shell and shared radio, while `library.js` and `reader.js` own their respective
-views.
+The browser uses ES modules. `platform.js` owns shared storage, HTTP behavior,
+and the Vessel native playback bridge described in
+[docs/native-playback.md](docs/native-playback.md). `audio.js` owns the shared
+audio element, `router.js` owns navigation, `lyrics.js` owns lyric display, and
+`format.js` provides shared display formatting. `app.js` initializes the shell
+and radio. `library.js` and `reader.js` initialize their views explicitly.
 
 The release may also carry an immutable timed-lyrics directory. Its sidecars are
 audio-digest-bound, schema-validated during startup, and digest-verified again

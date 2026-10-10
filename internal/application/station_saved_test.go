@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	stationmodel "zak-radio/internal/station"
 )
 
 func TestSavedStationCRUDPersistsPastPrivateExpiry(t *testing.T) {
@@ -58,7 +60,7 @@ func TestSavedStationCRUDPersistsPastPrivateExpiry(t *testing.T) {
 	if _, err := reopened.station.UpdateSaved(
 		context.Background(), definition.StationID, strings.Repeat("d", 48),
 		SavedStationUpdate{Name: &newName},
-	); !errors.Is(err, ErrForbidden) {
+	); !errors.Is(err, stationmodel.ErrForbidden) {
 		t.Fatalf("listener update error = %v, want forbidden", err)
 	}
 	if err := reopened.station.DeleteSaved(
@@ -86,7 +88,7 @@ on conflict(track_id) do update set disliked=1`); err != nil {
 		t.Fatalf("default All songs eligibility = %#v", snapshot)
 	}
 	skip := true
-	snapshot, err = app.station.Execute(context.Background(), Command{
+	snapshot, err = app.station.Execute(context.Background(), stationmodel.Command{
 		Action: "set_station_skip_disliked", SkipDisliked: &skip,
 	})
 	if err != nil {
@@ -97,24 +99,24 @@ on conflict(track_id) do update set disliked=1`); err != nil {
 	}
 
 	skip = false
-	if _, err := app.station.Execute(context.Background(), Command{
+	if _, err := app.station.Execute(context.Background(), stationmodel.Command{
 		Action: "set_station_skip_disliked", SkipDisliked: &skip,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.station.Execute(context.Background(), Command{
+	if _, err := app.station.Execute(context.Background(), stationmodel.Command{
 		Action: "select", TrackID: "one",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	app.station.randomIndex = func(int) int { return 0 }
-	snapshot, err = app.station.Execute(context.Background(), Command{
+	snapshot, err = app.station.Execute(context.Background(), stationmodel.Command{
 		Action: "set_station_random_mode", RandomMode: "true_random",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err = app.station.Execute(context.Background(), Command{Action: "next"})
+	snapshot, err = app.station.Execute(context.Background(), stationmodel.Command{Action: "next"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +124,7 @@ on conflict(track_id) do update set disliked=1`); err != nil {
 		t.Fatalf("true random did not permit a repeat: %#v", snapshot)
 	}
 
-	snapshot, err = app.station.Execute(context.Background(), Command{
+	snapshot, err = app.station.Execute(context.Background(), stationmodel.Command{
 		Action: "set_station_random_mode", RandomMode: "deck",
 	})
 	if err != nil {
@@ -132,7 +134,7 @@ on conflict(track_id) do update set disliked=1`); err != nil {
 		t.Fatalf("deck preview = %#v", snapshot)
 	}
 	next := snapshot.UpNext[0]
-	snapshot, err = app.station.Execute(context.Background(), Command{Action: "next"})
+	snapshot, err = app.station.Execute(context.Background(), stationmodel.Command{Action: "next"})
 	if err != nil {
 		t.Fatal(err)
 	}

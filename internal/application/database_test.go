@@ -15,6 +15,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	appevents "zak-radio/internal/events"
+	stationmodel "zak-radio/internal/station"
 )
 
 func TestMigrationNormalizesCanonicalStationIdentity(t *testing.T) {
@@ -276,7 +279,7 @@ insert into stations(
 		t.Fatal(err)
 	}
 	defer secondDB.Close()
-	other := NewStationService(secondDB, app.catalog, NewBroadcaster())
+	other := NewStationService(secondDB, app.catalog, appevents.NewBroadcaster())
 	services := []*StationService{app.station, other}
 	errorsSeen := make(chan error, 2)
 	var wg sync.WaitGroup
@@ -284,7 +287,7 @@ insert into stations(
 		wg.Add(1)
 		go func(service *StationService) {
 			defer wg.Done()
-			_, _, _, err := service.Create(context.Background(), "one", strings.Repeat("a", 64))
+			_, _, _, err := createTemporaryStationForTest(t, service, context.Background(), "one", strings.Repeat("a", 64))
 			errorsSeen <- err
 		}(service)
 	}
@@ -294,7 +297,7 @@ insert into stations(
 	for err := range errorsSeen {
 		if err == nil {
 			success++
-		} else if errors.Is(err, ErrCapacity) {
+		} else if errors.Is(err, stationmodel.ErrCapacity) {
 			capacity++
 		} else {
 			t.Fatalf("unexpected create error: %v", err)
@@ -314,7 +317,7 @@ insert into stations(
 
 func TestExpiredStationImmediatelyNotifiesSubscribers(t *testing.T) {
 	app := newTestApp(t)
-	id, _, _, err := app.station.Create(context.Background(), "one", tokenHash("creator"))
+	id, _, _, err := createTemporaryStationForTest(t, app.station, context.Background(), "one", tokenHash("creator"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +364,7 @@ insert into stations(
 	defer secondDB.Close()
 	services := []*StationService{
 		app.station,
-		NewStationService(secondDB, app.catalog, NewBroadcaster()),
+		NewStationService(secondDB, app.catalog, appevents.NewBroadcaster()),
 	}
 	results := make(chan error, len(services))
 	var wg sync.WaitGroup
@@ -369,7 +372,7 @@ insert into stations(
 		wg.Add(1)
 		go func(service *StationService) {
 			defer wg.Done()
-			_, _, _, err := service.Create(context.Background(), "one", bucket)
+			_, _, _, err := createTemporaryStationForTest(t, service, context.Background(), "one", bucket)
 			results <- err
 		}(service)
 	}
@@ -380,7 +383,7 @@ insert into stations(
 		switch {
 		case err == nil:
 			success++
-		case errors.Is(err, ErrCapacity):
+		case errors.Is(err, stationmodel.ErrCapacity):
 			capacity++
 		default:
 			t.Fatalf("unexpected creator-quota error: %v", err)
@@ -441,11 +444,11 @@ func TestRevisionHeadroomRejectsOverflowingMutations(t *testing.T) {
 		strconv.FormatInt(maxRevisionValue, 10)); err != nil {
 		t.Fatal(err)
 	}
-	like := httptest.NewRequest(http.MethodPost, "/api/like",
-		strings.NewReader(`{"track_id":"one"}`))
+	like := httptest.NewRequest(http.MethodPost, "/api/reaction",
+		strings.NewReader(`{"track_id":"one","reaction":"like"}`))
 	like.Header.Set("Content-Type", "application/json")
 	result = httptest.NewRecorder()
-	app.apiLike(result, like)
+	app.apiReaction(result, like)
 	if result.Code != http.StatusInternalServerError {
 		t.Fatalf("terminal track revision mutation status=%d body=%s",
 			result.Code, result.Body.String())
@@ -602,12 +605,12 @@ update app_metadata set value=? where key='logical_clock_high'`,
 		strconv.FormatFloat(maxRetainedTimestamp, 'f', 0, 64)); err != nil {
 		t.Fatal(err)
 	}
-	service := NewStationService(app.db, app.catalog, NewBroadcaster())
+	service := NewStationService(app.db, app.catalog, appevents.NewBroadcaster())
 	fixed := time.Unix(2_000_000_000, 0)
 	service.clockSample = fixed
 	service.clock = func() time.Time { return fixed }
 	service.monotonic = func() time.Time { return fixed }
-	if _, _, _, err := service.Create(
+	if _, _, _, err := createTemporaryStationForTest(t, service,
 		context.Background(), "one", strings.Repeat("c", 64),
 	); err == nil || !strings.Contains(err.Error(), "timestamp headroom") {
 		t.Fatalf("temporary station was accepted at timestamp ceiling: %v", err)
@@ -665,7 +668,7 @@ func TestCatalogTurnoverReconcilesAuxiliaryStatisticsBeforeServing(t *testing.T)
 		t.Fatal(err)
 	}
 
-	service := NewStationService(app.db, app.catalog, NewBroadcaster())
+	service := NewStationService(app.db, app.catalog, appevents.NewBroadcaster())
 	if err := service.EnsureMain(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -680,14 +683,14 @@ func TestCatalogTurnoverReconcilesAuxiliaryStatisticsBeforeServing(t *testing.T)
 		t.Fatalf("stale statistics survived catalog reconciliation: likes=%d skips=%d",
 			likeRows, skipRows)
 	}
-	if _, err := service.Execute(context.Background(), Command{Action: "next"}); err != nil {
+	if _, err := service.Execute(context.Background(), stationmodel.Command{Action: "next"}); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/like",
-		strings.NewReader(`{"track_id":"one"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/reaction",
+		strings.NewReader(`{"track_id":"one","reaction":"like"}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	app.apiLike(response, request)
+	app.apiReaction(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("current-track like status=%d body=%s", response.Code, response.Body.String())
 	}

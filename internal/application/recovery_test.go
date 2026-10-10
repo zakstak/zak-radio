@@ -17,6 +17,10 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	catalogmodel "zak-radio/internal/catalog"
+	appconfig "zak-radio/internal/config"
+	stationmodel "zak-radio/internal/station"
 )
 
 func TestKilnPackagePreparationIsMinimalRepeatableAndPrivate(t *testing.T) {
@@ -486,13 +490,13 @@ update app_metadata set value=? where key='track_stats_revision'`,
 
 func TestShuffledCatchUpIsAllocationAndStepBounded(t *testing.T) {
 	const tracks = maxCatalogTracks
-	catalog := Catalog{
-		Tracks:    make([]Track, tracks),
-		ByID:      make(map[string]*Track, tracks),
+	catalog := catalogmodel.Catalog{
+		Tracks:    make([]catalogmodel.Track, tracks),
+		ByID:      make(map[string]*catalogmodel.Track, tracks),
 		IndexByID: make(map[string]int, tracks),
 	}
 	for index := range catalog.Tracks {
-		catalog.Tracks[index] = Track{
+		catalog.Tracks[index] = catalogmodel.Track{
 			ID:       fmt.Sprintf("track-%04d", index),
 			Duration: minTrackDuration,
 		}
@@ -509,13 +513,13 @@ func TestShuffledCatchUpIsAllocationAndStepBounded(t *testing.T) {
 	}
 	run := func() {
 		randomCalls = 0
-		row := Station{
+		row := stationmodel.Station{
 			TrackID:   catalog.Tracks[0].ID,
 			Playing:   true,
 			Shuffle:   true,
 			UpdatedAt: 1,
 		}
-		changed, err := service.normalizeElapsed(&row, 100_000)
+		changed, err := service.normalizeElapsedWithQueue(context.Background(), nil, &row, 100_000)
 		if err != nil || !changed {
 			t.Fatalf("normalize shuffled catch-up: changed=%v err=%v", changed, err)
 		}
@@ -648,7 +652,7 @@ func TestQuiescedVolumeBackupRestoreDrill(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(staticDir, "index.html"), []byte("test"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{
+	cfg := appconfig.Config{
 		MetadataRoot:   source,
 		Archive:        filepath.Join(source, "music-library"),
 		DBPath:         filepath.Join(source, "station.sqlite3"),

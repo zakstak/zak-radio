@@ -14,12 +14,6 @@
 *.out
 *.prof
 
-# Browser test artifacts
-/.playwright-cli/
-/blob-report/
-/playwright-report/
-/test-results/
-
 # Python helper artifacts
 __pycache__/
 *.py[cod]
