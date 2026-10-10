@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
+	appconfig "zak-radio/internal/config"
 )
 
 const (
@@ -81,7 +82,7 @@ type retainedUsage struct {
 	backupBytes  int64
 }
 
-func validateDataPaths(cfg Config) error {
+func validateDataPaths(cfg appconfig.Config) error {
 	metadata, err := unsymlinkedPath(cfg.MetadataRoot)
 	if err != nil {
 		return fmt.Errorf("metadata root: %w", err)

@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"database/sql"
+
+	stationmodel "zak-radio/internal/station"
 )
 
 type queryer interface {
@@ -10,8 +12,8 @@ type queryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
-func readStation(ctx context.Context, q queryer, id string, now float64) (Station, error) {
-	var row Station
+func readStation(ctx context.Context, q queryer, id string, now float64) (stationmodel.Station, error) {
+	var row stationmodel.Station
 	var playing, repeatOne, shuffle int
 	var saved int
 	var expires sql.NullFloat64
@@ -35,7 +37,7 @@ where id=? and (
 	return row, err
 }
 
-func updateStation(ctx context.Context, tx *sql.Tx, row Station) error {
+func updateStation(ctx context.Context, tx *sql.Tx, row stationmodel.Station) error {
 	result, err := tx.ExecContext(ctx, `
 update stations set
 	track_id=?, position=?, playing=?, repeat_one=?, shuffle=?, updated_at=?,

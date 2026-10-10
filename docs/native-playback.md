@@ -54,9 +54,6 @@ Vessel bounds continuous buffering on its side. This bridge does not replace the
 HTML player with a native player, and it doesn't keep playback alive if the
 WebView process dies.
 
-## Tests
+## Device checks
 
-`tests/native-playback.spec.mjs` drives a fake bridge against a second browser
-fixture whose station alternates two tracks, so every boundary changes the media
-source. Locked-phone behavior still needs a device check with the matching
-Vessel release.
+Locked-phone behavior needs a device check with the matching Vessel release.

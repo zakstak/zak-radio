@@ -13,6 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	catalogmodel "zak-radio/internal/catalog"
+	httpguard "zak-radio/internal/httpguard"
+	stationmodel "zak-radio/internal/station"
 )
 
 func (a *App) apiTracks(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +39,7 @@ func (a *App) apiTracks(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *App) tracksWithStats(ctx context.Context) ([]Track, int64, error) {
+func (a *App) tracksWithStats(ctx context.Context) ([]catalogmodel.Track, int64, error) {
 	likes, dislikes, skips := map[string]int{}, map[string]int{}, map[string]int{}
 	tx, err := a.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -86,8 +90,8 @@ func (a *App) tracksWithStats(ctx context.Context) ([]Track, int64, error) {
 	if err := rows.Close(); err != nil {
 		return nil, 0, err
 	}
-	out := make([]Track, len(a.tracks))
-	copy(out, a.tracks)
+	out := make([]catalogmodel.Track, len(a.catalog.Tracks))
+	copy(out, a.catalog.Tracks)
 	for i := range out {
 		out[i].LikeCount, out[i].DislikeCount = likes[out[i].ID], dislikes[out[i].ID]
 		out[i].Liked, out[i].Disliked = out[i].LikeCount > 0, out[i].DislikeCount > 0
@@ -192,8 +196,8 @@ func (a *App) trackStatsPayload(ctx context.Context, q queryer) (map[string]any,
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
-	stats := make([]map[string]any, 0, len(a.tracks))
-	for _, track := range a.tracks {
+	stats := make([]map[string]any, 0, len(a.catalog.Tracks))
+	for _, track := range a.catalog.Tracks {
 		stats = append(stats, map[string]any{
 			"track_id": track.ID,
 			"liked":    likes[track.ID] > 0, "disliked": dislikes[track.ID] > 0,
@@ -233,10 +237,10 @@ func (a *App) createStation(w http.ResponseWriter, r *http.Request) {
 		SkipDisliked   bool     `json:"skip_disliked"`
 		TrackIDs       []string `json:"track_ids"`
 	}
-	if !decodeJSON(w, r, &request, true) {
+	if !httpguard.DecodeJSON(w, r, &request, true) {
 		return
 	}
-	creator := tokenHash(clientAddressWithPrefix(
+	creator := tokenHash(httpguard.ClientAddressWithPrefix(
 		r, a.cfg.TrustedProxies, a.cfg.ClientIPv6Prefix))
 	if request.Name != "" || request.SourceType != "" {
 		definition, token, err := a.station.CreateSavedIdempotent(
@@ -296,7 +300,7 @@ func (a *App) savedStation(w http.ResponseWriter, r *http.Request) {
 			AddTrackID    string    `json:"add_track_id"`
 			RemoveTrackID string    `json:"remove_track_id"`
 		}
-		if !decodeJSON(w, r, &request, false) {
+		if !httpguard.DecodeJSON(w, r, &request, false) {
 			return
 		}
 		definition, err := a.station.UpdateSaved(r.Context(), id, request.OwnerToken,
@@ -316,7 +320,7 @@ func (a *App) savedStation(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			OwnerToken string `json:"owner_token"`
 		}
-		if !decodeJSON(w, r, &request, false) {
+		if !httpguard.DecodeJSON(w, r, &request, false) {
 			return
 		}
 		if err := a.station.DeleteSaved(r.Context(), id, request.OwnerToken); err != nil {
@@ -341,10 +345,10 @@ func (a *App) apiControl(w http.ResponseWriter, r *http.Request) {
 		RandomMode   string   `json:"random_mode"`
 		SkipDisliked *bool    `json:"skip_disliked"`
 	}
-	if !decodeJSON(w, r, &request, false) {
+	if !httpguard.DecodeJSON(w, r, &request, false) {
 		return
 	}
-	snapshot, err := a.station.Execute(r.Context(), Command{
+	snapshot, err := a.station.Execute(r.Context(), stationmodel.Command{
 		StationID: request.StationID, OwnerToken: request.OwnerToken, Action: request.Action,
 		TrackID: request.TrackID, Position: request.Position,
 		RepeatOne: request.RepeatOne, Shuffle: request.Shuffle,
@@ -366,13 +370,13 @@ func stationError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		http.Error(w, "station not found or expired", http.StatusNotFound)
-	case errors.Is(err, ErrForbidden):
+	case errors.Is(err, stationmodel.ErrForbidden):
 		http.Error(w, err.Error(), http.StatusForbidden)
-	case errors.Is(err, ErrCapacity):
+	case errors.Is(err, stationmodel.ErrCapacity):
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
-	case errors.Is(err, ErrQueueFull):
+	case errors.Is(err, stationmodel.ErrQueueFull):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrInvalidCommand):
+	case errors.Is(err, stationmodel.ErrInvalidCommand):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		http.Error(w, "station storage unavailable", http.StatusInternalServerError)
@@ -426,7 +430,7 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 				flusher.Flush()
 				return
 			}
-			var event Snapshot
+			var event stationmodel.Snapshot
 			if json.Unmarshal(payload, &event) != nil || event.Revision <= initialRevision {
 				continue
 			}
@@ -516,7 +520,7 @@ func refreshStreamDeadline(w http.ResponseWriter) {
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(30 * time.Second))
 }
 
-func writeSSE(w http.ResponseWriter, snapshot Snapshot) {
+func writeSSE(w http.ResponseWriter, snapshot stationmodel.Snapshot) {
 	payload, _ := json.Marshal(snapshot)
 	fmt.Fprintf(w, "event: station\ndata: %s\n\n", payload)
 }
@@ -526,15 +530,12 @@ func (a *App) apiReaction(w http.ResponseWriter, r *http.Request) {
 		TrackID  string `json:"track_id"`
 		Reaction string `json:"reaction"`
 	}
-	if !decodeJSON(w, r, &request, false) {
+	if !httpguard.DecodeJSON(w, r, &request, false) {
 		return
 	}
-	if a.byID[request.TrackID] == nil {
+	if a.catalog.ByID[request.TrackID] == nil {
 		http.Error(w, "unknown track", http.StatusBadRequest)
 		return
-	}
-	if request.Reaction == "" {
-		request.Reaction = "like"
 	}
 	if request.Reaction != "like" && request.Reaction != "dislike" {
 		http.Error(w, "reaction must be like or dislike", http.StatusBadRequest)
@@ -614,10 +615,6 @@ returning cast(value as integer)`, maxRevisionValue-3).Scan(&revision); err != n
 	writeJSON(w, payload)
 }
 
-func (a *App) apiLike(w http.ResponseWriter, r *http.Request) {
-	a.apiReaction(w, r)
-}
-
 func readTrackStatsRevision(ctx context.Context, q queryer) (int64, error) {
 	var raw string
 	if err := q.QueryRowContext(ctx,
@@ -633,7 +630,7 @@ func readTrackStatsRevision(ctx context.Context, q queryer) (int64, error) {
 
 func (a *App) apiTrackText(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/track/")
-	track := a.byID[id]
+	track := a.catalog.ByID[id]
 	if track == nil {
 		http.NotFound(w, r)
 		return
@@ -660,7 +657,7 @@ func (a *App) apiTrackText(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"id": id, kind: a.readTrackText(path)})
 }
 
-func (a *App) writeTimedLyrics(w http.ResponseWriter, track *Track) {
+func (a *App) writeTimedLyrics(w http.ResponseWriter, track *catalogmodel.Track) {
 	if track.TimedLyricsPath == "" {
 		writeJSON(w, map[string]any{
 			"id": track.ID, "timed_lyrics": nil,

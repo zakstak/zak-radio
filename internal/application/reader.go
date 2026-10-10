@@ -8,9 +8,6 @@ import (
 	readermodel "zak-radio/internal/reader"
 )
 
-type ReaderItem = readermodel.Item
-type ReaderSegment = readermodel.Segment
-
 const readerItemRequestColumns = `
 id, title, source_url, source_type, author, published_at, uploaded_at,
 generated_at, status, voice, tts_backend, tts_speed, storage_dir, source_path,
@@ -21,15 +18,7 @@ const readerSegmentRequestColumns = `
 segment_index, heading_path, kind, text, char_start, char_end,
 duration, audio_bytes, audio_sha256, status`
 
-func publicReaderItem(item ReaderItem) map[string]any {
-	return readermodel.PublicItem(item)
-}
-
-func publicReaderSegment(segment ReaderSegment) map[string]any {
-	return readermodel.PublicSegment(segment)
-}
-
-func (a *App) readerItem(ctx context.Context, id string) (ReaderItem, error) {
+func (a *App) readerItem(ctx context.Context, id string) (readermodel.Item, error) {
 	rows, err := a.db.QueryContext(ctx,
 		"select "+readerItemRequestColumns+" from reader_items where id=?", id)
 	if err != nil {
@@ -44,7 +33,7 @@ func (a *App) readerItem(ctx context.Context, id string) (ReaderItem, error) {
 	return item, err
 }
 
-func (a *App) readerSegmentsPage(ctx context.Context, id string, limit, offset int) ([]ReaderSegment, error) {
+func (a *App) readerSegmentsPage(ctx context.Context, id string, limit, offset int) ([]readermodel.Segment, error) {
 	rows, err := a.db.QueryContext(ctx,
 		"select "+readerSegmentRequestColumns+
 			" from reader_segments where item_id=? order by segment_index limit ? offset ?",
@@ -53,7 +42,7 @@ func (a *App) readerSegmentsPage(ctx context.Context, id string, limit, offset i
 		return nil, err
 	}
 	defer rows.Close()
-	result := []ReaderSegment{}
+	result := []readermodel.Segment{}
 	for rows.Next() {
 		segment, err := scanMap(rows)
 		if err != nil {

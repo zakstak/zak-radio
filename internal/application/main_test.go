@@ -15,6 +15,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	appconfig "zak-radio/internal/config"
+	stationmodel "zak-radio/internal/station"
 )
 
 func TestRepeatOneKeepsCurrentTrackAtEnd(t *testing.T) {
@@ -47,14 +50,14 @@ func TestRepeatOneKeepsCurrentTrackAtEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	station, err = app.stationState()
+	after, err := app.station.Snapshot(context.Background(), mainStationID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := station["track_id"]; got != "one" {
+	if got := after.TrackID; got != "one" {
 		t.Fatalf("track_id = %v, want one", got)
 	}
-	if got := station["position"]; got != float64(2) {
+	if got := after.Position; got != float64(2) {
 		t.Fatalf("position = %v, want 2 seconds into the loop", got)
 	}
 }
@@ -78,11 +81,11 @@ func TestPlaybackAdvancesAtEndWhenRepeatOneIsOff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	station, err := app.stationState()
+	station, err := app.station.Snapshot(context.Background(), mainStationID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := station["track_id"]; got != "two" {
+	if got := station.TrackID; got != "two" {
 		t.Fatalf("track_id = %v, want two", got)
 	}
 }
@@ -132,17 +135,17 @@ func TestShuffleRequiresExplicitState(t *testing.T) {
 
 func TestStationQueueIsOrderedAndConsumedByNext(t *testing.T) {
 	app := newTestApp(t)
-	id, token, _, err := app.station.Create(
+	id, token, _, err := createTemporaryStationForTest(t, app.station,
 		context.Background(), "one", strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.station.Execute(context.Background(), Command{
+	if _, err := app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: id, OwnerToken: token, Action: "add_to_queue", TrackID: "one",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	station, err := app.station.Execute(context.Background(), Command{
+	station, err := app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: id, OwnerToken: token, Action: "play_next", TrackID: "two",
 	})
 	if err != nil {
@@ -152,7 +155,7 @@ func TestStationQueueIsOrderedAndConsumedByNext(t *testing.T) {
 		t.Fatalf("queue = %#v, want [two one]", station.Queue)
 	}
 
-	station, err = app.station.Execute(context.Background(), Command{
+	station, err = app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: id, OwnerToken: token, Action: "next",
 	})
 	if err != nil {
@@ -162,7 +165,7 @@ func TestStationQueueIsOrderedAndConsumedByNext(t *testing.T) {
 		t.Fatalf("first queued next = %#v", station)
 	}
 
-	station, err = app.station.Execute(context.Background(), Command{
+	station, err = app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: id, OwnerToken: token, Action: "next",
 	})
 	if err != nil {
@@ -177,12 +180,12 @@ func TestStationQueueIsConsumedAtNaturalTrackEnd(t *testing.T) {
 	app := newTestApp(t)
 	fixed := time.Unix(1_800_000_000, 0)
 	freezeStationClockForTest(app.station, fixed)
-	id, token, _, err := app.station.Create(
+	id, token, _, err := createTemporaryStationForTest(t, app.station,
 		context.Background(), "one", strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.station.Execute(context.Background(), Command{
+	if _, err := app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: id, OwnerToken: token, Action: "add_to_queue", TrackID: "two",
 	}); err != nil {
 		t.Fatal(err)
@@ -209,12 +212,12 @@ update stations set track_id='one', position=0, playing=1, repeat_one=0,
 
 func TestTemporaryStationQueueIsIsolatedFromSharedStation(t *testing.T) {
 	app := newTestApp(t)
-	stationID, ownerToken, _, err := app.station.Create(
+	stationID, ownerToken, _, err := createTemporaryStationForTest(t, app.station,
 		context.Background(), "one", strings.Repeat("a", 64))
 	if err != nil {
 		t.Fatal(err)
 	}
-	private, err := app.station.Execute(context.Background(), Command{
+	private, err := app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: stationID, OwnerToken: ownerToken,
 		Action: "add_to_queue", TrackID: "two",
 	})
@@ -228,7 +231,7 @@ func TestTemporaryStationQueueIsIsolatedFromSharedStation(t *testing.T) {
 	if len(private.Queue) != 1 || private.Queue[0] != "two" || len(shared.Queue) != 0 {
 		t.Fatalf("private queue=%v shared queue=%v", private.Queue, shared.Queue)
 	}
-	private, err = app.station.Execute(context.Background(), Command{
+	private, err = app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: stationID, OwnerToken: ownerToken, Action: "next",
 	})
 	if err != nil {
@@ -241,7 +244,7 @@ func TestTemporaryStationQueueIsIsolatedFromSharedStation(t *testing.T) {
 
 func TestTemporaryStationIsIndependentAndOwnerControlled(t *testing.T) {
 	app := newTestApp(t)
-	mainBefore, err := app.stationState()
+	mainBefore, err := app.station.Snapshot(context.Background(), mainStationID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,18 +295,18 @@ func TestTemporaryStationIsIndependentAndOwnerControlled(t *testing.T) {
 		t.Fatalf("temporary station state = %#v", temporary)
 	}
 
-	mainAfter, err := app.stationState()
+	mainAfter, err := app.station.Snapshot(context.Background(), mainStationID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mainAfter["track_id"] != mainBefore["track_id"] || mainAfter["playing"] != mainBefore["playing"] {
+	if mainAfter.TrackID != mainBefore.TrackID || mainAfter.Playing != mainBefore.Playing {
 		t.Fatalf("temporary control changed shared station: before=%#v after=%#v", mainBefore, mainAfter)
 	}
 }
 
 func TestControlBroadcastsStationUpdate(t *testing.T) {
 	app := newTestApp(t)
-	events, unsubscribe := app.subscribe(mainStationID)
+	events, unsubscribe := app.events.Subscribe(mainStationID)
 	defer unsubscribe()
 
 	postControlForTest(t, app, `{"action":"play"}`)
@@ -438,7 +441,7 @@ func TestExpiredStationCannotBeReadOrResurrected(t *testing.T) {
 	if _, err := app.station.Snapshot(context.Background(), created.StationID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("expired snapshot error = %v, want sql.ErrNoRows", err)
 	}
-	_, err := app.station.Execute(context.Background(), Command{
+	_, err := app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: created.StationID, OwnerToken: created.OwnerToken, Action: "play",
 	})
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -455,7 +458,7 @@ func TestExpiredStationCannotBeReadOrResurrected(t *testing.T) {
 
 func TestBroadcastRevisionsIncreaseAfterCommit(t *testing.T) {
 	app := newTestApp(t)
-	events, unsubscribe := app.subscribe(mainStationID)
+	events, unsubscribe := app.events.Subscribe(mainStationID)
 	defer unsubscribe()
 	first := postControlForTest(t, app, `{"action":"play"}`)
 	second := postControlForTest(t, app, `{"action":"pause"}`)
@@ -464,7 +467,7 @@ func TestBroadcastRevisionsIncreaseAfterCommit(t *testing.T) {
 	}
 	select {
 	case payload := <-events:
-		var snapshot Snapshot
+		var snapshot stationmodel.Snapshot
 		if err := json.Unmarshal(payload, &snapshot); err != nil {
 			t.Fatal(err)
 		}
@@ -567,9 +570,9 @@ func TestTimedLyricsAreValidatedVersionedAndServed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = app.Close() })
-	if !app.byID["one"].HasSyncedLyrics ||
-		len(app.byID["one"].TimedLyricsSHA256) != 64 {
-		t.Fatalf("timed lyric catalog state = %#v", app.byID["one"])
+	if !app.catalog.ByID["one"].HasSyncedLyrics ||
+		len(app.catalog.ByID["one"].TimedLyricsSHA256) != 64 {
+		t.Fatalf("timed lyric catalog state = %#v", app.catalog.ByID["one"])
 	}
 
 	response := httptest.NewRecorder()
@@ -640,7 +643,7 @@ func TestImmutableTimedLyricsBundleIsUsedWithoutMutatingArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = app.Close() })
-	track := app.byID["one"]
+	track := app.catalog.ByID["one"]
 	if !track.HasSyncedLyrics || !track.TimedLyricsBundled {
 		t.Fatalf("bundled timed lyric catalog state = %#v", track)
 	}
@@ -727,7 +730,7 @@ func TestVersionTwoLyricsPreferCleanTextAndAllowWarningWithoutTiming(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = app.Close() })
-	track := app.byID["one"]
+	track := app.catalog.ByID["one"]
 	if track.HasSyncedLyrics || track.LyricsQuality != "warning" ||
 		track.CleanLyrics != "Clean first line\n\nClean second line" {
 		t.Fatalf("version two catalog state = %#v", track)
@@ -820,12 +823,12 @@ func TestPlayerUsesSinglePlayPauseAndRepeatControls(t *testing.T) {
 			t.Fatalf("index.html still contains separate control %s", id)
 		}
 	}
-	appJS, err := os.ReadFile(filepath.Join("static", "app.js"))
+	lyricsJS, err := os.ReadFile(filepath.Join("static", "lyrics.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, marker := range []string{"cue.section", "synced-lyrics-heading"} {
-		if strings.Contains(string(appJS), marker) {
+		if strings.Contains(string(lyricsJS), marker) {
 			t.Fatalf("listener still renders lyric formatting marker %q", marker)
 		}
 	}
@@ -863,7 +866,7 @@ func TestTailwindV4BuildConfigured(t *testing.T) {
 	if strings.Contains(string(source), "--zs-canvas:") || strings.Contains(string(source), "--zs-signal:") {
 		t.Fatal("Radio source duplicates canonical Signal Stack tokens")
 	}
-	for _, contentSource := range []string{`@source "./index.html"`, `@source "./app.js"`, `@source "./library.js"`, `@source "./reader.js"`} {
+	for _, contentSource := range []string{`@source "./index.html"`, `@source "./*.js"`} {
 		if !strings.Contains(string(source), contentSource) {
 			t.Fatalf("Tailwind source is missing %s", contentSource)
 		}
@@ -936,7 +939,7 @@ func freezeStationClockForTest(station *StationService, fixed time.Time) {
 	station.monotonic = func() time.Time { return fixed }
 }
 
-func newTestConfig(t *testing.T) Config {
+func newTestConfig(t *testing.T) appconfig.Config {
 	t.Helper()
 	base := t.TempDir()
 	root := filepath.Join(base, "data")
@@ -972,7 +975,7 @@ func newTestConfig(t *testing.T) Config {
 		t.Fatal(err)
 	}
 
-	return Config{
+	return appconfig.Config{
 		MetadataRoot:     root,
 		Archive:          archive,
 		DBPath:           filepath.Join(root, "station.sqlite3"),

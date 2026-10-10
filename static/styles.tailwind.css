@@ -1,8 +1,6 @@
 @import "tailwindcss" source(none);
 @source "./index.html";
-@source "./app.js";
-@source "./library.js";
-@source "./reader.js";
+@source "./*.js";
 
 @theme {
   --font-sans: var(--zs-font-sans);
@@ -70,24 +68,20 @@
   }
 
   .app-rail {
-    @apply static top-0 z-40 min-w-0 bg-radio-soft sm:sticky;
+    @apply z-40 min-w-0;
     box-shadow: inset 0 -1px var(--zs-line-soft);
   }
 
   .app-rail-inner {
-    @apply mx-auto grid w-full min-w-0 max-w-[1500px] grid-cols-[minmax(0,1fr)_auto] grid-rows-[56px_44px] items-center px-4 sm:grid-cols-[auto_minmax(240px,1fr)_auto] sm:grid-rows-[64px] sm:gap-5 sm:px-6 lg:px-10;
+    @apply mx-auto w-full min-w-0 max-w-[1500px] items-center;
   }
 
   .brand {
-    @apply flex min-w-0 items-center gap-2.5 p-0 sm:gap-3;
+    @apply flex min-w-0 items-center p-0;
   }
 
   .brand-copy {
     @apply min-w-0;
-  }
-
-  .brand-family {
-    @apply block text-[11px] leading-[1.4] font-medium tracking-[.06em] text-radio-muted uppercase;
   }
 
   .brand-product {
@@ -95,24 +89,15 @@
   }
 
   .brand-title {
-    @apply m-0 whitespace-nowrap text-[16px] leading-[1.2] font-semibold tracking-[-.02em];
-  }
-
-  .brand-separator {
-    @apply hidden text-[12px] text-radio-muted md:inline;
-  }
-
-  .brand-subtitle {
-    @apply m-0 hidden truncate text-[12px] leading-[1.35] text-radio-muted md:block;
+    @apply m-0 whitespace-nowrap leading-[1.2] font-semibold tracking-[-.02em];
   }
 
   .primary-nav {
-    @apply col-span-2 row-start-2 grid min-h-11 grid-cols-3 border-t sm:col-span-1 sm:col-start-2 sm:row-start-1 sm:min-w-[240px] sm:border-t-0;
     border-color: var(--zs-line-soft);
   }
 
   .primary-nav-link {
-    @apply relative inline-flex min-h-11 items-center justify-center px-3 text-center text-[13px] font-semibold text-radio-muted no-underline transition-colors hover:bg-radio-panel-hover hover:text-radio-fg;
+    @apply relative inline-flex items-center justify-center text-center text-[13px] font-semibold text-radio-muted no-underline transition-colors hover:bg-radio-panel-hover hover:text-radio-fg;
   }
 
   .primary-nav-link[aria-current="page"] {
@@ -250,7 +235,7 @@
   }
 
   .station-card {
-    @apply mb-7 flex w-full flex-wrap items-center gap-3 py-3 lg:mb-9;
+    @apply flex w-full flex-wrap items-center;
     border-color: var(--zs-line-soft);
   }
 
@@ -289,11 +274,11 @@
   }
 
   .radio-stage {
-    @apply relative mx-auto min-w-0 max-w-[1600px] overflow-hidden p-4 sm:p-6 lg:p-[clamp(28px,4vw,64px)];
+    @apply relative mx-auto min-w-0 overflow-hidden;
   }
 
   .now-playing {
-    @apply grid grid-cols-1 items-start gap-5 pb-7 md:grid-cols-[minmax(220px,340px)_minmax(0,1fr)] md:items-center md:gap-7 lg:grid-cols-[minmax(240px,380px)_minmax(0,760px)] lg:gap-[clamp(26px,4vw,56px)] lg:pb-9 lg:pt-[clamp(6px,1.5vw,18px)];
+    @apply grid;
   }
 
   .now-playing-copy {
@@ -325,7 +310,7 @@
   }
 
   .cover-frame {
-    @apply aspect-square w-full overflow-hidden rounded-lg border border-radio-line bg-[#050505] shadow-[0_24px_64px_rgba(0,0,0,.5)] max-sm:mx-auto max-sm:max-w-[260px] sm:max-w-[340px] md:max-w-none;
+    @apply aspect-square w-full overflow-hidden border border-radio-line bg-[#050505] max-sm:mx-auto;
   }
 
   .cover-image {
@@ -341,7 +326,7 @@
   }
 
   .live-status {
-    @apply mb-[18px] flex items-center gap-2 font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
+    @apply flex items-center gap-2 font-mono text-xs font-semibold tracking-[.04em] text-radio-muted;
   }
 
   .live-dot {
@@ -357,19 +342,19 @@
   }
 
   .track-title {
-    @apply mt-2 [overflow-wrap:anywhere] text-[clamp(30px,9vw,42px)] font-semibold leading-[1.05] tracking-[-.03em] lg:text-[clamp(38px,4.5vw,62px)];
+    @apply mt-2 [overflow-wrap:anywhere] font-semibold tracking-[-.03em];
   }
 
   .track-details {
-    @apply my-3 max-w-[760px] text-[13px] leading-6 text-radio-muted lg:mb-[18px];
+    @apply max-w-[760px] text-[13px] text-radio-muted;
   }
 
   .station-capability {
-    @apply my-4 grid max-w-[760px] gap-1 border-y border-radio-line py-3;
+    @apply grid max-w-[760px] gap-1;
   }
 
   .station-capability-label {
-    @apply font-mono text-xs font-semibold tracking-[.04em] text-radio-accent;
+    @apply tracking-[.04em];
   }
 
   .station-capability p {
@@ -377,7 +362,7 @@
   }
 
   .radio-stage.is-listen-only .station-capability {
-    @apply border-radio-accent/50 bg-radio-soft px-3;
+    @apply px-3;
   }
 
   .transport {
@@ -1074,7 +1059,7 @@
   }
 
   .station-picker {
-    @apply m-0 min-w-0 flex-1 basis-[180px] max-w-[360px];
+    @apply m-0 min-w-0 flex-1 basis-[180px];
   }
 
   .radio-programming {
@@ -1305,7 +1290,7 @@
   }
 }
 
-/* Product composition: Ballast's compact header, without changing vendor tokens. */
+/* Product layout stays unlayered so it takes precedence over shared chrome. */
 .app-rail.zs-product-bar { height: 56px; position: sticky; top: 0; background: var(--zs-canvas); }
 .app-rail.zs-product-bar .app-rail-inner {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto;

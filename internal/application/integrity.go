@@ -74,7 +74,7 @@ func (a *App) integritySnapshot() map[string]bool {
 
 func (a *App) refreshIntegrity(ctx context.Context) {
 	checks := map[string]bool{
-		"catalog": len(a.tracks) > 0,
+		"catalog": len(a.catalog.Tracks) > 0,
 	}
 	for _, artifact := range a.catalogDigests {
 		digest, digestErr := rootedDigest(artifact.root, artifact.rootPath, artifact.path)
@@ -86,7 +86,7 @@ func (a *App) refreshIntegrity(ctx context.Context) {
 	_, err := rootedRegularInfo(a.staticRoot, a.cfg.StaticDir, filepath.Join(a.cfg.StaticDir, "index.html"))
 	checks["static"] = err == nil
 	checks["media"] = checks["catalog"]
-	for _, track := range a.tracks {
+	for _, track := range a.catalog.Tracks {
 		stat, statErr := rootedRegularInfo(a.archiveRoot, a.cfg.Archive, track.AudioPath)
 		if statErr != nil || stat.Size() != track.AudioBytes {
 			checks["media"] = false
@@ -607,8 +607,8 @@ where i.status='ready' and (
 }
 
 func (a *App) digestAudits(ctx context.Context) ([]digestAudit, bool) {
-	result := make([]digestAudit, 0, len(a.tracks))
-	for _, track := range a.tracks {
+	result := make([]digestAudit, 0, len(a.catalog.Tracks))
+	for _, track := range a.catalog.Tracks {
 		result = append(result, digestAudit{
 			category: "media", root: a.archiveRoot, rootPath: a.cfg.Archive,
 			artifact: integrityArtifact{

@@ -17,6 +17,10 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	appevents "zak-radio/internal/events"
+	httpguard "zak-radio/internal/httpguard"
+	stationmodel "zak-radio/internal/station"
 )
 
 type failingListener struct{}
@@ -99,7 +103,7 @@ where id=?`, unixTime(fixed)-5, unixTime(fixed)-7, mainStationID); err != nil {
 
 func TestStationClockHighWaterSurvivesServiceRestart(t *testing.T) {
 	app := newTestApp(t)
-	stationID, ownerToken, _, err := app.station.Create(
+	stationID, ownerToken, _, err := createTemporaryStationForTest(t, app.station,
 		context.Background(), "one", strings.Repeat("b", 64))
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +116,7 @@ update stations set position=2, playing=1, updated_at=?, track_changed_at=?,
 		retained, retained-10, retainedExpiry, stationID); err != nil {
 		t.Fatal(err)
 	}
-	restarted := NewStationService(app.db, app.catalog, NewBroadcaster())
+	restarted := NewStationService(app.db, app.catalog, appevents.NewBroadcaster())
 	restarted.clock = func() time.Time {
 		return time.Unix(int64(retained)-100, 0)
 	}
@@ -120,7 +124,7 @@ update stations set position=2, playing=1, updated_at=?, track_changed_at=?,
 	restarted.clockSample = monotonic
 	restarted.monotonic = func() time.Time { return monotonic }
 	enabled := true
-	snapshot, err := restarted.Execute(context.Background(), Command{
+	snapshot, err := restarted.Execute(context.Background(), stationmodel.Command{
 		StationID: stationID, OwnerToken: ownerToken,
 		Action: "set_shuffle", Shuffle: &enabled,
 	})
@@ -146,7 +150,7 @@ update stations set position=2, playing=1, updated_at=?, track_changed_at=?,
 	if err := restarted.persistLogicalClock(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	secondRestart := NewStationService(app.db, app.catalog, NewBroadcaster())
+	secondRestart := NewStationService(app.db, app.catalog, appevents.NewBroadcaster())
 	secondRestart.clock = func() time.Time {
 		return time.Unix(int64(retained)-100, 0)
 	}
@@ -187,7 +191,7 @@ update stations set track_id='one', position=0, playing=1, repeat_one=?,
 				boolInt(test.repeatOne), unixTime(fixed)-12, unixTime(fixed)-12, mainStationID); err != nil {
 				t.Fatal(err)
 			}
-			snapshot, err := app.station.Execute(context.Background(), Command{Action: test.action})
+			snapshot, err := app.station.Execute(context.Background(), stationmodel.Command{Action: test.action})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -311,10 +315,10 @@ func TestConcurrentLikesAccumulateAtomically(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			req := httptest.NewRequest(http.MethodPost, "/api/like", strings.NewReader(`{"track_id":"one"}`))
+			req := httptest.NewRequest(http.MethodPost, "/api/reaction", strings.NewReader(`{"track_id":"one","reaction":"like"}`))
 			req.Header.Set("Content-Type", "application/json")
 			res := httptest.NewRecorder()
-			app.apiLike(res, req)
+			app.apiReaction(res, req)
 			statuses <- res.Code
 		}()
 	}
@@ -353,10 +357,10 @@ func TestConcurrentLikeResponsesAreRevisionConsistent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			req := httptest.NewRequest(http.MethodPost, "/api/like", strings.NewReader(`{"track_id":"one"}`))
+			req := httptest.NewRequest(http.MethodPost, "/api/reaction", strings.NewReader(`{"track_id":"one","reaction":"like"}`))
 			req.Header.Set("Content-Type", "application/json")
 			res := httptest.NewRecorder()
-			app.apiLike(res, req)
+			app.apiReaction(res, req)
 			value := result{status: res.Code}
 			var payload struct {
 				Revision  int64 `json:"revision"`
@@ -379,7 +383,7 @@ func TestConcurrentLikeResponsesAreRevisionConsistent(t *testing.T) {
 	close(results)
 	byRevision := map[int64]result{}
 	for value := range results {
-		if value.status != http.StatusOK || len(value.tracks) != len(app.tracks) {
+		if value.status != http.StatusOK || len(value.tracks) != len(app.catalog.Tracks) {
 			t.Fatalf("like response=%#v", value)
 		}
 		byRevision[value.revision] = value
@@ -478,7 +482,7 @@ func TestMediaHEADAndSecurityBoundaries(t *testing.T) {
 		t.Fatalf("cross-origin status = %d", evilRes.Code)
 	}
 
-	large := `{"action":"play","owner_token":"` + strings.Repeat("x", maxJSONBodyBytes) + `"}`
+	large := `{"action":"play","owner_token":"` + strings.Repeat("x", httpguard.MaxJSONBodyBytes) + `"}`
 	largeReq := httptest.NewRequest(http.MethodPost, "/api/control", strings.NewReader(large))
 	largeReq.Header.Set("Content-Type", "application/json")
 	largeRes := httptest.NewRecorder()
@@ -584,7 +588,7 @@ func TestStationCreationRetriesAreIdempotent(t *testing.T) {
 	if _, _, _, err := app.station.CreateIdempotent(
 		context.Background(), "one", creator, idempotencyKey,
 		"ffffffffffffffffffffffffffffffffffffffffffffffff",
-	); !errors.Is(err, ErrInvalidCommand) {
+	); !errors.Is(err, stationmodel.ErrInvalidCommand) {
 		t.Fatalf("idempotency key accepted different owner token: %v", err)
 	}
 }
@@ -779,10 +783,10 @@ func TestLikePublishesFreshSnapshot(t *testing.T) {
 	app := newTestApp(t)
 	events, unsubscribe := app.events.Subscribe("track-stats")
 	defer unsubscribe()
-	req := httptest.NewRequest(http.MethodPost, "/api/like", strings.NewReader(`{"track_id":"one"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/reaction", strings.NewReader(`{"track_id":"one","reaction":"like"}`))
 	req.Header.Set("Content-Type", "application/json")
 	res := httptest.NewRecorder()
-	app.apiLike(res, req)
+	app.apiReaction(res, req)
 	if res.Code != http.StatusOK {
 		t.Fatalf("like status=%d body=%s", res.Code, res.Body.String())
 	}
@@ -796,7 +800,7 @@ func TestLikePublishesFreshSnapshot(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Revision == 0 || len(response.Tracks) != len(app.tracks) {
+	if response.Revision == 0 || len(response.Tracks) != len(app.catalog.Tracks) {
 		t.Fatalf("like response is not a complete revision: %#v", response)
 	}
 	select {
@@ -1005,7 +1009,7 @@ insert into reader_segments (
 }
 
 func TestBroadcasterDropsLateLowerRevision(t *testing.T) {
-	events := NewBroadcaster()
+	events := appevents.NewBroadcaster()
 	pending, unsubscribe := events.Subscribe("track-stats")
 	defer unsubscribe()
 	events.PublishValue("track-stats", map[string]any{"revision": int64(2), "liked": true})
@@ -1024,11 +1028,11 @@ func TestTrackStatsCoalesceCompleteCatalogState(t *testing.T) {
 	events, unsubscribe := app.events.Subscribe("track-stats")
 	defer unsubscribe()
 	for _, id := range []string{"one", "two"} {
-		req := httptest.NewRequest(http.MethodPost, "/api/like",
-			strings.NewReader(fmt.Sprintf(`{"track_id":%q}`, id)))
+		req := httptest.NewRequest(http.MethodPost, "/api/reaction",
+			strings.NewReader(fmt.Sprintf(`{"track_id":%q,"reaction":"like"}`, id)))
 		req.Header.Set("Content-Type", "application/json")
 		res := httptest.NewRecorder()
-		app.apiLike(res, req)
+		app.apiReaction(res, req)
 		if res.Code != http.StatusOK {
 			t.Fatalf("like %s status=%d body=%s", id, res.Code, res.Body.String())
 		}
@@ -1104,7 +1108,7 @@ update stations set track_id='one', position=0, playing=1, updated_at=?, track_c
 where id=?`, unixTime(fixed)-4, unixTime(fixed)-4, mainStationID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.station.Execute(context.Background(), Command{Action: "next"}); err != nil {
+	if _, err := app.station.Execute(context.Background(), stationmodel.Command{Action: "next"}); err != nil {
 		t.Fatal(err)
 	}
 	var skips int

@@ -12,16 +12,19 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	catalogmodel "zak-radio/internal/catalog"
+	appconfig "zak-radio/internal/config"
+	appevents "zak-radio/internal/events"
+	httpguard "zak-radio/internal/httpguard"
 )
 
 type App struct {
-	cfg              Config
+	cfg              appconfig.Config
 	db               *sql.DB
-	tracks           []Track
-	byID             map[string]*Track
-	catalog          Catalog
+	catalog          catalogmodel.Catalog
 	station          *StationService
-	events           *Broadcaster
+	events           *appevents.Broadcaster
 	staticFS         http.Handler
 	ctx              context.Context
 	cancel           context.CancelFunc
@@ -48,7 +51,7 @@ type App struct {
 	timedLyricsRoot  *os.Root
 }
 
-func NewApp(cfg Config) (*App, error) {
+func NewApp(cfg appconfig.Config) (*App, error) {
 	var err error
 	if cfg, err = cfg.Normalized(); err != nil {
 		return nil, err
@@ -180,7 +183,7 @@ func NewApp(cfg Config) (*App, error) {
 		cancel()
 		return nil, fmt.Errorf("validate retained Reader relationships: %w", err)
 	}
-	events := NewBroadcaster()
+	events := appevents.NewBroadcaster()
 	service := NewStationService(db, catalog, events)
 	if err := service.EnsureMain(ctx); err != nil {
 		db.Close()
@@ -193,7 +196,7 @@ func NewApp(cfg Config) (*App, error) {
 		return nil, err
 	}
 	app := &App{
-		cfg: cfg, db: db, tracks: catalog.Tracks, byID: catalog.ByID, catalog: catalog,
+		cfg: cfg, db: db, catalog: catalog,
 		station: service, events: events, cancel: cancel,
 		ctx:              ctx,
 		staticFS:         http.StripPrefix("/static/", http.FileServer(http.FS(staticRoot.FS()))),
@@ -292,7 +295,7 @@ func (a *App) clockPersistenceLoop(ctx context.Context, interval time.Duration) 
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", a.handle)
-	return secureHTTPConfig(mux, a.cfg.AllowedHosts, a.cfg.AllowedOrigins,
+	return httpguard.WrapConfig(mux, a.cfg.AllowedHosts, a.cfg.AllowedOrigins,
 		a.cfg.TrustedProxies, a.cfg.TrustedIngress, a.cfg.ClientIPv6Prefix)
 }
 
@@ -373,8 +376,6 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 			a.createStation(w, r)
 		case "/api/control":
 			a.apiControl(w, r)
-		case "/api/like":
-			a.apiLike(w, r)
 		case "/api/reaction":
 			a.apiReaction(w, r)
 		case "/api/reader/playback":
@@ -410,7 +411,7 @@ func routeAllowedMethods(path string) []string {
 	case strings.HasPrefix(path, "/api/stations/"):
 		return []string{http.MethodPatch, http.MethodDelete}
 	case path == "/api/control" ||
-		path == "/api/like" || path == "/api/reaction":
+		path == "/api/reaction":
 		return []string{http.MethodPost}
 	case path == "/api/reader/playback":
 		return []string{http.MethodGet, http.MethodPost}
@@ -445,44 +446,11 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSONStatus(w, status, map[string]any{
 		"ok": ok, "runtime": "go", "release": releaseIdentity,
-		"tracks": len(a.tracks), "checks": checks,
+		"tracks": len(a.catalog.Tracks), "checks": checks,
 	})
 }
 
 func regularFile(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular()
-}
-
-func (a *App) stationState(stationIDs ...string) (map[string]any, error) {
-	id := mainStationID
-	if len(stationIDs) > 0 {
-		id = stationIDs[0]
-	}
-	snapshot, err := a.station.Snapshot(context.Background(), id)
-	if err != nil {
-		return nil, err
-	}
-	return snapshotMap(snapshot), nil
-}
-
-func (a *App) subscribe(stationID string) (<-chan []byte, func()) {
-	return a.events.Subscribe(stationID)
-}
-
-func snapshotMap(snapshot Snapshot) map[string]any {
-	result := map[string]any{
-		"station_id": snapshot.StationID, "kind": snapshot.Kind, "track_id": snapshot.TrackID,
-		"position": snapshot.Position, "playing": snapshot.Playing, "repeat_one": snapshot.RepeatOne,
-		"shuffle": snapshot.Shuffle, "updated_at": snapshot.UpdatedAt,
-		"track_changed_at": snapshot.TrackChangedAt, "server_time": snapshot.ServerTime,
-		"liked": snapshot.Liked, "skip_count": snapshot.SkipCount, "revision": snapshot.Revision,
-	}
-	if snapshot.ExpiresAt != nil {
-		result["expires_at"] = *snapshot.ExpiresAt
-	}
-	if snapshot.CanControl != nil {
-		result["can_control"] = *snapshot.CanControl
-	}
-	return result
 }

@@ -1,3 +1,10 @@
+import { createAudioController } from "./audio.js";
+import { createRouter } from "./router.js";
+import { createLyricsView } from "./lyrics.js";
+import { timeLabel } from "./format.js";
+import { initLibrary } from "./library.js";
+import { initReader } from "./reader.js";
+
 const state = {
   tracks: [],
   current: null,
@@ -5,7 +12,6 @@ const state = {
   connected: false,
   syncingProgress: false,
   userActivatedAudio: false,
-  lastTextTrackId: null,
   stationReceivedAt: 0,
   serverClockOffset: null,
   stationId: "main",
@@ -33,11 +39,6 @@ const state = {
   stationCapacityRetryAt: 0,
   stationCreatePending: false,
   stations: [],
-  renderedPath: "",
-  syncedLyrics: null,
-  activeLyricCue: -1,
-  lyricsLoadGeneration: 0,
-  lyricFollowPausedUntil: 0,
 };
 
 const els = {
@@ -130,9 +131,7 @@ let toastTimer;
 let toastPriority = 0;
 let toastPriorityUntil = 0;
 let toastType = "";
-let scrollStateTimer = 0;
 let ownerAnnouncement = "Audio stopped";
-let ownerBarResizeObserver = null;
 
 function setText(element, value) {
   if (element.textContent !== value) element.textContent = value;
@@ -152,16 +151,6 @@ function setRadioGroupDisabled(group, disabled) {
   group.querySelectorAll('input[type="radio"]').forEach((input) => {
     input.disabled = disabled;
   });
-}
-
-function timeLabel(seconds) {
-  const n = Number(seconds);
-  if (!Number.isFinite(n) || n < 0) return "0:00";
-  const m = Math.floor(n / 60);
-  const s = Math.floor(n % 60)
-    .toString()
-    .padStart(2, "0");
-  return `${m}:${s}`;
 }
 
 function fileSize(bytes) {
@@ -275,125 +264,113 @@ function dismissToast(type) {
   toastType = "";
 }
 
-function routePath() {
-  if (window.location.pathname.startsWith("/library")) return "/library";
-  if (window.location.pathname.startsWith("/reader")) return "/reader";
-  return "/";
-}
+const audioController = createAudioController({
+  element: els.audio,
+  shouldPlayRadio: radioShouldBeAudible,
+  returnLive: returnLiveRadio,
+  onPause: () => {
+    state.radioInterrupted = false;
+  },
+  onRadioBlocked: () => {
+    state.localRadioSuspended = true;
+  },
+  onOwnerChange: renderOwnerBar,
+  onPlaybackChange: updateNowPlayingMetadata,
+  onError: reportAudioError,
+});
+window.ZakAudio = audioController;
 
-function routeScrollContainer() {
-  return document.body.classList.contains("has-audio-owner") &&
-    window.matchMedia("(max-width: 767px)").matches
-    ? els.appShell
-    : null;
-}
-
-function routeScrollPosition() {
-  const container = routeScrollContainer();
-  return container
-    ? [container.scrollLeft, container.scrollTop]
-    : [window.scrollX, window.scrollY];
-}
-
-function scrollPositionFor(container) {
-  return container
-    ? [container.scrollLeft, container.scrollTop]
-    : [window.scrollX, window.scrollY];
-}
-
-function transferRouteScroll(
-  previousContainer,
-  nextContainer,
-  previousPosition = scrollPositionFor(previousContainer),
-) {
-  if (previousContainer === nextContainer) return;
-  const options = {
-    left: previousPosition[0],
-    top: previousPosition[1],
-    behavior: "instant",
-  };
-  if (nextContainer) nextContainer.scrollTo(options);
-  else window.scrollTo(options);
-}
-
-function scrollRoute(options) {
-  const container = routeScrollContainer();
-  if (container) container.scrollTo(options);
-  else window.scrollTo(options);
-}
-
-window.ZakRouteScroll = {
-  position: routeScrollPosition,
-  to: scrollRoute,
-};
-
-let activeRouteScrollContainer = routeScrollContainer();
-let activeRouteScrollPosition = routeScrollPosition();
-
-function rememberActiveRouteScrollPosition(container) {
-  if (
-    container !== activeRouteScrollContainer ||
-    container !== routeScrollContainer()
-  )
-    return;
-  activeRouteScrollPosition = scrollPositionFor(container);
-}
-
-window.addEventListener(
-  "scroll",
-  () => rememberActiveRouteScrollPosition(null),
-  { passive: true },
-);
-els.appShell.addEventListener(
-  "scroll",
-  () => rememberActiveRouteScrollPosition(els.appShell),
-  { passive: true },
-);
-
-function setOwnerBarHidden(hidden) {
-  const previousContainer = routeScrollContainer();
-  const previousPosition = scrollPositionFor(previousContainer);
-  const visibilityChanged = els.ownerBar.hidden !== hidden;
-  els.ownerBar.hidden = hidden;
-  document.body.classList.toggle("has-audio-owner", !hidden);
-  if (!visibilityChanged) {
-    activeRouteScrollContainer = routeScrollContainer();
-    activeRouteScrollPosition = scrollPositionFor(activeRouteScrollContainer);
-    syncOwnerBarInset();
-    return;
+async function returnLiveRadio(sync = true) {
+  const track = state.station ? currentTrack() : null;
+  if (!track) {
+    showToast(
+      "Live station controls are unavailable. Local audio is still active.",
+    );
+    renderOwnerBar();
+    return false;
   }
-  const nextContainer = routeScrollContainer();
-  transferRouteScroll(previousContainer, nextContainer, previousPosition);
-  activeRouteScrollContainer = nextContainer;
-  activeRouteScrollPosition = previousPosition;
-  syncOwnerBarInset();
-  window.requestAnimationFrame(syncOwnerBarInset);
+  state.userActivatedAudio = true;
+  state.radioStopped = false;
+  state.localRadioSuspended = false;
+  els.audio.pause();
+  window.dispatchEvent(
+    new CustomEvent("zak-audio-release", {
+      detail: {
+        owner: audioController.owner,
+        nextOwner: "radio",
+        position: els.audio.currentTime || 0,
+        playing: !els.audio.paused,
+        generation: audioController.generation,
+      },
+    }),
+  );
+  const src = mediaAudioURL(track);
+  audioController.claim("radio", src, trackDisplayTitle(track), {
+    stationId: state.stationId,
+  });
+  if (sync) await syncAudioToStation();
+  return true;
 }
 
-function syncOwnerBarInset() {
-  const height = els.ownerBar.hidden
-    ? 0
-    : Math.ceil(els.ownerBar.getBoundingClientRect().height);
-  document.documentElement.style.setProperty(
-    "--audio-owner-height",
-    `${height}px`,
-  );
-}
+const router = createRouter({
+  els: {
+    appShell: els.appShell,
+    ownerBar: els.ownerBar,
+    skipToContent: els.skipToContent,
+    stationCard: els.stationCard,
+    title: els.title,
+  },
+  stationId: () => state.stationId,
+  selectedReaderId: () => window.ZakReader?.selectedId?.(),
+  onRender: (path) => {
+    renderOwnerBar();
+    updateShellContext();
+    updateNowPlayingMetadata();
+    renderStation();
+    if (path === "/" && state.current) lyrics.load(state.current);
+  },
+  onHistory: () => {
+    const stationId = requestedStation();
+    if (stationId !== state.stationId) {
+      state.controlGeneration++;
+      state.controlQueue = Promise.resolve();
+      state.stationRequestGeneration++;
+      state.stationId = stationId;
+      state.ownerToken =
+        stationId === "main"
+          ? ""
+          : window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
+      setStationLoading();
+      connectStationEvents();
+      const generation = state.stationRequestGeneration;
+      void refreshStation().then((loaded) => {
+        if (
+          !loaded &&
+          generation === state.stationRequestGeneration &&
+          stationId === state.stationId
+        ) {
+          setStationUnavailable("Station unavailable");
+        }
+      });
+    }
+  },
+});
 
 function renderOwnerBar() {
   if (!audioController.owner) {
-    setOwnerBarHidden(true);
+    router.setOwnerBarHidden(true);
     if (ownerAnnouncement !== "Audio stopped") {
       ownerAnnouncement = "Audio stopped";
       setText(els.ownerAnnouncement, ownerAnnouncement);
     }
     return;
   }
-  const pathOwner = routePath().slice(1);
-  const radioOffView = audioController.owner === "radio" && routePath() !== "/";
+  const pathOwner = router.path().slice(1);
+  const radioOffView =
+    audioController.owner === "radio" && router.path() !== "/";
   const readerLibraryOwner =
     audioController.owner === "reader" &&
-    routePath() === "/reader" &&
+    router.path() === "/reader" &&
     !window.ZakReader?.selectedId?.();
   const radioIsLive = Boolean(state.station?.playing);
   const radioNeedsJoin =
@@ -402,7 +379,7 @@ function renderOwnerBar() {
     (els.audio.paused ||
       state.localRadioSuspended ||
       !state.userActivatedAudio);
-  setOwnerBarHidden(
+  router.setOwnerBarHidden(
     (audioController.owner === pathOwner && !readerLibraryOwner) ||
       (audioController.owner === "radio" && !radioOffView),
   );
@@ -442,39 +419,6 @@ function renderOwnerBar() {
   }
 }
 
-if ("ResizeObserver" in window) {
-  ownerBarResizeObserver = new ResizeObserver(syncOwnerBarInset);
-  ownerBarResizeObserver.observe(els.ownerBar);
-}
-let routeResizeFrame = 0;
-window.addEventListener(
-  "resize",
-  () => {
-    syncOwnerBarInset();
-    if (routeResizeFrame) return;
-    const previousContainer = activeRouteScrollContainer;
-    const previousPosition = activeRouteScrollPosition;
-    routeResizeFrame = window.requestAnimationFrame(() => {
-      routeResizeFrame = 0;
-      const nextContainer = routeScrollContainer();
-      transferRouteScroll(previousContainer, nextContainer, previousPosition);
-      activeRouteScrollContainer = nextContainer;
-      activeRouteScrollPosition = previousPosition;
-      syncOwnerBarInset();
-    });
-  },
-  { passive: true },
-);
-
-function syncRouteLinks() {
-  document.querySelectorAll("[data-route]").forEach((link) => {
-    const url = new URL(link.dataset.route, window.location.origin);
-    if (state.stationId !== "main")
-      url.searchParams.set("station", state.stationId);
-    link.href = `${url.pathname}${url.search}`;
-  });
-}
-
 function requestedStation() {
   const requested = new URLSearchParams(window.location.search).get("station");
   if (!requested) return "main";
@@ -486,328 +430,14 @@ function requestedStation() {
   return "main";
 }
 
-function renderRoute(focusView = false, preserveScroll = false) {
-  const path = routePath();
-  const readerHasItem =
-    path === "/reader" &&
-    new URLSearchParams(window.location.search).has("item");
-  state.renderedPath = path;
-  els.skipToContent.href =
-    path === "/library"
-      ? "#libraryViewTitle"
-      : path === "/reader"
-        ? readerHasItem
-          ? "#readerTitle"
-          : "#readerLibraryTitle"
-        : "#title";
-  document.querySelectorAll("[data-view]").forEach((view) => {
-    view.hidden = view.dataset.view !== path;
-  });
-  document.querySelectorAll("[data-route]").forEach((link) => {
-    if (link.dataset.route === path) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
-  });
-  els.stationCard.hidden = path !== "/";
-  syncRouteLinks();
-  renderOwnerBar();
-  updateShellContext();
-  updateNowPlayingMetadata();
-  renderStation();
-  if (path === "/" && state.current) loadTrackText(state.current);
-  if (!preserveScroll) scrollRoute({ top: 0 });
-  window.dispatchEvent(new CustomEvent("zak-route", { detail: { path } }));
-  if (focusView) {
-    const heading =
-      path === "/library"
-        ? document.getElementById("libraryViewTitle")
-        : path === "/reader"
-          ? document.getElementById(
-              readerHasItem ? "readerTitle" : "readerLibraryTitle",
-            )
-          : els.title;
-    window.queueMicrotask(() => heading?.focus({ preventScroll: true }));
-  }
-}
-
 function updateShellContext() {
-  const path = routePath();
+  const path = router.path();
   els.shellContext.textContent =
     path === "/library"
       ? "Original music archive"
       : path === "/reader"
         ? "Source reading room"
         : `${state.tracks.length || "Shared"} tracks`;
-}
-
-function navigate(path) {
-  commitScrollState();
-  const url = new URL(window.location.href);
-  url.pathname = path;
-  if (state.stationId !== "main")
-    url.searchParams.set("station", state.stationId);
-  else url.searchParams.delete("station");
-  if (path !== "/reader") url.searchParams.delete("item");
-  else if (routePath() === "/reader") url.searchParams.delete("item");
-  else {
-    const item = window.ZakReader?.selectedId?.();
-    if (item) url.searchParams.set("item", item);
-  }
-  if (
-    `${url.pathname}${url.search}` !==
-    `${window.location.pathname}${window.location.search}`
-  ) {
-    window.history.pushState({ scroll: [0, 0] }, "", url);
-  }
-  renderRoute(true);
-}
-
-const audioController = {
-  element: els.audio,
-  owner: "",
-  label: "",
-  stationId: "",
-  generation: 0,
-  playOperation: 0,
-  pauseRequests: 0,
-  preparing: 0,
-  audible: false,
-  transitioning: false,
-  resuming: false,
-  nativeState() {
-    if (!this.owner) return "none";
-    if (this.is("radio") && radioShouldBeAudible()) {
-      return this.audible && !els.audio.paused && !els.audio.ended
-        ? "playing"
-        : "buffering";
-    }
-    // A media error can stop audio without a pause event.
-    if (els.audio.error) return "paused";
-    // During a stall (waiting) the element stays unpaused without audio.
-    if (!els.audio.paused) return this.audible ? "playing" : "buffering";
-    // An owner that starts the next source once it loads is still active.
-    return this.resuming ? "buffering" : "paused";
-  },
-  is(owner) {
-    return this.owner === owner;
-  },
-  claim(owner, src, label, { stationId = "", resume = false } = {}) {
-    const changedSource = !els.audio.src.endsWith(src);
-    const changedOwner = this.owner !== owner;
-    const changedStation = owner === "radio" && this.stationId !== stationId;
-    const needsReload =
-      changedSource ||
-      Boolean(els.audio.error) ||
-      els.audio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE;
-    if (!changedOwner && !changedStation && !changedSource && !needsReload) {
-      this.label = label;
-      renderOwnerBar();
-      updateNowPlayingMetadata();
-      return false;
-    }
-    if (changedOwner || changedStation || changedSource) {
-      window.dispatchEvent(
-        new CustomEvent("zak-audio-release", {
-          detail: {
-            owner: this.owner,
-            nextOwner: owner,
-            position: els.audio.currentTime || 0,
-            playing: !els.audio.paused,
-            generation: this.generation,
-          },
-        }),
-      );
-    }
-    this.generation++;
-    this.transitioning = needsReload || changedOwner || changedStation;
-    this.resuming = resume && this.transitioning;
-    if (this.transitioning) this.audible = false;
-    if (needsReload || changedOwner || changedStation) {
-      els.audio.pause();
-    }
-    this.owner = owner;
-    this.label = label;
-    this.stationId = owner === "radio" ? stationId : "";
-    els.audio.loop = false;
-    clearMediaPositionState();
-    if (needsReload) {
-      els.audio.src = src;
-      els.audio.load();
-    }
-    renderOwnerBar();
-    if ("mediaSession" in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: label,
-        artist: owner === "library" ? "Private library preview" : "Zak Reader",
-        album: "Zak Radio",
-      });
-    }
-    updateNowPlayingMetadata();
-    window.dispatchEvent(
-      new CustomEvent("zak-audio-owner", { detail: { owner, label } }),
-    );
-    return needsReload;
-  },
-  async returnLive(sync = true) {
-    const track = state.station ? currentTrack() : null;
-    if (!track) {
-      showToast(
-        "Live station controls are unavailable. Local audio is still active.",
-      );
-      renderOwnerBar();
-      return false;
-    }
-    state.userActivatedAudio = true;
-    state.radioStopped = false;
-    state.localRadioSuspended = false;
-    els.audio.pause();
-    window.dispatchEvent(
-      new CustomEvent("zak-audio-release", {
-        detail: {
-          owner: this.owner,
-          nextOwner: "radio",
-          position: els.audio.currentTime || 0,
-          playing: !els.audio.paused,
-          generation: this.generation,
-        },
-      }),
-    );
-    const src = mediaAudioURL(track);
-    this.claim("radio", src, trackDisplayTitle(track), {
-      stationId: state.stationId,
-    });
-    if (sync) await syncAudioToStation();
-    return true;
-  },
-  clear(owner) {
-    if (this.owner !== owner) return;
-    this.generation++;
-    this.audible = false;
-    this.transitioning = false;
-    this.resuming = false;
-    els.audio.pause();
-    els.audio.removeAttribute("src");
-    els.audio.load();
-    this.owner = "";
-    this.label = "";
-    this.stationId = "";
-    if ("mediaSession" in navigator) {
-      navigator.mediaSession.metadata = null;
-      clearMediaPositionState();
-    }
-    renderOwnerBar();
-    updateNowPlayingMetadata();
-    window.dispatchEvent(
-      new CustomEvent("zak-audio-owner", {
-        detail: { owner: "", label: "" },
-      }),
-    );
-  },
-  pause() {
-    // Explicit Pause cancels an in-flight play() and any start that an owner
-    // deferred until metadata loads (see pauseRequests).
-    this.playOperation++;
-    this.pauseRequests++;
-    this.resuming = false;
-    state.radioInterrupted = false;
-    els.audio.pause();
-    updateNowPlayingMetadata();
-  },
-  async play({ generation = this.generation, valid = () => true } = {}) {
-    if (!this.owner || this.generation !== generation || !valid()) return false;
-    this.reloadIfFailed();
-    const operation = ++this.playOperation;
-    let timeout;
-    // A failed start ends a pending resume, unless a newer claim owns it.
-    const failed = () => {
-      if (this.generation === generation) this.resuming = false;
-      updateNowPlayingMetadata();
-    };
-    try {
-      if (els.audio.paused || !this.audible) {
-        this.preparing = operation;
-        const ready = await window.ZakNativeHost?.prepare({
-          title: this.label,
-          subtitle: "Zak Radio",
-        });
-        if (this.preparing === operation) this.preparing = 0;
-        if (
-          this.playOperation !== operation ||
-          this.generation !== generation ||
-          !valid() ||
-          (this.is("radio") && !radioShouldBeAudible())
-        ) {
-          // The host prepared for a play that is no longer wanted. Unless a
-          // newer preparation is pending, restate what the page is doing.
-          if (!this.preparing) updateNowPlayingMetadata();
-          return false;
-        }
-        if (ready === false) {
-          if (this.is("radio")) state.localRadioSuspended = true;
-          els.audio.pause();
-          failed();
-          return false;
-        }
-      }
-      // A suspended mobile decoder can leave play() pending indefinitely.
-      // Let the caller retry instead of blocking station refresh and recovery.
-      const played = await Promise.race([
-        els.audio.play().then(() => true),
-        new Promise((resolve) => {
-          timeout = window.setTimeout(() => resolve(false), 4000);
-        }),
-      ]);
-      // A prepared host otherwise keeps foreground protection without audio.
-      if (!played) failed();
-      return played;
-    } catch (error) {
-      if (
-        error?.name !== "AbortError" &&
-        this.generation === generation &&
-        valid()
-      ) {
-        reportAudioError(error);
-      }
-      // Radio can't start here without a tap, so stop treating it as active.
-      if (error?.name === "NotAllowedError" && this.is("radio"))
-        state.localRadioSuspended = true;
-      failed();
-      return false;
-    } finally {
-      window.clearTimeout(timeout);
-      if (this.preparing === operation) this.preparing = 0;
-    }
-  },
-  reloadIfFailed({ stalled = false } = {}) {
-    if (
-      els.audio.error ||
-      els.audio.networkState === HTMLMediaElement.NETWORK_NO_SOURCE ||
-      (stalled &&
-        !els.audio.ended &&
-        els.audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA)
-    ) {
-      els.audio.load();
-      return true;
-    }
-    return false;
-  },
-  refreshOwner() {
-    renderOwnerBar();
-  },
-};
-
-window.ZakAudio = audioController;
-window.ZakNavigate = navigate;
-window.ZakShowToast = showToast;
-
-function clearMediaPositionState() {
-  if (
-    !("mediaSession" in navigator) ||
-    typeof navigator.mediaSession.setPositionState !== "function"
-  )
-    return;
-  try {
-    navigator.mediaSession.setPositionState();
-  } catch {}
 }
 
 let catalogRequest;
@@ -1062,7 +692,7 @@ function openAddToStation(track) {
   );
   if (!stations.length) {
     showToast("Create a station with this song.");
-    navigate("/library");
+    router.navigate("/library");
     window.dispatchEvent(
       new CustomEvent("zak-new-list-station", { detail: { track } }),
     );
@@ -1167,7 +797,7 @@ function setStationLoading() {
   els.source.textContent = "Zak Radio";
   els.title.textContent = "Loading station…";
   els.details.textContent = "Connecting to the requested station.";
-  clearStationText("Waiting for station content.");
+  lyrics.clear("Waiting for station content.");
   els.cover.removeAttribute("src");
   els.cover.classList.add("hidden");
   els.emptyCover.textContent = "…";
@@ -1225,249 +855,29 @@ function focusAfterStationAction(preferred) {
   (target || els.stationMode).focus({ preventScroll: true });
 }
 
-function clearStationText(message) {
-  state.lastTextTrackId = null;
-  resetSyncedLyrics();
-  setLyricsExpanded(false);
-  els.lyrics.textContent = message;
-  els.prompt.textContent = "";
-  els.toggleDetails.setAttribute("aria-expanded", "false");
-  els.toggleDetails.textContent = "View details";
-  els.promptPanel.hidden = true;
-  els.detailsPanels.classList.remove("is-split");
-}
-
-async function fetchText(track, kind) {
-  const data = await api(`/api/track/${track.id}?kind=${kind}`);
-  return data[kind] || "";
-}
-
-async function loadTrackText(track) {
-  if (!track || state.lastTextTrackId === track.id) return;
-  state.lastTextTrackId = track.id;
-  const generation = ++state.lyricsLoadGeneration;
-  resetSyncedLyrics();
-  setLyricsExpanded(false);
-  els.lyrics.textContent = "Loading...";
-  els.prompt.textContent = "Loading...";
-  const lyricRequest = track.has_synced_lyrics
-    ? loadTimedLyrics(track, generation)
-    : loadTrackTextKind(track, "lyrics", els.lyrics);
-  await Promise.allSettled([
-    lyricRequest,
-    loadTrackTextKind(track, "prompt", els.prompt),
-  ]);
-  if (state.current?.id === track.id)
-    window.requestAnimationFrame(updateLyricsOverflow);
-}
-
-async function loadTimedLyrics(track, generation) {
-  try {
-    const value = await fetchText(track, "timed_lyrics");
-    if (
-      state.current?.id !== track.id ||
-      generation !== state.lyricsLoadGeneration
-    )
-      return;
-    if (!value?.cues?.length) throw new Error("No synchronized lyric cues");
-    renderTimedLyrics(value);
-  } catch {
-    if (
-      state.current?.id !== track.id ||
-      generation !== state.lyricsLoadGeneration
-    )
-      return;
-    resetSyncedLyrics();
-    await loadTrackTextKind(track, "lyrics", els.lyrics);
-  }
-}
-
-async function loadTrackTextKind(track, kind, element) {
-  try {
-    const value = await fetchText(track, kind);
-    if (state.current?.id !== track.id) return;
-    element.textContent = value.trim() || `No ${kind} found.`;
-    if (kind === "lyrics" && track.lyrics_quality_status === "warning") {
-      els.lyricsSyncStatus.textContent =
-        "Auto-generated lyrics · timing may be off";
-    }
-  } catch {
-    if (state.current?.id !== track.id) return;
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.className = "button text-retry";
-    retry.textContent = `Retry ${kind}`;
-    retry.addEventListener("click", () =>
-      loadTrackTextKind(track, kind, element),
-    );
-    element.replaceChildren(
-      document.createTextNode(`Unable to load ${kind}. `),
-      retry,
-    );
-  }
-}
-
-function resetSyncedLyrics() {
-  state.syncedLyrics = null;
-  state.activeLyricCue = -1;
-  state.lyricFollowPausedUntil = 0;
-  els.lyricsViewport.classList.remove("has-synced-lyrics");
-  els.lyricsFollow.hidden = true;
-  els.lyricsSyncStatus.textContent = "";
-  els.toggleLyrics.hidden = false;
-}
-
-function renderTimedLyrics(timedLyrics) {
-  state.syncedLyrics = timedLyrics;
-  state.activeLyricCue = -1;
-  els.lyricsViewport.classList.add("has-synced-lyrics");
-  els.lyricsViewport.classList.add("is-collapsed");
-  els.lyricsFade.hidden = true;
-  els.lyricsMoreRow.hidden = true;
-  els.toggleLyrics.hidden = true;
-  els.lyricsFollow.hidden = true;
-  els.lyricsSyncStatus.textContent = syncedLyricsStatus(timedLyrics);
-
-  const root = document.createElement("div");
-  root.className = "synced-lyrics";
-  timedLyrics.cues.forEach((cue, index) => {
-    const line = document.createElement("button");
-    line.type = "button";
-    line.className = "synced-lyric-cue";
-    if (cue.quality_status === "warning") {
-      line.classList.add("is-uncertain");
-      line.title = "This line has lower-confidence words or timing.";
-    }
-    if (cue.secondary_text) line.classList.add("has-secondary-vocal");
-    line.dataset.lyricCue = String(index);
-    const primary = document.createElement("span");
-    primary.className = "synced-lyric-primary";
-    primary.textContent = cue.text;
-    line.append(primary);
-    if (cue.secondary_text) {
-      const secondary = document.createElement("span");
-      secondary.className = "synced-lyric-secondary";
-      secondary.textContent = cue.secondary_text;
-      line.append(secondary);
-    }
-    line.disabled = state.stationId === "main" || !canControlStation();
-    line.setAttribute(
-      "aria-label",
-      `Seek to ${timeLabel(cue.start)}: ${cue.text}${
-        cue.secondary_text ? `; overlapping vocal: ${cue.secondary_text}` : ""
-      }`,
-    );
-    line.addEventListener("click", () => {
-      if (state.stationId === "main" || !canControlStation()) {
-        showToast(
-          state.stationId === "main"
-            ? "Radio playback stays live; seeking is unavailable."
-            : "Only the station controller can seek this station.",
-        );
-        return;
-      }
-      postControl("seek", { position: Number(cue.start || 0) });
-    });
-    root.append(line);
-  });
-  els.lyrics.replaceChildren(root);
-  updateSyncedLyrics();
-}
-
-function syncedLyricsStatus(timedLyrics) {
-  if (timedLyrics?.quality?.alternate_vocals_unresolved) {
-    return "Alternate vocals detected · exact words need review";
-  }
-  if (timedLyrics?.quality?.alternate_vocals_detected) {
-    return "Following the song · alternate vocals included";
-  }
-  if (timedLyrics?.quality?.status === "warning") {
-    return "Auto-generated lyrics · timing may be off";
-  }
-  const coverage = Math.round(
-    Number(timedLyrics?.quality?.line_coverage || 0) * 100,
-  );
-  return coverage >= 100
-    ? "Following the song"
-    : `Following the song · ${coverage}% of written lines matched`;
-}
-
-function lyricCueAt(position) {
-  const cues = state.syncedLyrics?.cues || [];
-  let low = 0;
-  let high = cues.length - 1;
-  let candidate = -1;
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    if (Number(cues[middle].start) <= position) {
-      candidate = middle;
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-  if (candidate < 0) return -1;
-  return position <= Number(cues[candidate].end) + 0.35 ? candidate : -1;
-}
-
-function updateSyncedLyrics(position = Number(els.audio.currentTime || 0)) {
-  if (!state.syncedLyrics || !audioController.is("radio")) return;
-  const next = lyricCueAt(position);
-  if (next === state.activeLyricCue) return;
-  if (state.activeLyricCue >= 0) {
-    const previous = els.lyrics.querySelector(
-      `[data-lyric-cue="${state.activeLyricCue}"]`,
-    );
-    previous?.classList.remove("is-current");
-    previous?.removeAttribute("aria-current");
-  }
-  state.activeLyricCue = next;
-  if (next < 0) return;
-  const current = els.lyrics.querySelector(`[data-lyric-cue="${next}"]`);
-  current?.classList.add("is-current");
-  current?.setAttribute("aria-current", "true");
-  if (!current || performance.now() < state.lyricFollowPausedUntil) return;
-  const top =
-    current.offsetTop -
-    Math.max(0, (els.lyricsViewport.clientHeight - current.offsetHeight) / 2);
-  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  els.lyricsViewport.scrollTo({
-    top: Math.max(0, top),
-    behavior: reduced ? "auto" : "smooth",
-  });
-}
-
-function pauseLyricFollowing() {
-  if (!state.syncedLyrics) return;
-  state.lyricFollowPausedUntil = performance.now() + 10000;
-  els.lyricsFollow.hidden = false;
-  els.lyricsSyncStatus.textContent = "Manual scrolling · follow paused";
-}
-
-function setLyricsExpanded(expanded) {
-  els.lyricsViewport.classList.toggle("is-collapsed", !expanded);
-  els.lyricsFade.hidden = expanded;
-  els.toggleLyrics.setAttribute("aria-expanded", String(expanded));
-  els.toggleLyrics.textContent = expanded
-    ? "Collapse lyrics"
-    : "Show full lyrics";
-}
-
-function updateLyricsOverflow() {
-  if (state.syncedLyrics) {
-    els.lyricsMoreRow.hidden = true;
-    els.lyricsFade.hidden = true;
-    return;
-  }
-  const expanded = els.toggleLyrics.getAttribute("aria-expanded") === "true";
-  const wasCollapsed = els.lyricsViewport.classList.contains("is-collapsed");
-  if (!wasCollapsed) els.lyricsViewport.classList.add("is-collapsed");
-  const overflows =
-    els.lyrics.scrollHeight > els.lyricsViewport.clientHeight + 1;
-  if (!wasCollapsed) els.lyricsViewport.classList.remove("is-collapsed");
-  els.lyricsMoreRow.hidden = !overflows;
-  els.lyricsFade.hidden = expanded || !overflows;
-}
+const lyrics = createLyricsView({
+  els: {
+    audio: els.audio,
+    lyrics: els.lyrics,
+    lyricsViewport: els.lyricsViewport,
+    lyricsFade: els.lyricsFade,
+    lyricsMoreRow: els.lyricsMoreRow,
+    toggleLyrics: els.toggleLyrics,
+    lyricsFollow: els.lyricsFollow,
+    lyricsSyncStatus: els.lyricsSyncStatus,
+    prompt: els.prompt,
+    toggleDetails: els.toggleDetails,
+    promptPanel: els.promptPanel,
+    detailsPanels: els.detailsPanels,
+  },
+  api,
+  currentTrackId: () => state.current?.id,
+  stationId: () => state.stationId,
+  canSeek: canControlStation,
+  isRadio: () => audioController.is("radio"),
+  seek: (position) => postControl("seek", { position }),
+  notify: showToast,
+});
 
 function renderTrack(track) {
   if (!track) return;
@@ -1510,7 +920,7 @@ function renderTrack(track) {
   }
   els.progress.max = String(durationOf(track));
   els.duration.textContent = timeLabel(durationOf(track));
-  if (routePath() === "/") loadTrackText(track);
+  if (router.path() === "/") lyrics.load(track);
   if (changed) {
     els.nowPlayingAnnouncement.textContent = `Now playing ${displayTitle}`;
   }
@@ -1697,7 +1107,7 @@ function renderStation() {
 
 function updateNowPlayingMetadata() {
   const track = currentTrack();
-  const path = routePath();
+  const path = router.path();
   if (!track) {
     document.title =
       path === "/library"
@@ -2142,7 +1552,7 @@ async function switchStation(stationId, ownerToken) {
     url.searchParams.set("station", state.stationId);
   }
   window.history.replaceState(window.history.state || {}, "", url);
-  syncRouteLinks();
+  router.syncLinks();
   publishStationView();
   connectStationEvents();
   const loaded = await refreshStation();
@@ -2276,7 +1686,7 @@ function setStationUnavailable(message) {
   els.title.textContent = message;
   els.details.textContent =
     "Station state could not be loaded. The music archive remains available.";
-  clearStationText("Station content is unavailable.");
+  lyrics.clear("Station content is unavailable.");
   els.stationStatus.textContent = "Station unavailable";
   [
     els.playPause,
@@ -2306,7 +1716,7 @@ async function boot(forceCatalog = false) {
   setConnected(false);
   const stationId = requestedStation();
   state.stationId = stationId;
-  syncRouteLinks();
+  router.syncLinks();
   state.ownerToken =
     stationId === "main"
       ? ""
@@ -2366,32 +1776,10 @@ els.toggleDetails.addEventListener("click", () => {
   els.toggleDetails.textContent = expanded ? "Hide details" : "View details";
   els.promptPanel.hidden = !expanded;
   els.detailsPanels.classList.toggle("is-split", expanded);
-  window.queueMicrotask(updateLyricsOverflow);
+  window.queueMicrotask(lyrics.updateOverflow);
 });
-els.toggleLyrics.addEventListener("click", () => {
-  setLyricsExpanded(els.toggleLyrics.getAttribute("aria-expanded") !== "true");
-});
-els.lyricsFollow.addEventListener("click", () => {
-  state.lyricFollowPausedUntil = 0;
-  els.lyricsFollow.hidden = true;
-  els.lyricsSyncStatus.textContent = syncedLyricsStatus(state.syncedLyrics);
-  state.activeLyricCue = -1;
-  updateSyncedLyrics();
-});
-["wheel", "touchmove"].forEach((eventName) => {
-  els.lyricsViewport.addEventListener(eventName, pauseLyricFollowing, {
-    passive: true,
-  });
-});
-if ("ResizeObserver" in window) {
-  const lyricsResizeObserver = new ResizeObserver(() => updateLyricsOverflow());
-  lyricsResizeObserver.observe(els.lyrics);
-  lyricsResizeObserver.observe(els.detailsPanels);
-} else {
-  window.addEventListener("resize", updateLyricsOverflow);
-}
 els.createStation.addEventListener("click", () => {
-  navigate("/library");
+  router.navigate("/library");
   window.dispatchEvent(new CustomEvent("zak-new-station"));
 });
 els.stationSelect.addEventListener("change", async () => {
@@ -2444,108 +1832,10 @@ els.shareClose.addEventListener("click", () => {
   els.shareFallback.hidden = true;
   els.shareStation.focus();
 });
-document.querySelectorAll("[data-route]").forEach((link) => {
-  link.addEventListener("click", (event) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-      return;
-    event.preventDefault();
-    navigate(link.dataset.route);
-  });
-});
-window.addEventListener("popstate", (event) => {
-  const scroll = Array.isArray(event.state?.scroll)
-    ? event.state.scroll
-    : [0, 0];
-  window.ZakPendingRouteScroll = [
-    Number(scroll[0]) || 0,
-    Number(scroll[1]) || 0,
-  ];
-  const restoredAwayFromTop = window.ZakPendingRouteScroll.some(
-    (value) => value !== 0,
-  );
-  const changedView = state.renderedPath !== routePath();
-  const stationId = requestedStation();
-  if (stationId !== state.stationId) {
-    state.controlGeneration++;
-    state.controlQueue = Promise.resolve();
-    state.stationRequestGeneration++;
-    state.stationId = stationId;
-    state.ownerToken =
-      stationId === "main"
-        ? ""
-        : window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
-    setStationLoading();
-    connectStationEvents();
-    const generation = state.stationRequestGeneration;
-    void refreshStation().then((loaded) => {
-      if (
-        !loaded &&
-        generation === state.stationRequestGeneration &&
-        stationId === state.stationId
-      ) {
-        setStationUnavailable("Station unavailable");
-      }
-    });
-  }
-  renderRoute(changedView && !restoredAwayFromTop, true);
-  window.requestAnimationFrame(() => {
-    scrollRoute({
-      left: window.ZakPendingRouteScroll?.[0] || 0,
-      top: window.ZakPendingRouteScroll?.[1] || 0,
-      behavior: "instant",
-    });
-    const hasReaderItem =
-      routePath() === "/reader" &&
-      new URLSearchParams(location.search).has("item");
-    if (changedView && restoredAwayFromTop) {
-      const routeLink = [
-        ...document.querySelectorAll(`[data-route="${routePath()}"]`),
-      ].find(
-        (link) => link.getClientRects().length && !link.closest("[hidden]"),
-      );
-      routeLink?.focus({ preventScroll: true });
-    }
-    if (!hasReaderItem) window.ZakPendingRouteScroll = null;
-  });
-});
-if ("scrollRestoration" in window.history) {
-  window.history.scrollRestoration = "manual";
-}
-if (!Array.isArray(window.history.state?.scroll)) {
-  const routeScroll = routeScrollPosition();
-  window.history.replaceState(
-    {
-      ...(window.history.state || {}),
-      scroll: routeScroll,
-    },
-    "",
-  );
-}
-function commitScrollState() {
-  const routeScroll = routeScrollPosition();
-  window.history.replaceState(
-    {
-      ...(window.history.state || {}),
-      scroll: routeScroll,
-    },
-    "",
-  );
-}
-window.ZakCommitScrollState = commitScrollState;
-function scheduleScrollStateCommit() {
-  window.clearTimeout(scrollStateTimer);
-  scrollStateTimer = window.setTimeout(() => {
-    commitScrollState();
-  }, 120);
-}
-window.addEventListener("scroll", scheduleScrollStateCommit, { passive: true });
-els.appShell.addEventListener("scroll", scheduleScrollStateCommit, {
-  passive: true,
-});
 els.returnLive.addEventListener("click", async () => {
   const restoreRadioFocus =
-    routePath() === "/" && els.ownerBar.contains(document.activeElement);
-  if (audioController.is("radio")) navigate("/");
+    router.path() === "/" && els.ownerBar.contains(document.activeElement);
+  if (audioController.is("radio")) router.navigate("/");
   else await audioController.returnLive();
   if (restoreRadioFocus) {
     (els.playPause.disabled ? els.title : els.playPause).focus({
@@ -2564,7 +1854,7 @@ els.ownerPlayPause.addEventListener("click", async () => {
       state.localRadioSuspended = false;
       await syncAudioToStation();
     } else {
-      navigate("/");
+      router.navigate("/");
     }
     return;
   }
@@ -2589,8 +1879,6 @@ els.radioRetry.addEventListener("click", async () => {
   }
 });
 els.audio.addEventListener("error", () => {
-  audioController.audible = false;
-  audioController.resuming = false;
   updateNowPlayingMetadata();
   reportAudioError(els.audio.error);
   schedulePlaybackRecovery(750);
@@ -2608,7 +1896,6 @@ els.audio.addEventListener("play", () => {
   renderOwnerBar();
 });
 els.audio.addEventListener("pause", () => {
-  audioController.audible = false;
   // A source swap or track end is temporary. Any other pause the app did not
   // request (such as audio-focus loss) must not be undone by a station poll.
   if (
@@ -2627,14 +1914,10 @@ els.audio.addEventListener("pause", () => {
   if (radioShouldBeAudible()) schedulePlaybackRecovery(1500);
 });
 els.audio.addEventListener("playing", () => {
-  audioController.audible = true;
-  audioController.transitioning = false;
-  audioController.resuming = false;
   clearPlaybackRecovery();
   updateNowPlayingMetadata();
 });
 els.audio.addEventListener("waiting", () => {
-  audioController.audible = false;
   updateNowPlayingMetadata();
   schedulePlaybackRecovery(2500);
 });
@@ -2734,24 +2017,21 @@ els.audio.addEventListener("timeupdate", () => {
       clearPlaybackRecovery();
     }
     updateProgressFromAudio();
-    updateSyncedLyrics();
+    lyrics.update();
   }
 });
 els.audio.addEventListener("loadedmetadata", () => {
   if (audioController.is("radio")) {
     updateProgressFromAudio();
-    state.activeLyricCue = -1;
-    updateSyncedLyrics();
+    lyrics.refresh();
   }
 });
 els.audio.addEventListener("ended", () => {
-  audioController.audible = false;
   if (!audioController.is("radio")) {
     // Reader's own ended handler may start the next segment; publish after it.
     window.setTimeout(updateNowPlayingMetadata);
     return;
   }
-  audioController.transitioning = true;
   updateNowPlayingMetadata();
   // Track boundaries are server-authoritative. Every listener receives the
   // resulting revision through SSE; refresh immediately as a degraded-path
@@ -2786,7 +2066,7 @@ document.addEventListener("keydown", (event) => {
   if (
     typing ||
     interactive ||
-    routePath() !== "/" ||
+    router.path() !== "/" ||
     event.metaKey ||
     event.ctrlKey ||
     event.altKey ||
@@ -2808,11 +2088,13 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-renderRoute();
+router.render();
 boot();
+initLibrary();
+initReader({ router });
 window.setInterval(() => {
   if (
-    routePath() === "/" &&
+    router.path() === "/" &&
     (!audioController.is("radio") ||
       els.audio.paused ||
       state.localRadioSuspended)
