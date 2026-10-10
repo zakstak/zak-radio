@@ -147,8 +147,7 @@ promoting a route.
 See [ARCHITECTURE](ARCHITECTURE.md) for package and data boundaries and
 [RECOVERY](RECOVERY.md) before moving, migrating, backing up, or restoring data.
 Offline lyrics alignment, evaluation, and title generation are documented in
-[the lyrics guide](docs/lyrics.md). Interface constraints live in
-[DESIGN](DESIGN.md).
+[the lyrics guide](docs/lyrics.md).
 
 ## Station model
 
