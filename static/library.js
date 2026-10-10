@@ -683,7 +683,7 @@
       els.audio.currentSrc.endsWith(requestedSource)
     ) {
       if (els.audio.paused) await window.ZakAudio.play();
-      else els.audio.pause();
+      else window.ZakAudio.pause();
       return;
     }
     state.current = track;
@@ -789,7 +789,7 @@
   els.playPause.addEventListener("click", () => {
     if (!claimCurrentPreview()) return;
     if (els.audio.paused) window.ZakAudio.play();
-    else els.audio.pause();
+    else window.ZakAudio.pause();
   });
   els.back.addEventListener("click", () => {
     if (!claimCurrentPreview()) return;
@@ -929,7 +929,7 @@
         state.current = replacement;
         if (window.ZakAudio.is("library")) renderDock(replacement);
       } else if (window.ZakAudio.is("library")) {
-        els.audio.pause();
+        window.ZakAudio.pause();
         window.ZakAudio.clear("library");
         state.current = null;
       }

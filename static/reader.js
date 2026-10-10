@@ -458,7 +458,7 @@
     }
     const position = els.audio.currentTime || 0;
     savePlayback(false, true, position);
-    els.audio.pause();
+    window.ZakAudio.pause();
     state.activePlayback = null;
     window.ZakAudio.clear("reader");
   }
@@ -1136,7 +1136,7 @@
           state.resumeReady[body.item_id] = false;
           state.resumeError = true;
           if (window.ZakAudio.is("reader")) {
-            els.audio.pause();
+            window.ZakAudio.pause();
             state.activePlayback = null;
             window.ZakAudio.clear("reader");
           }
@@ -1215,7 +1215,7 @@
         state.index = finalIndex;
         const duration = segmentDuration(state.segments[finalIndex]);
         loadAudio(duration, false);
-        els.audio.pause();
+        window.ZakAudio.pause();
         state.position = duration;
         renderProgress();
         savePlayback(false, true, duration);
@@ -1298,7 +1298,7 @@
         await window.ZakAudio.play();
       }
     } else {
-      els.audio.pause();
+      window.ZakAudio.pause();
       savePlayback(false);
     }
   }
