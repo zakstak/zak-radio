@@ -724,8 +724,12 @@ const audioController = {
           this.generation !== generation ||
           !valid() ||
           (this.is("radio") && !radioShouldBeAudible())
-        )
+        ) {
+          // The host prepared for a play that is no longer wanted. Unless a
+          // newer preparation is pending, restate what the page is doing.
+          if (!this.preparing) updateNowPlayingMetadata();
           return false;
+        }
         if (ready === false) {
           if (this.is("radio")) state.localRadioSuspended = true;
           els.audio.pause();
@@ -752,6 +756,9 @@ const audioController = {
       ) {
         reportAudioError(error);
       }
+      // Radio can't start here without a tap, so stop treating it as active.
+      if (error?.name === "NotAllowedError" && this.is("radio"))
+        state.localRadioSuspended = true;
       updateNowPlayingMetadata();
       return false;
     } finally {
@@ -2624,7 +2631,8 @@ async function handleMediaCommand(command) {
       // Nothing owns the element after Stop; Play returns to the station.
       await togglePlayback();
     } else if (audioController.is("reader") && window.ZakReader?.play) {
-      await window.ZakReader.play();
+      // ZakReader.play toggles, so a repeated Play must not pause Reader.
+      if (els.audio.paused) await window.ZakReader.play();
     } else if (!audioController.is("radio")) {
       await audioController.play();
     } else if (state.station?.playing) {

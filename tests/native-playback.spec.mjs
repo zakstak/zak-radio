@@ -17,6 +17,7 @@ async function openWithNativeHost(
         data: JSON.stringify({ schema, ...message }),
       });
     window.__hostMessages = [];
+    window.__hostTimes = [];
     window.__playedSources = [];
     window.__readyAll = (ready = true) => {
       for (const message of window.__hostMessages) {
@@ -33,6 +34,7 @@ async function openWithNativeHost(
       postMessage(value) {
         const message = JSON.parse(value);
         window.__hostMessages.push(message);
+        window.__hostTimes.push(performance.now());
         if (message.type === "hello") {
           window.__sendCapabilities = () =>
             reply({
@@ -306,6 +308,66 @@ test("a stalled Library preview is reported as buffering", async ({ page }) => {
   expect(await audioPaused(page)).toBe(false);
   await page.locator("#audio").evaluate((audio) => audio.dispatchEvent(new Event("playing")));
   await expect.poll(() => lastMediaState(page)).toBe("playing");
+});
+
+test("Pause before the capabilities reply leaves the host paused", async ({ page }) => {
+  // Freeze the station so no later update republishes the page state.
+  const station = await (await page.request.get("/api/station?station_id=main")).json();
+  const frozen = JSON.stringify({ ...station, playing: true, position: 0, server_time: Date.now() / 1000 });
+  await page.route("**/api/station?*", (route) =>
+    route.fulfill({ contentType: "application/json", body: frozen }));
+  await page.route("**/api/station/events?*", (route) => route.abort());
+  await openWithNativeHost(page, { deferCapabilities: true, path: "/library" });
+  // The station has loaded once Radio claims the idle element.
+  await expect.poll(() => audioOwner(page)).toBe("radio");
+  await page.evaluate(() => {
+    window.ZakAudio.claim("library", "/media/alpha/audio", "Pending preview");
+    void window.ZakAudio.play();
+  });
+  await sendCommand(page, "pause");
+  await page.evaluate(() => window.__sendCapabilities());
+  await expect.poll(() => prepareRequested(page)).toBe(true);
+  await page.waitForTimeout(300);
+  // The stale preparation is followed at once by the page's actual state,
+  // not just by the next station poll.
+  const correction = await page.evaluate(() => {
+    const prepared = window.__hostMessages.findLastIndex((message) => message.type === "media.prepare");
+    const next = window.__hostMessages.findIndex(
+      (message, index) => index > prepared && message.type === "media",
+    );
+    return next < 0
+      ? null
+      : { state: window.__hostMessages[next].state, delay: window.__hostTimes[next] - window.__hostTimes[prepared] };
+  });
+  expect(correction?.state).toBe("paused");
+  expect(correction.delay).toBeLessThan(100);
+  expect(await playedSources(page)).toEqual([]);
+  expect(await audioPaused(page)).toBe(true);
+});
+
+test("Radio play blocked by the browser reports paused, not buffering", async ({ page }) => {
+  await openWithNativeHost(page);
+  await expect(page.locator("#playPause")).toBeEnabled();
+  await page.locator("#audio").evaluate((audio) => {
+    audio.play = () => Promise.reject(new DOMException("Blocked", "NotAllowedError"));
+  });
+  await page.locator("#playPause").click();
+  await expect.poll(() => prepareRequested(page)).toBe(true);
+  await expect.poll(() => lastMediaState(page)).toBe("paused");
+  await page.waitForTimeout(500);
+  expect(await lastMediaState(page)).toBe("paused");
+});
+
+test("a repeated native Play leaves Reader playing", async ({ page }) => {
+  const item = await mockReader(page, { segments: ["First segment.", "Second segment."] });
+  await openWithNativeHost(page, { path: "/reader" });
+  await page.locator(`[data-item-id="${item.id}"]`).click();
+  await page.getByRole("button", { name: "Read: First segment." }).click();
+  await expect.poll(() => page.locator("#audio").evaluate((audio) => !audio.paused && audio.currentTime > 0.1))
+    .toBe(true);
+  await sendCommand(page, "play");
+  await page.waitForTimeout(200);
+  expect(await audioPaused(page)).toBe(false);
 });
 
 test("a prepared play that the browser rejects reports paused to the host", async ({ page }) => {
