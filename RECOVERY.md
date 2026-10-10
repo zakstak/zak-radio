@@ -3,9 +3,9 @@
 Production state lives in the Kiln retained volume mounted at `/data/zak-radio`.
 Media, databases, credentials, and environment data are not stored in this
 repository. Current Kiln containers use rootless namespace UID 0; the explicit
-UID 65532 provisioning and migration examples below apply to the rootful
-runtime lane. Do not apply those host IDs to a rootless Kiln volume. Use the
-platform's retained-volume recovery with its existing ownership mapping.
+UID 65532 provisioning and migration examples below apply to the rootful runtime
+lane. Do not apply those host IDs to a rootless Kiln volume. Use the platform's
+retained-volume recovery with its existing ownership mapping.
 
 ## Required backup layers
 
