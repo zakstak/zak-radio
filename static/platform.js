@@ -1,7 +1,10 @@
 const storageFallback = new Map();
 
 const NATIVE_SCHEMA = "zakstak.native.v1";
-let mediaCapabilities = {};
+// Unknown until the host replies to hello.
+let mediaCapabilities = null;
+let capabilitiesArrived = () => {};
+let capabilitiesPending = null;
 let mediaRequestSequence = 0;
 let lastMediaMessage = "";
 const mediaPreparations = new Map();
@@ -15,11 +18,26 @@ if (window.ZakstakNativeBridge) {
       return;
     }
     if (response.schema !== NATIVE_SCHEMA) return;
-    if (response.type === "capabilities") mediaCapabilities = response;
+    if (response.type === "capabilities") {
+      mediaCapabilities = response;
+      capabilitiesArrived();
+    }
     if (response.type === "media.ready") {
       mediaPreparations.get(response.requestId)?.(response.ready === true);
     }
   };
+}
+
+function knownCapabilities() {
+  if (mediaCapabilities || !window.ZakstakNativeBridge)
+    return Promise.resolve(mediaCapabilities || {});
+  // Play can race the hello reply. Hosts that predate the reply never send
+  // one, so wait briefly, once, and then assume no optional features.
+  capabilitiesPending ??= new Promise((resolve) => {
+    capabilitiesArrived = resolve;
+    window.setTimeout(resolve, 1000);
+  }).then(() => (mediaCapabilities ??= {}));
+  return capabilitiesPending;
 }
 
 function postNative(message) {
@@ -34,10 +52,9 @@ function postNative(message) {
 }
 
 window.ZakNativeHost = {
-  prepare({ title, subtitle }) {
+  async prepare({ title, subtitle }) {
     // Old hosts/browsers keep their existing playback path; no new state is sent.
-    if (!mediaCapabilities.foregroundMediaPreparation)
-      return Promise.resolve(true);
+    if (!(await knownCapabilities()).foregroundMediaPreparation) return true;
     // Preparation changes native state even when the last web state was paused.
     lastMediaMessage = "";
     const requestId = `radio-media-${++mediaRequestSequence}`;
@@ -69,17 +86,18 @@ window.ZakNativeHost = {
     const message = {
       type: "media",
       state:
-        state === "buffering" && !mediaCapabilities.mediaBuffering
+        state === "buffering" && !mediaCapabilities?.mediaBuffering
           ? "paused"
           : state,
       title: String(title || "Zak Radio").slice(0, 120),
       subtitle: String(subtitle || "Zakstak").slice(0, 160),
     };
     const encoded = JSON.stringify(message);
-    if (encoded === lastMediaMessage)
-      return Boolean(window.ZakstakNativeBridge);
-    lastMediaMessage = encoded;
-    return postNative(message);
+    if (encoded === lastMediaMessage) return true;
+    // Cache only delivered states so a failed post is retried next time.
+    const delivered = postNative(message);
+    if (delivered) lastMediaMessage = encoded;
+    return delivered;
   },
 };
 

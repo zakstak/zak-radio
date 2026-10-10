@@ -579,7 +579,8 @@ const audioController = {
         ? "playing"
         : "buffering";
     }
-    return els.audio.paused ? "paused" : "playing";
+    // A media error can stop audio without a pause event.
+    return els.audio.paused || els.audio.error ? "paused" : "playing";
   },
   is(owner) {
     return this.owner === owner;
@@ -2561,6 +2562,8 @@ els.radioRetry.addEventListener("click", async () => {
   }
 });
 els.audio.addEventListener("error", () => {
+  audioController.audible = false;
+  updateNowPlayingMetadata();
   reportAudioError(els.audio.error);
   schedulePlaybackRecovery(750);
 });
@@ -2608,7 +2611,10 @@ els.audio.addEventListener("waiting", () => {
 els.audio.addEventListener("stalled", () => schedulePlaybackRecovery(1000));
 async function handleMediaCommand(command) {
   if (command === "play") {
-    if (audioController.is("reader") && window.ZakReader?.play) {
+    if (!audioController.owner) {
+      // Nothing owns the element after Stop; Play returns to the station.
+      await togglePlayback();
+    } else if (audioController.is("reader") && window.ZakReader?.play) {
       await window.ZakReader.play();
     } else if (!audioController.is("radio")) {
       await audioController.play();

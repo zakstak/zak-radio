@@ -23,7 +23,9 @@ Native transport controls arrive as a `zakstak-native-media-command` window
 event with `detail.command` set to `play`, `pause` or `stop`.
 
 Older hosts don't advertise the optional features. Then the page skips
-`media.prepare` and reports `buffering` as `paused`.
+`media.prepare` and reports `buffering` as `paused`. If Play comes before the
+`capabilities` reply, the page waits up to one second for it, once per page
+load.
 
 ## Playback rules
 
@@ -41,7 +43,10 @@ Older hosts don't advertise the optional features. Then the page skips
   follows the station again.
 - **Stop is silent.** Native Stop clears whichever owner holds the element.
   Reader saves its position first. Later station updates don't reclaim the
-  element for Radio until the listener presses Play.
+  element for Radio until the listener presses Play, in the page or through the
+  native controls.
+- **Errors aren't playing.** A media error can stop audio without a pause event,
+  so the page reports it as `paused`, or as `buffering` while Radio recovers.
 
 Vessel bounds continuous buffering on its side. This bridge does not replace the
 HTML player with a native player, and it doesn't keep playback alive if the

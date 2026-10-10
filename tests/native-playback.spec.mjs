@@ -5,8 +5,12 @@ import { test, expect } from "@playwright/test";
 
 // Installs a fake Vessel bridge before the app boots. With automaticReady, the
 // host acknowledges every media.prepare immediately; otherwise the test does.
-async function openWithNativeHost(page, { automaticReady = true, path = "/" } = {}) {
-  await page.addInitScript((automaticReady) => {
+// With deferCapabilities, the hello reply waits for window.__sendCapabilities.
+async function openWithNativeHost(
+  page,
+  { automaticReady = true, deferCapabilities = false, path = "/" } = {},
+) {
+  await page.addInitScript(({ automaticReady, deferCapabilities }) => {
     const schema = "zakstak.native.v1";
     const reply = (message) =>
       window.ZakstakNativeBridge.onmessage({
@@ -30,13 +34,13 @@ async function openWithNativeHost(page, { automaticReady = true, path = "/" } = 
         const message = JSON.parse(value);
         window.__hostMessages.push(message);
         if (message.type === "hello") {
-          queueMicrotask(() =>
+          window.__sendCapabilities = () =>
             reply({
               type: "capabilities",
               mediaBuffering: true,
               foregroundMediaPreparation: true,
-            }),
-          );
+            });
+          if (!deferCapabilities) queueMicrotask(window.__sendCapabilities);
         }
         if (message.type === "media.prepare" && automaticReady) {
           queueMicrotask(() =>
@@ -50,7 +54,7 @@ async function openWithNativeHost(page, { automaticReady = true, path = "/" } = 
         window.__playedSources.push(new URL(event.target.currentSrc).pathname);
       });
     });
-  }, automaticReady);
+  }, { automaticReady, deferCapabilities });
   await page.goto(path);
 }
 
@@ -185,6 +189,18 @@ test("native Stop stays silent across later station revisions", async ({ page })
   await expectStoppedSilently(page);
 });
 
+test("native Play after Stop returns to the live station", async ({ page }) => {
+  await openWithNativeHost(page);
+  await startRadio(page);
+  await sendCommand(page, "stop");
+  await expect.poll(() => audioOwner(page)).toBe("");
+  const count = await playedCount(page);
+  await sendCommand(page, "play");
+  await expect.poll(() => playedCount(page)).toBeGreaterThan(count);
+  expect(await audioOwner(page)).toBe("radio");
+  expect(await audioPaused(page)).toBe(false);
+});
+
 test("native Stop of a Library preview keeps Radio from reclaiming playback", async ({ page }) => {
   await openWithNativeHost(page);
   // Playing Radio first leaves the user-activation flag set, which used to let
@@ -242,6 +258,37 @@ test("Pause while the next Reader segment loads cancels its deferred start", asy
   await page.waitForTimeout(500);
   expect(await audioPaused(page)).toBe(true);
   expect(await playedSources(page)).toEqual([`/reader-media/${item.id}/0.mp3`]);
+});
+
+test("Play before the capabilities reply still waits for foreground preparation", async ({ page }) => {
+  await openWithNativeHost(page, { deferCapabilities: true });
+  await expect(page.locator("#playPause")).toBeEnabled();
+  await page.locator("#playPause").click();
+  await page.waitForTimeout(200);
+  expect(await audioPaused(page)).toBe(true);
+  expect(await prepareRequested(page)).toBe(false);
+  await page.evaluate(() => window.__sendCapabilities());
+  await expect.poll(() => playedCount(page)).toBeGreaterThanOrEqual(1);
+  const types = await page.evaluate(() => window.__hostMessages.map((message) => message.type));
+  expect(types).toContain("media.prepare");
+});
+
+test("a media error is not reported to the host as playing", async ({ page }) => {
+  await openWithNativeHost(page, { path: "/library" });
+  await page.getByRole("button", { name: "Preview Alpha Sunrise" }).click();
+  // Loop the short fixture so the preview cannot pause by ending.
+  await page.locator("#audio").evaluate(async (audio) => {
+    audio.loop = true;
+    if (audio.paused) await audio.play();
+  });
+  await expect.poll(() => lastMediaState(page)).toBe("playing");
+  // A decode or network failure sets error without pausing the element.
+  await page.locator("#audio").evaluate((audio) => {
+    Object.defineProperty(audio, "error", { configurable: true, get: () => ({ code: 3 }) });
+    audio.dispatchEvent(new Event("error"));
+  });
+  await expect.poll(() => lastMediaState(page)).toBe("paused");
+  expect(await audioPaused(page)).toBe(false);
 });
 
 test("rejected foreground preparation stays silent through later station updates", async ({ page }) => {
