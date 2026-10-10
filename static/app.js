@@ -717,6 +717,11 @@ const audioController = {
     this.reloadIfFailed();
     const operation = ++this.playOperation;
     let timeout;
+    // A failed start ends a pending resume, unless a newer claim owns it.
+    const failed = () => {
+      if (this.generation === generation) this.resuming = false;
+      updateNowPlayingMetadata();
+    };
     try {
       if (els.audio.paused || !this.audible) {
         this.preparing = operation;
@@ -739,7 +744,7 @@ const audioController = {
         if (ready === false) {
           if (this.is("radio")) state.localRadioSuspended = true;
           els.audio.pause();
-          updateNowPlayingMetadata();
+          failed();
           return false;
         }
       }
@@ -752,7 +757,7 @@ const audioController = {
         }),
       ]);
       // A prepared host otherwise keeps foreground protection without audio.
-      if (!played) updateNowPlayingMetadata();
+      if (!played) failed();
       return played;
     } catch (error) {
       if (
@@ -765,7 +770,7 @@ const audioController = {
       // Radio can't start here without a tap, so stop treating it as active.
       if (error?.name === "NotAllowedError" && this.is("radio"))
         state.localRadioSuspended = true;
-      updateNowPlayingMetadata();
+      failed();
       return false;
     } finally {
       window.clearTimeout(timeout);

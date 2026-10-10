@@ -249,6 +249,27 @@ test("Reader stays active across segment changes and reports paused at the end",
   expect(active.every((state) => state === "playing" || state === "buffering")).toBe(true);
 });
 
+test("a refused preparation for the next Reader segment reports paused", async ({ page }) => {
+  const item = await mockReader(page, { segments: ["First segment.", "Second segment."] });
+  await openWithNativeHost(page, { automaticReady: false, path: "/reader" });
+  await page.locator(`[data-item-id="${item.id}"]`).click();
+  await page.getByRole("button", { name: "Read: First segment." }).click();
+  const prepares = () =>
+    page.evaluate(() => window.__hostMessages.filter((message) => message.type === "media.prepare").length);
+  await expect.poll(prepares).toBe(1);
+  await page.evaluate(() => window.__readyAll(true));
+  // After the first segment ends, refuse the second segment's preparation.
+  await expect.poll(prepares, { timeout: 8000 }).toBe(2);
+  await page.evaluate(() => {
+    const requestId = window.__hostMessages.findLast((message) => message.type === "media.prepare").requestId;
+    window.ZakstakNativeBridge.onmessage({
+      data: JSON.stringify({ schema: "zakstak.native.v1", type: "media.ready", requestId, ready: false }),
+    });
+  });
+  await expect.poll(() => lastMediaState(page)).toBe("paused");
+  expect(await audioPaused(page)).toBe(true);
+});
+
 test("Pause while the next Reader segment loads cancels its deferred start", async ({ page }) => {
   let requestedNextSegment = false;
   let releaseNextSegment;
