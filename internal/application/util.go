@@ -31,14 +31,6 @@ func internalError(w http.ResponseWriter) {
 	http.Error(w, "internal service error", http.StatusInternalServerError)
 }
 
-func readJSON(path string, value any) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, value)
-}
-
 func exists(path string) bool {
 	stat, err := os.Stat(path)
 	return err == nil && !stat.IsDir()
@@ -78,10 +70,6 @@ func asFloat(value any) float64 {
 	default:
 		return 0
 	}
-}
-
-func asInt(value any) int {
-	return int(asFloat(value))
 }
 
 func boolInt(value bool) int {

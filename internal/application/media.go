@@ -47,30 +47,9 @@ func (a *App) media(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func serveRange(w http.ResponseWriter, r *http.Request, path string) {
-	serveRangeWithCache(w, r, path, "private, max-age=86400")
-}
-
 func servePrivateRange(w http.ResponseWriter, r *http.Request, rootHandle *os.Root, root, path string) {
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
 	serveRootRange(w, r, rootHandle, root, path, "private, no-store", "audio/mpeg")
-}
-
-func serveRangeWithCache(w http.ResponseWriter, r *http.Request, path, cacheControl string) {
-	file, err := os.Open(path)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	defer file.Close()
-	stat, err := file.Stat()
-	if err != nil || stat.IsDir() {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Accept-Ranges", "bytes")
-	w.Header().Set("Cache-Control", cacheControl)
-	http.ServeContent(w, r, filepath.Base(path), stat.ModTime(), file)
 }
 
 func serveRootRange(w http.ResponseWriter, r *http.Request, rootHandle *os.Root, root, path, cacheControl, mediaType string) {
@@ -101,28 +80,6 @@ func serveRootContent(w http.ResponseWriter, r *http.Request, rootHandle *os.Roo
 	w.Header().Set("Cache-Control", cacheControl)
 	w.Header().Set("Content-Type", mediaType)
 	http.ServeContent(w, r, filepath.Base(path), stat.ModTime(), file)
-}
-
-func openContainedRegular(root, path string) (*os.File, os.FileInfo, error) {
-	rootAbs, err := filepath.Abs(root)
-	if err != nil {
-		return nil, nil, err
-	}
-	pathAbs, err := filepath.Abs(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	relative, err := filepath.Rel(rootAbs, pathAbs)
-	if err != nil || relative == "." || relative == ".." ||
-		strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-		return nil, nil, fmt.Errorf("path escapes root")
-	}
-	rootHandle, err := os.OpenRoot(rootAbs)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rootHandle.Close()
-	return openRootedRegular(rootHandle, rootAbs, pathAbs)
 }
 
 func openRootedRegular(rootHandle *os.Root, root, path string) (*os.File, os.FileInfo, error) {
@@ -188,22 +145,6 @@ func supportedImagePath(path string) bool {
 	default:
 		return false
 	}
-}
-
-func (a *App) serveStaticFile(w http.ResponseWriter, r *http.Request, path string, cache bool) {
-	if path == "" {
-		http.NotFound(w, r)
-		return
-	}
-	if cache {
-		w.Header().Set("Cache-Control", "private, max-age=86400")
-	} else {
-		w.Header().Set("Cache-Control", "no-store")
-	}
-	if contentType := contentType(path); contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	}
-	http.ServeFile(w, r, path)
 }
 
 func contentType(path string) string {
