@@ -1,8 +1,8 @@
 # Zak Radio
 
 Zak Radio is a Go service for shared radio, saved and temporary stations, a
-searchable music library, and Reader audio. Radio, Library, and Reader share
-one browser shell and audio element.
+searchable music library, and Reader audio. Radio, Library, and Reader share one
+browser shell and audio element.
 
 The Go backend, SQLite schema, browser assets, and retained data-volume contract
 in this repository are the product source of truth. See
@@ -64,10 +64,10 @@ npm run test:browser
 ```
 
 Install the browser once with `npx playwright install chromium`. The complete
-gate also needs Python 3, rsync, curl, a Gitleaks version with the `git` command,
-and Docker with Buildx and a running daemon. It tests Go with the race detector,
-browser behavior, security scans, backup/restore, and the packaged service's
-restart and retained state:
+gate also needs Python 3, rsync, curl, a Gitleaks version with the `git`
+command, and Docker with Buildx and a running daemon. It tests Go with the race
+detector, browser behavior, security scans, backup/restore, and the packaged
+service's restart and retained state:
 
 ```bash
 ./scripts/check.sh
@@ -162,8 +162,8 @@ in the creator's browser and is sent only in mutation bodies. Retrying creation
 with the same browser-generated idempotency key returns the original station
 instead of consuming another slot.
 
-Saved stations persist across restarts and do not expire. They contain either
-an explicit song list or a live library filter. Library supports creating,
+Saved stations persist across restarts and do not expire. They contain either an
+explicit song list or a live library filter. Library supports creating,
 renaming, editing membership, and deleting them. Add to station carries the
 selected song into the editor when creating your first list station.
 

@@ -1,7 +1,7 @@
 # Lyrics and subject metadata
 
-Run these commands from the repository root. For normal setup and packaging,
-see [README](../README.md).
+Run these commands from the repository root. For normal setup and packaging, see
+[README](../README.md).
 
 Lyrics are cleaned, transcribed, and aligned offline, then promoted as immutable
 release input. Source `lyrics.md` and playback audio are never rewritten.
@@ -72,12 +72,12 @@ FFmpeg vocal-forward pass only when that measurably improves alignment, and
 tries Demucs only if neither raw nor FFmpeg audio reaches the configured anchor
 quality. The selected preprocessing is for analysis only.
 
-Generated-transcript cleanup is extractive: common ASR outros and immediate duplicate sentences are removed only when independent
-observed words do not support them. Metadata-like source clauses, including
-short production-looking words, are restored only when local audio evidence
-supports the exact words. Adversarial fixtures cover genuinely sung
-boilerplate-looking phrases, repeated choruses, and one-word production-like
-lyrics.
+Generated-transcript cleanup is extractive: common ASR outros and immediate
+duplicate sentences are removed only when independent observed words do not
+support them. Metadata-like source clauses, including short production-looking
+words, are restored only when local audio evidence supports the exact words.
+Adversarial fixtures cover genuinely sung boilerplate-looking phrases, repeated
+choruses, and one-word production-like lyrics.
 
 Gold audio is downloaded into the local cache and is never committed. The
 Hansen/MIREX public half contains five fully annotated popular songs, each with
