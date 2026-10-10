@@ -23,4 +23,17 @@ export default [
       ],
     },
   },
+  {
+    // index.html loads these as classic scripts that share window.Zak* globals.
+    // Only service-switcher.js is an ES module.
+    files: [
+      "static/platform.js",
+      "static/app.js",
+      "static/library.js",
+      "static/reader.js",
+    ],
+    languageOptions: {
+      sourceType: "script",
+    },
+  },
 ];
