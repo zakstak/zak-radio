@@ -10,11 +10,9 @@
 
 # Go build, test, and profiling output
 /zak-radio
-/zak-radio-go
 *.test
 *.out
 *.prof
-coverage.out
 
 # Browser test artifacts
 /.playwright-cli/

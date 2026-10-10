@@ -82,6 +82,7 @@ node --check static/platform.js
 node --check static/app.js
 node --check static/library.js
 node --check static/reader.js
+node --check static/service-switcher.js
 
 echo "==> frontend behavior and accessibility"
 browser_port="$(
@@ -109,7 +110,7 @@ bash -n \
   scripts/verify-release-package.sh \
   scripts/verify-snapshot.sh
 
-echo "==> Python syntax"
+echo "==> Python syntax and script tests"
 PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
   python3 -m py_compile \
   scripts/lyrics_harness.py scripts/lyrics-harness.py \
@@ -126,6 +127,7 @@ PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
   python3 scripts/test_verify_runtime.py
 python3 -m json.tool testdata/lyrics-gold/manifest.json >/dev/null
 python3 -m json.tool testdata/lyrics-gold/profile-v1.json >/dev/null
+python3 -m json.tool testdata/lyrics-regression/adversarial.json >/dev/null
 
 echo "==> static package inputs"
 if find ./static -mindepth 1 \( -type l -o \( ! -type f ! -type d \) \) \
