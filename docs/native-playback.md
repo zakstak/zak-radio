@@ -1,23 +1,55 @@
 # Vessel native playback
 
-Zak Radio shares one HTML media element across Radio, Library and Reader. The
-native bridge reports Radio playing only after the element's playing event,
-retains buffering intent through source changes, and waits for a negotiated
-foreground media preparation acknowledgement before starting audio. Vessel owns
-the native MediaSession, notification, foreground service and partial wake lock;
-Chromium owns HTML-media audio focus. Older hosts receive supported states and
-browsers keep their existing path.
+Zak Radio shares one HTML media element across Radio, Library and Reader. When
+the page runs inside Vessel (the Android WebView host), `static/platform.js`
+reports playback to the host over `window.ZakstakNativeBridge` so Vessel can
+hold a media foreground service, MediaSession notification and partial wake lock
+while the phone is locked. Chromium keeps HTML-media audio focus. Browsers
+without the bridge keep the plain MediaSession path.
 
-Explicit Pause invalidates a pending play operation, including Reader's
-same-source seek-to-end. Preparation invalidates native metadata deduplication,
-so an identical paused state still acknowledges a native Pause after buffering.
-Stop clears local radio intent and ownership; station/SSE refresh cannot restart
-it. Failed preparation remains paused. Native buffering is bounded independently
-of web timers. This does not replace the HTML player with Media3 or promise
-survival after process death.
+## Messages
 
-Validation uses eight bridge/browser regressions, the existing frontend suite,
-and Vessel's debug-only exact-origin fixture on isolated Android VMs. VM
-controls are real MediaSession transport controls and tests leave the display
-off through multiple real MP3 source changes. Phone acceptance remains an
-operator test.
+All messages are JSON with `schema: "zakstak.native.v1"`.
+
+| Direction   | `type`          | Fields                                         | Meaning                                                                              |
+| ----------- | --------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------ |
+| page → host | `hello`         | `product`                                      | Sent once at load to request capabilities.                                           |
+| host → page | `capabilities`  | `mediaBuffering`, `foregroundMediaPreparation` | Optional features this host supports.                                                |
+| page → host | `media`         | `state`, `title`, `subtitle`                   | `playing`, `buffering`, `paused` or `none`. Deduplicated.                            |
+| page → host | `media.prepare` | `requestId`, `title`, `subtitle`               | Ask the host to start foreground protection before audio starts.                     |
+| host → page | `media.ready`   | `requestId`, `ready`                           | Preparation result. The page waits at most 5.5 seconds, then treats it as not ready. |
+
+Native transport controls arrive as a `zakstak-native-media-command` window
+event with `detail.command` set to `play`, `pause` or `stop`.
+
+Older hosts don't advertise the optional features. Then the page skips
+`media.prepare` and reports `buffering` as `paused`.
+
+## Playback rules
+
+- **Buffering is active.** Radio reports `playing` only after the element's
+  `playing` event. Track ends, source swaps and `waiting` report `buffering`, so
+  a locked phone keeps foreground protection between tracks.
+- **Prepare before play.** Before starting a paused element, `ZakAudio.play()`
+  waits for `media.ready`. It checks again that the play is still wanted when
+  the reply arrives. A rejected or timed-out preparation leaves Radio paused.
+- **Explicit Pause wins.** `ZakAudio.pause()` cancels an in-flight play. It also
+  cancels a start that Reader deferred until the next segment's metadata loads.
+- **Interruptions stick.** A pause the app didn't request, such as an
+  audio-focus loss, suspends Radio, and station updates don't resume it. If
+  Chromium resumes the element itself when a transient focus loss ends, Radio
+  follows the station again.
+- **Stop is silent.** Native Stop clears whichever owner holds the element.
+  Reader saves its position first. Later station updates don't reclaim the
+  element for Radio until the listener presses Play.
+
+Vessel bounds continuous buffering on its side. This bridge does not replace the
+HTML player with a native player, and it doesn't keep playback alive if the
+WebView process dies.
+
+## Tests
+
+`tests/native-playback.spec.mjs` drives a fake bridge against a second browser
+fixture whose station alternates two tracks, so every boundary changes the media
+source. Locked-phone behavior still needs a device check with the matching
+Vessel release.

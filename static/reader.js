@@ -425,6 +425,7 @@
     state.position = position;
     if (!changed) els.audio.currentTime = position;
     else {
+      const pauseRequests = window.ZakAudio.pauseRequests;
       state.metadataHandler = () => {
         state.metadataHandler = null;
         if (
@@ -434,7 +435,9 @@
         )
           return;
         els.audio.currentTime = position;
-        if (play) window.ZakAudio.play();
+        // An explicit Pause while the segment loads cancels the deferred start.
+        if (play && window.ZakAudio.pauseRequests === pauseRequests)
+          window.ZakAudio.play();
       };
       els.audio.addEventListener("loadedmetadata", state.metadataHandler, {
         once: true,
@@ -1540,6 +1543,7 @@
         : state.attemptedID || state.item?.id || "";
     },
     play: toggleReaderPlayback,
+    stop: stopActivePlayback,
     seekBy(offset) {
       seekAbsolute(absoluteOffset() + Number(offset || 0));
     },

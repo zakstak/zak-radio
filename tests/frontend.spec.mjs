@@ -439,6 +439,32 @@ test("foreground recovery respects a local pause and Library playback", async ({
   )).toBe(true);
 });
 
+test("buffering progress does not cancel stalled radio recovery", async ({ page }) => {
+  const authoritative = await (await page.request.get("/api/station")).json();
+  await page.route("**/api/station?*", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({
+      ...authoritative, playing: true, position: 0,
+      server_time: Date.now() / 1000,
+    }),
+  }));
+  await page.route("**/api/station/events?*", (route) => route.abort());
+  // Hold radio media so playback never starts; only recovery reloads it.
+  let mediaRequests = 0;
+  await page.route("**/media/*/audio*", () => {
+    mediaRequests++;
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Join live", exact: true }).click();
+  await expect.poll(() => mediaRequests).toBeGreaterThanOrEqual(1);
+  const loads = mediaRequests;
+  // canplay means data is buffered, not that playback resumed.
+  await page.locator("#audio").evaluate((audio) => {
+    window.setInterval(() => audio.dispatchEvent(new Event("canplay")), 200);
+  });
+  await expect.poll(() => mediaRequests, { timeout: 10_000 }).toBeGreaterThan(loads);
+});
+
 test("weak track metadata falls back to its subject and deliberate no-artwork icon", async ({ page }) => {
   const original = await (await page.request.get("/api/tracks")).json();
   const weakTrack = {

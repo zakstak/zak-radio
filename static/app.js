@@ -18,6 +18,7 @@ const state = {
   stationRequestInFlight: null,
   localPlaybackBlocked: false,
   localRadioSuspended: false,
+  radioInterrupted: false,
   radioStopped: false,
   playbackRecoveryTimer: 0,
   playbackRecoveryAttempt: 0,
@@ -566,6 +567,9 @@ const audioController = {
   label: "",
   stationId: "",
   generation: 0,
+  playOperation: 0,
+  pauseRequests: 0,
+  preparing: 0,
   audible: false,
   transitioning: false,
   nativeState() {
@@ -691,22 +695,27 @@ const audioController = {
     );
   },
   pause() {
-    this.playOperation = (this.playOperation || 0) + 1;
+    // Explicit Pause cancels an in-flight play() and any start that an owner
+    // deferred until metadata loads (see pauseRequests).
+    this.playOperation++;
+    this.pauseRequests++;
+    state.radioInterrupted = false;
     els.audio.pause();
     updateNowPlayingMetadata();
   },
   async play({ generation = this.generation, valid = () => true } = {}) {
     if (!this.owner || this.generation !== generation || !valid()) return false;
     this.reloadIfFailed();
-    const operation = (this.playOperation || 0) + 1;
-    this.playOperation = operation;
+    const operation = ++this.playOperation;
     let timeout;
     try {
       if (els.audio.paused || !this.audible) {
+        this.preparing = operation;
         const ready = await window.ZakNativeHost?.prepare({
           title: this.label,
           subtitle: "Zak Radio",
         });
+        if (this.preparing === operation) this.preparing = 0;
         if (
           this.playOperation !== operation ||
           this.generation !== generation ||
@@ -721,7 +730,8 @@ const audioController = {
           return false;
         }
       }
-      // Keep the existing bounded decoder recovery after native preparation.
+      // A suspended mobile decoder can leave play() pending indefinitely.
+      // Let the caller retry instead of blocking station refresh and recovery.
       return await Promise.race([
         els.audio.play().then(() => true),
         new Promise((resolve) => {
@@ -739,6 +749,7 @@ const audioController = {
       return false;
     } finally {
       window.clearTimeout(timeout);
+      if (this.preparing === operation) this.preparing = 0;
     }
   },
   reloadIfFailed({ stalled = false } = {}) {
@@ -901,6 +912,12 @@ function schedulePlaybackRecovery(delay = 0) {
 
 async function recoverRadioPlayback() {
   if (state.playbackRecoveryInFlight || !radioShouldBeAudible()) return;
+  // Native preparation is bounded. Superseding it would only send another
+  // request and report the first attempt as blocked.
+  if (audioController.preparing) {
+    schedulePlaybackRecovery(1000);
+    return;
+  }
   state.playbackRecoveryInFlight = true;
   try {
     // Reload before refreshing: refresh also awaits play(), which may be stuck
@@ -2548,6 +2565,12 @@ els.audio.addEventListener("error", () => {
   schedulePlaybackRecovery(750);
 });
 els.audio.addEventListener("play", () => {
+  // Chromium resumes media itself when a transient audio-focus loss ends.
+  // Follow the station again instead of pausing at the next sync.
+  if (audioController.is("radio") && state.radioInterrupted) {
+    state.radioInterrupted = false;
+    state.localRadioSuspended = false;
+  }
   dismissToast("audio-error");
   if (audioController.is("radio")) renderStation();
   updateNowPlayingMetadata();
@@ -2555,15 +2578,17 @@ els.audio.addEventListener("play", () => {
 });
 els.audio.addEventListener("pause", () => {
   audioController.audible = false;
-  // A source swap/end is temporary. An unrequested pause of a playing source
-  // (including WebView focus loss) must not be undone by a station poll.
+  // A source swap or track end is temporary. Any other pause the app did not
+  // request (such as audio-focus loss) must not be undone by a station poll.
   if (
     audioController.is("radio") &&
     !audioController.transitioning &&
     !els.audio.ended &&
     radioShouldBeAudible()
-  )
+  ) {
     state.localRadioSuspended = true;
+    state.radioInterrupted = true;
+  }
   if (audioController.is("radio")) renderStation();
   updateNowPlayingMetadata();
   renderOwnerBar();
@@ -2575,7 +2600,6 @@ els.audio.addEventListener("playing", () => {
   clearPlaybackRecovery();
   updateNowPlayingMetadata();
 });
-els.audio.addEventListener("canplay", () => clearPlaybackRecovery());
 els.audio.addEventListener("waiting", () => {
   audioController.audible = false;
   updateNowPlayingMetadata();
@@ -2601,13 +2625,15 @@ async function handleMediaCommand(command) {
     }
     audioController.pause();
     updateNowPlayingMetadata();
-  } else if (command === "stop" && audioController.owner) {
-    if (audioController.is("radio")) {
-      state.radioStopped = true;
-      state.localRadioSuspended = true;
-      state.userActivatedAudio = false;
-    }
-    audioController.clear(audioController.owner);
+  } else if (command === "stop") {
+    // Stop silences every owner. Without radioStopped, the next station
+    // update would see no owner and reclaim the element for Radio.
+    state.radioStopped = true;
+    state.localRadioSuspended = true;
+    state.userActivatedAudio = false;
+    // Reader saves its position before releasing the element.
+    if (audioController.is("reader")) window.ZakReader?.stop?.();
+    if (audioController.owner) audioController.clear(audioController.owner);
   }
 }
 
