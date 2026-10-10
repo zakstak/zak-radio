@@ -10,7 +10,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 SCRIPT = Path(__file__).with_name("generate-track-subjects.py")
 SPEC = importlib.util.spec_from_file_location("zak_radio_track_subjects", SCRIPT)
 assert SPEC and SPEC.loader

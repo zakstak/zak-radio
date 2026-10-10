@@ -12,7 +12,6 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-
 SECTION = re.compile(
     r"^\[\s*(?:lyrics?|hook|verse|chorus|bridge|intro|outro|pre-?chorus)\b.*\]$",
     re.IGNORECASE,

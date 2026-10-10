@@ -6,7 +6,6 @@ import unittest
 import urllib.error
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-
 MODULE_PATH = pathlib.Path(__file__).with_name("verify-runtime.py")
 SPEC = importlib.util.spec_from_file_location("verify_runtime", MODULE_PATH)
 VERIFY = importlib.util.module_from_spec(SPEC)
@@ -71,7 +70,10 @@ class VerifierSafetyTests(unittest.TestCase):
             }.items():
                 with self.subTest(name=name):
                     replies = iter(pages)
-                    VERIFY.fetch_json = lambda _base, _path: (200, next(replies))
+                    VERIFY.fetch_json = lambda _base, _path, replies=replies: (
+                        200,
+                        next(replies),
+                    )
                     with self.assertRaises(ValueError):
                         VERIFY.fetch_pages("http://example.test", "/items", "items")
         finally:

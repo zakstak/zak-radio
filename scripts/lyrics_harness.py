@@ -25,11 +25,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Sequence
-
+from typing import Any
 
 HARNESS_VERSION = "6"
 MODEL_CACHE_VERSION = "3"
@@ -173,7 +173,7 @@ class Profile:
     verified_confidence: float = 0.70
 
     @classmethod
-    def load(cls, path: Path | None) -> "Profile":
+    def load(cls, path: Path | None) -> Profile:
         if path is None:
             return cls()
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -274,12 +274,16 @@ def _display_text(lines: Sequence[CandidateLine]) -> str:
     parts: list[str] = []
     previous: CandidateLine | None = None
     for line in lines:
-        if previous and (
-            line.section != previous.section
-            or line.source_line > previous.source_line + 1
+        if (
+            previous
+            and (
+                line.section != previous.section
+                or line.source_line > previous.source_line + 1
+            )
+            and parts
+            and parts[-1] != ""
         ):
-            if parts and parts[-1] != "":
-                parts.append("")
+            parts.append("")
         parts.append(line.text)
         previous = line
     return "\n".join(parts).strip()
@@ -397,7 +401,9 @@ def clean_lyrics(
                 )
             )
             continue
-        if re.match(r"^[^\w]*(?:title|style|genre|tempo|key)\s*:", normalized, re.I):
+        if re.match(
+            r"^[^\w]*(?:title|style|genre|tempo|key)\s*:", normalized, re.IGNORECASE
+        ):
             decisions.append(
                 LineDecision(
                     source_line, original, normalized, "metadata", "prompt-field"
@@ -727,13 +733,13 @@ def load_tracks(
     payload = json.loads((archive / "index.json").read_text(encoding="utf-8"))
     tracks = payload.get("tracks")
     if not isinstance(tracks, list):
-        raise ValueError("archive index has no tracks array")
+        raise ValueError("archive index has no tracks array")  # noqa: TRY004 - bad input data
     result = []
     for track in tracks:
         if selected and track.get("id") not in selected:
             continue
         if not isinstance(track.get("organized_dir"), str):
-            raise ValueError("track has no organized_dir")
+            raise ValueError("track has no organized_dir")  # noqa: TRY004 - bad input data
         result.append(track)
         if maximum and len(result) >= maximum:
             break
@@ -979,8 +985,7 @@ def _run(
     completed = subprocess.run(
         list(command),
         check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         env=environment,
     )
@@ -1808,7 +1813,7 @@ def _best_contiguous_coverage(
     width = len(reference)
     best = 0
     for candidate_width in range(max(1, width - 2), min(len(evidence), width + 3) + 1):
-        for index in range(0, len(evidence) - candidate_width + 1):
+        for index in range(len(evidence) - candidate_width + 1):
             best = max(
                 best,
                 _matching_token_count(
@@ -2745,8 +2750,10 @@ def process_track(
                 ),
                 *(
                     [
-                        f"added {supplemental_counts['primary']} missing vocal lines and "
-                        f"{supplemental_counts['secondary']} overlapping vocal parts"
+                        (
+                            f"added {supplemental_counts['primary']} missing vocal lines and "
+                            f"{supplemental_counts['secondary']} overlapping vocal parts"
+                        )
                     ]
                     if supplemental_counts["primary"]
                     or supplemental_counts["secondary"]
@@ -2754,17 +2761,21 @@ def process_track(
                 ),
                 *(
                     [
-                        f"added {backing_counts['primary']} backing-vocal lines and "
-                        f"{backing_counts['secondary']} overlapping backing-vocal parts"
+                        (
+                            f"added {backing_counts['primary']} backing-vocal lines and "
+                            f"{backing_counts['secondary']} overlapping backing-vocal parts"
+                        )
                     ]
                     if backing_counts["primary"] or backing_counts["secondary"]
                     else []
                 ),
                 *(
                     [
-                        f"withheld {backing_counts['unresolved']} possible backing-vocal "
-                        "phrases because the local models did not corroborate the words "
-                        "strongly enough"
+                        (
+                            f"withheld {backing_counts['unresolved']} possible backing-vocal "
+                            "phrases because the local models did not corroborate the words "
+                            "strongly enough"
+                        )
                     ]
                     if backing_counts["unresolved"]
                     else []
@@ -3743,8 +3754,7 @@ def probe_duration(path: Path) -> float:
             str(path),
         ],
         check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
     if completed.returncode:

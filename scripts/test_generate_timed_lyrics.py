@@ -13,7 +13,6 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-
 SCRIPT = Path(__file__).with_name("lyrics_harness.py")
 SPEC = importlib.util.spec_from_file_location("zak_radio_lyric_aligner", SCRIPT)
 assert SPEC and SPEC.loader

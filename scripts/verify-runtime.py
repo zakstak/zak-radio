@@ -54,7 +54,7 @@ def fetch_pages(base: str, path: str, key: str):
             return status, values
         page_values = payload.get(key) or []
         if not isinstance(page_values, list):
-            raise ValueError(f"{key} page is not a list")
+            raise ValueError(f"{key} page is not a list")  # noqa: TRY004 - bad server data
         values.extend(page_values)
         pages += 1
         if pages > 1000 or len(values) > 10000:
