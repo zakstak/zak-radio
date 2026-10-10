@@ -44,10 +44,6 @@ func (a *App) readerItem(ctx context.Context, id string) (ReaderItem, error) {
 	return item, err
 }
 
-func (a *App) readerSegmentsFor(ctx context.Context, id string) ([]ReaderSegment, error) {
-	return a.readerSegmentsPage(ctx, id, maxReaderItemSegments, 0)
-}
-
 func (a *App) readerSegmentsPage(ctx context.Context, id string, limit, offset int) ([]ReaderSegment, error) {
 	rows, err := a.db.QueryContext(ctx,
 		"select "+readerSegmentRequestColumns+
@@ -74,10 +70,6 @@ func (a *App) readerSegmentsPage(ctx context.Context, id string, limit, offset i
 		result = append(result, segment)
 	}
 	return result, rows.Err()
-}
-
-func (a *App) readerPlaybackFor(ctx context.Context, id string) (map[string]any, error) {
-	return readerPlaybackFor(ctx, a.db, id)
 }
 
 func readerPlaybackFor(ctx context.Context, q queryer, id string) (map[string]any, error) {

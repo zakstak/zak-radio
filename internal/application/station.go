@@ -1824,7 +1824,3 @@ func tokenHash(token string) string {
 func unixTime(value time.Time) float64 {
 	return float64(value.UnixNano()) / 1e9
 }
-
-func expiryFrom(now float64) float64 {
-	return now + tempStationLife.Seconds()
-}

@@ -486,7 +486,3 @@ func snapshotMap(snapshot Snapshot) map[string]any {
 	}
 	return result
 }
-
-func (a *App) String() string {
-	return fmt.Sprintf("Zak Radio (%d tracks)", len(a.tracks))
-}
