@@ -291,6 +291,24 @@ test("a media error is not reported to the host as playing", async ({ page }) =>
   expect(await audioPaused(page)).toBe(false);
 });
 
+test("a prepared play that the browser rejects reports paused to the host", async ({ page }) => {
+  await openWithNativeHost(page, { path: "/library" });
+  const played = await page.evaluate(async () => {
+    window.ZakAudio.claim("library", "/media/alpha/audio", "Blocked preview");
+    // For example, an autoplay policy rejection without a pause or error event.
+    document.querySelector("#audio").play = () =>
+      Promise.reject(new DOMException("Blocked", "NotAllowedError"));
+    return window.ZakAudio.play();
+  });
+  expect(played).toBe(false);
+  const messages = await page.evaluate(() => window.__hostMessages);
+  const prepared = messages.findLastIndex((message) => message.type === "media.prepare");
+  expect(prepared).toBeGreaterThanOrEqual(0);
+  expect(messages.slice(prepared + 1)).toContainEqual(
+    expect.objectContaining({ type: "media", state: "paused" }),
+  );
+});
+
 test("rejected foreground preparation stays silent through later station updates", async ({ page }) => {
   await openWithNativeHost(page, { automaticReady: false });
   await expect(page.locator("#playPause")).toBeEnabled();

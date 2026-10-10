@@ -733,12 +733,15 @@ const audioController = {
       }
       // A suspended mobile decoder can leave play() pending indefinitely.
       // Let the caller retry instead of blocking station refresh and recovery.
-      return await Promise.race([
+      const played = await Promise.race([
         els.audio.play().then(() => true),
         new Promise((resolve) => {
           timeout = window.setTimeout(() => resolve(false), 4000);
         }),
       ]);
+      // A prepared host otherwise keeps foreground protection without audio.
+      if (!played) updateNowPlayingMetadata();
+      return played;
     } catch (error) {
       if (
         error?.name !== "AbortError" &&
@@ -747,6 +750,7 @@ const audioController = {
       ) {
         reportAudioError(error);
       }
+      updateNowPlayingMetadata();
       return false;
     } finally {
       window.clearTimeout(timeout);
