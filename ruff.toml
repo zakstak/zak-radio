@@ -6,6 +6,6 @@
 # fixed. Each blind except records the failure for one track or candidate and
 # continues with the next.
 "scripts/generate-track-subjects.py" = ["BLE001"]
-"scripts/lyrics_harness.py" = ["BLE001"]
+"scripts/lyrics-harness.py" = ["BLE001"]
 # Tests write lyric lines as sentences and split them into words.
 "scripts/test_*.py" = ["SIM905"]

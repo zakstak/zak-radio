@@ -115,14 +115,14 @@ bash -n \
 echo "==> Python syntax and script tests"
 PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
   python3 -m py_compile \
-  scripts/lyrics_harness.py scripts/lyrics-harness.py \
+  scripts/lyrics-harness.py \
   scripts/generate-track-subjects.py \
   scripts/test_generate_track_subjects.py \
-  scripts/test_generate_timed_lyrics.py \
+  scripts/test_lyrics_harness.py \
   scripts/verify-runtime.py scripts/test_verify_runtime.py \
   scripts/with-volume-lock.py
 PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
-  python3 scripts/test_generate_timed_lyrics.py
+  python3 scripts/test_lyrics_harness.py
 PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
   python3 scripts/test_generate_track_subjects.py
 PYTHONPYCACHEPREFIX="$scratch_dir/pycache" \
