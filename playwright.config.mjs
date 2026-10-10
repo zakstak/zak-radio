@@ -13,7 +13,7 @@ const browserPort = fixturePort("ZAK_RADIO_BROWSER_PORT", "28799");
 // so they run against a second fixture whose station alternates two tracks.
 const twoTrackPort = fixturePort(
   "ZAK_RADIO_TWO_TRACK_BROWSER_PORT",
-  String(browserPort + 1),
+  String(browserPort < 65535 ? browserPort + 1 : browserPort - 1),
 );
 const baseURL = `http://127.0.0.1:${browserPort}`;
 const twoTrackURL = `http://127.0.0.1:${twoTrackPort}`;

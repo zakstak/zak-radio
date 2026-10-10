@@ -291,6 +291,23 @@ test("a media error is not reported to the host as playing", async ({ page }) =>
   expect(await audioPaused(page)).toBe(false);
 });
 
+test("a stalled Library preview is reported as buffering", async ({ page }) => {
+  await openWithNativeHost(page, { path: "/library" });
+  await page.getByRole("button", { name: "Preview Alpha Sunrise" }).click();
+  // Loop the short fixture so the preview cannot pause by ending.
+  await page.locator("#audio").evaluate(async (audio) => {
+    audio.loop = true;
+    if (audio.paused) await audio.play();
+  });
+  await expect.poll(() => lastMediaState(page)).toBe("playing");
+  // A network stall fires waiting and leaves the element unpaused.
+  await page.locator("#audio").evaluate((audio) => audio.dispatchEvent(new Event("waiting")));
+  await expect.poll(() => lastMediaState(page)).toBe("buffering");
+  expect(await audioPaused(page)).toBe(false);
+  await page.locator("#audio").evaluate((audio) => audio.dispatchEvent(new Event("playing")));
+  await expect.poll(() => lastMediaState(page)).toBe("playing");
+});
+
 test("a prepared play that the browser rejects reports paused to the host", async ({ page }) => {
   await openWithNativeHost(page, { path: "/library" });
   const played = await page.evaluate(async () => {

@@ -580,7 +580,9 @@ const audioController = {
         : "buffering";
     }
     // A media error can stop audio without a pause event.
-    return els.audio.paused || els.audio.error ? "paused" : "playing";
+    if (els.audio.paused || els.audio.error) return "paused";
+    // During a stall (waiting) the element stays unpaused without audio.
+    return this.audible ? "playing" : "buffering";
   },
   is(owner) {
     return this.owner === owner;
