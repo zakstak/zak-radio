@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
-  <title id="title">Zakstak mark</title>
-  <desc id="desc">A lean letter Z crossed at its center by a short horizontal bar.</desc>
-  <g fill="none" stroke="#F0F0ED" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M24 27H104L24 101H104" stroke-width="13"/>
-    <path d="M39 66H89" stroke-width="6"/>
-  </g>
-</svg>
