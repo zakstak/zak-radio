@@ -2181,6 +2181,9 @@ async function togglePlayback() {
     renderStation();
   }
   if (shouldPlay) {
+    // Resuming the station also ends this device's local pause.
+    state.localRadioSuspended = false;
+    state.radioInterrupted = false;
     audioController.reloadIfFailed();
     audioController.play();
   } else {

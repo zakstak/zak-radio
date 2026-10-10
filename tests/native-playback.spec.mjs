@@ -303,7 +303,7 @@ test("rejected foreground preparation stays silent through later station updates
   expect(await audioPaused(page)).toBe(true);
 });
 
-test("an interruption stays paused until the platform resumes it", async ({ page }) => {
+test("an interruption stays paused through station updates", async ({ page }) => {
   await openWithNativeHost(page);
   await startRadio(page);
   // Audio-focus loss pauses the element without any request from the app.
@@ -313,12 +313,41 @@ test("an interruption stays paused until the platform resumes it", async ({ page
   await page.waitForTimeout(3500);
   expect(await playedCount(page)).toBe(count);
   expect(await audioPaused(page)).toBe(true);
+});
 
-  // Chromium resumes the element itself when a transient focus loss ends.
-  // Radio must keep following the station across the next boundaries.
-  await page.locator("#audio").evaluate((audio) => audio.play());
+test("Radio keeps following the station after a transient interruption ends", async ({ page }) => {
+  await openWithNativeHost(page);
+  await startRadio(page);
+  const count = await playedCount(page);
+  // Chromium pauses for a transient focus loss and resumes the same player
+  // when it ends, before the track changes.
+  await page.locator("#audio").evaluate(async (audio) => {
+    audio.pause();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await audio.play();
+  });
   await expect.poll(() => playedCount(page), { timeout: 8000 })
     .toBeGreaterThanOrEqual(count + 3);
+  expect(await audioPaused(page)).toBe(false);
+});
+
+test("Play after a local pause resumes this device when the station was paused elsewhere", async ({ page }) => {
+  await openWithNativeHost(page);
+  await startRadio(page);
+  await sendCommand(page, "pause");
+  await expect(page.locator("#playPause")).toHaveAttribute("aria-label", "Join live");
+  // Another listener pauses the shared station.
+  const paused = await page.request.post("/api/control", {
+    data: { station_id: "main", owner_token: "", action: "pause" },
+  });
+  expect(paused.ok()).toBe(true);
+  await expect(page.locator("#playPause")).toHaveAttribute("aria-label", "Play");
+  const count = await playedCount(page);
+  await sendCommand(page, "play");
+  await expect.poll(() => playedCount(page)).toBeGreaterThan(count);
+  // Outlast the control response and its station sync.
+  await page.waitForTimeout(1000);
+  expect(await audioPaused(page)).toBe(false);
 });
 
 for (const owner of ["library", "reader", "radio"]) {

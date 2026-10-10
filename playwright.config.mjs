@@ -48,7 +48,10 @@ export default defineConfig({
       url: `${baseURL}/health`,
       timeout: 120_000,
       reuseExistingServer: false,
-      env: { ZAK_RADIO_BROWSER_PORT: String(browserPort) },
+      env: {
+        ZAK_RADIO_BROWSER_PORT: String(browserPort),
+        ZAK_RADIO_TWO_TRACK_FIXTURE: "0",
+      },
     },
     {
       command: "bash scripts/start-browser-fixture.sh",
