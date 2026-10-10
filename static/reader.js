@@ -414,6 +414,7 @@
       "reader",
       src,
       state.item.title || "Reader audio",
+      { resume: play },
     );
     const generation = window.ZakAudio.generation;
     state.activePlayback = {
