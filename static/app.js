@@ -572,6 +572,7 @@ const audioController = {
   preparing: 0,
   audible: false,
   transitioning: false,
+  resuming: false,
   nativeState() {
     if (!this.owner) return "none";
     if (this.is("radio") && radioShouldBeAudible()) {
@@ -580,14 +581,16 @@ const audioController = {
         : "buffering";
     }
     // A media error can stop audio without a pause event.
-    if (els.audio.paused || els.audio.error) return "paused";
+    if (els.audio.error) return "paused";
     // During a stall (waiting) the element stays unpaused without audio.
-    return this.audible ? "playing" : "buffering";
+    if (!els.audio.paused) return this.audible ? "playing" : "buffering";
+    // An owner that starts the next source once it loads is still active.
+    return this.resuming ? "buffering" : "paused";
   },
   is(owner) {
     return this.owner === owner;
   },
-  claim(owner, src, label, { stationId = "" } = {}) {
+  claim(owner, src, label, { stationId = "", resume = false } = {}) {
     const changedSource = !els.audio.src.endsWith(src);
     const changedOwner = this.owner !== owner;
     const changedStation = owner === "radio" && this.stationId !== stationId;
@@ -616,6 +619,7 @@ const audioController = {
     }
     this.generation++;
     this.transitioning = needsReload || changedOwner || changedStation;
+    this.resuming = resume && this.transitioning;
     if (this.transitioning) this.audible = false;
     if (needsReload || changedOwner || changedStation) {
       els.audio.pause();
@@ -679,6 +683,7 @@ const audioController = {
     this.generation++;
     this.audible = false;
     this.transitioning = false;
+    this.resuming = false;
     els.audio.pause();
     els.audio.removeAttribute("src");
     els.audio.load();
@@ -702,6 +707,7 @@ const audioController = {
     // deferred until metadata loads (see pauseRequests).
     this.playOperation++;
     this.pauseRequests++;
+    this.resuming = false;
     state.radioInterrupted = false;
     els.audio.pause();
     updateNowPlayingMetadata();
@@ -2579,6 +2585,7 @@ els.radioRetry.addEventListener("click", async () => {
 });
 els.audio.addEventListener("error", () => {
   audioController.audible = false;
+  audioController.resuming = false;
   updateNowPlayingMetadata();
   reportAudioError(els.audio.error);
   schedulePlaybackRecovery(750);
@@ -2609,13 +2616,15 @@ els.audio.addEventListener("pause", () => {
     state.radioInterrupted = true;
   }
   if (audioController.is("radio")) renderStation();
-  updateNowPlayingMetadata();
+  // At the end of a source, wait for the ended handlers to decide what's next.
+  if (!els.audio.ended) updateNowPlayingMetadata();
   renderOwnerBar();
   if (radioShouldBeAudible()) schedulePlaybackRecovery(1500);
 });
 els.audio.addEventListener("playing", () => {
   audioController.audible = true;
   audioController.transitioning = false;
+  audioController.resuming = false;
   clearPlaybackRecovery();
   updateNowPlayingMetadata();
 });
@@ -2732,7 +2741,11 @@ els.audio.addEventListener("loadedmetadata", () => {
 });
 els.audio.addEventListener("ended", () => {
   audioController.audible = false;
-  if (!audioController.is("radio")) return;
+  if (!audioController.is("radio")) {
+    // Reader's own ended handler may start the next segment; publish after it.
+    window.setTimeout(updateNowPlayingMetadata);
+    return;
+  }
   audioController.transitioning = true;
   updateNowPlayingMetadata();
   // Track boundaries are server-authoritative. Every listener receives the

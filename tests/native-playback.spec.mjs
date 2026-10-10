@@ -234,6 +234,21 @@ test("native Stop saves Reader progress as paused", async ({ page }) => {
   expect(await audioOwner(page)).toBe("");
 });
 
+test("Reader stays active across segment changes and reports paused at the end", async ({ page }) => {
+  const item = await mockReader(page, { segments: ["First segment.", "Second segment."] });
+  await openWithNativeHost(page, { path: "/reader" });
+  await page.locator(`[data-item-id="${item.id}"]`).click();
+  await page.getByRole("button", { name: "Read: First segment." }).click();
+  await expect.poll(() => playedSources(page), { timeout: 8000 })
+    .toContain(`/reader-media/${item.id}/1.mp3`);
+  // The last segment ends the item, which is a real pause.
+  await expect.poll(() => lastMediaState(page), { timeout: 8000 }).toBe("paused");
+  const states = await mediaStates(page);
+  const active = states.slice(states.indexOf("playing"), -1);
+  expect(active).toContain("buffering");
+  expect(active.every((state) => state === "playing" || state === "buffering")).toBe(true);
+});
+
 test("Pause while the next Reader segment loads cancels its deferred start", async ({ page }) => {
   let requestedNextSegment = false;
   let releaseNextSegment;

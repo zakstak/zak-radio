@@ -31,7 +31,9 @@ load.
 
 - **Buffering is active.** Radio reports `playing` only after the element's
   `playing` event. Track ends, source swaps and `waiting` report `buffering`, so
-  a locked phone keeps foreground protection between tracks.
+  a locked phone keeps foreground protection between tracks. Reader does the
+  same between segments: when it claims the next segment and will start it once
+  it loads, it reports `buffering`. At the end of an item it reports `paused`.
 - **Prepare before play.** Before starting a paused element, `ZakAudio.play()`
   waits for `media.ready`. It checks again that the play is still wanted when
   the reply arrives. A rejected or timed-out preparation leaves Radio paused.
