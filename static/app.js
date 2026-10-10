@@ -18,6 +18,7 @@ const state = {
   stationRequestInFlight: null,
   localPlaybackBlocked: false,
   localRadioSuspended: false,
+  radioStopped: false,
   playbackRecoveryTimer: 0,
   playbackRecoveryAttempt: 0,
   playbackRecoveryInFlight: false,
@@ -565,6 +566,17 @@ const audioController = {
   label: "",
   stationId: "",
   generation: 0,
+  audible: false,
+  transitioning: false,
+  nativeState() {
+    if (!this.owner) return "none";
+    if (this.is("radio") && radioShouldBeAudible()) {
+      return this.audible && !els.audio.paused && !els.audio.ended
+        ? "playing"
+        : "buffering";
+    }
+    return els.audio.paused ? "paused" : "playing";
+  },
   is(owner) {
     return this.owner === owner;
   },
@@ -596,6 +608,8 @@ const audioController = {
       );
     }
     this.generation++;
+    this.transitioning = needsReload || changedOwner || changedStation;
+    if (this.transitioning) this.audible = false;
     if (needsReload || changedOwner || changedStation) {
       els.audio.pause();
     }
@@ -632,6 +646,7 @@ const audioController = {
       return false;
     }
     state.userActivatedAudio = true;
+    state.radioStopped = false;
     state.localRadioSuspended = false;
     els.audio.pause();
     window.dispatchEvent(
@@ -655,6 +670,8 @@ const audioController = {
   clear(owner) {
     if (this.owner !== owner) return;
     this.generation++;
+    this.audible = false;
+    this.transitioning = false;
     els.audio.pause();
     els.audio.removeAttribute("src");
     els.audio.load();
@@ -673,12 +690,38 @@ const audioController = {
       }),
     );
   },
+  pause() {
+    this.playOperation = (this.playOperation || 0) + 1;
+    els.audio.pause();
+    updateNowPlayingMetadata();
+  },
   async play({ generation = this.generation, valid = () => true } = {}) {
+    if (!this.owner || this.generation !== generation || !valid()) return false;
     this.reloadIfFailed();
+    const operation = (this.playOperation || 0) + 1;
+    this.playOperation = operation;
     let timeout;
     try {
-      // A suspended mobile decoder can leave play() pending indefinitely.
-      // Let the caller retry instead of blocking station refresh and recovery.
+      if (els.audio.paused || !this.audible) {
+        const ready = await window.ZakNativeHost?.prepare({
+          title: this.label,
+          subtitle: "Zak Radio",
+        });
+        if (
+          this.playOperation !== operation ||
+          this.generation !== generation ||
+          !valid() ||
+          (this.is("radio") && !radioShouldBeAudible())
+        )
+          return false;
+        if (ready === false) {
+          if (this.is("radio")) state.localRadioSuspended = true;
+          els.audio.pause();
+          updateNowPlayingMetadata();
+          return false;
+        }
+      }
+      // Keep the existing bounded decoder recovery after native preparation.
       return await Promise.race([
         els.audio.play().then(() => true),
         new Promise((resolve) => {
@@ -833,6 +876,7 @@ function radioShouldBeAudible() {
     audioController.is("radio") &&
     state.station?.playing &&
     state.userActivatedAudio &&
+    !state.radioStopped &&
     !state.localRadioSuspended,
   );
 }
@@ -1619,6 +1663,11 @@ function updateNowPlayingMetadata() {
         : path === "/reader"
           ? "Reader · Zak Radio"
           : "Zak Radio";
+    window.ZakNativeHost?.media({
+      state: audioController.nativeState(),
+      title: audioController.label || "Zak Radio",
+      subtitle: "Zakstak",
+    });
     return;
   }
   const playing = Boolean(state.station?.playing);
@@ -1635,14 +1684,25 @@ function updateNowPlayingMetadata() {
     navigator.mediaSession.playbackState = els.audio.paused
       ? "paused"
       : "playing";
-    if (!audioController.is("radio")) return;
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: trackDisplayTitle(track),
-      artist: track.artist || "Zak",
-      album: "Zak Radio",
-      artwork: track.has_cover ? [{ src: mediaCoverURL(track) }] : [],
-    });
+    if (audioController.is("radio")) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: trackDisplayTitle(track),
+        artist: track.artist || "Zak",
+        album: "Zak Radio",
+        artwork: track.has_cover ? [{ src: mediaCoverURL(track) }] : [],
+      });
+    }
   }
+  window.ZakNativeHost?.media({
+    state: audioController.nativeState(),
+    title: audioController.label || trackDisplayTitle(track),
+    subtitle:
+      audioController.owner === "radio"
+        ? track.artist || "Zak Radio"
+        : audioController.owner === "reader"
+          ? "Zak Reader"
+          : "Private library preview",
+  });
 }
 
 function renderModeButton(button, active, label) {
@@ -1823,7 +1883,7 @@ async function applyStation(
       : receivedAt / 1000;
   const track = mergeCurrentStats(station);
   if (track && state.current !== track) renderTrack(track);
-  if (track && !audioController.owner) {
+  if (track && !audioController.owner && !state.radioStopped) {
     audioController.claim(
       "radio",
       mediaAudioURL(track),
@@ -2452,7 +2512,7 @@ els.ownerPlayPause.addEventListener("click", async () => {
   if (audioController.is("radio")) {
     if (!els.audio.paused) {
       state.localRadioSuspended = true;
-      els.audio.pause();
+      audioController.pause();
       renderStation();
     } else if (state.station?.playing) {
       state.userActivatedAudio = true;
@@ -2470,7 +2530,7 @@ els.ownerPlayPause.addEventListener("click", async () => {
       await audioController.play();
     }
   } else {
-    els.audio.pause();
+    audioController.pause();
   }
 });
 els.radioRetry.addEventListener("click", async () => {
@@ -2494,35 +2554,78 @@ els.audio.addEventListener("play", () => {
   renderOwnerBar();
 });
 els.audio.addEventListener("pause", () => {
+  audioController.audible = false;
+  // A source swap/end is temporary. An unrequested pause of a playing source
+  // (including WebView focus loss) must not be undone by a station poll.
+  if (
+    audioController.is("radio") &&
+    !audioController.transitioning &&
+    !els.audio.ended &&
+    radioShouldBeAudible()
+  )
+    state.localRadioSuspended = true;
   if (audioController.is("radio")) renderStation();
   updateNowPlayingMetadata();
   renderOwnerBar();
   if (radioShouldBeAudible()) schedulePlaybackRecovery(1500);
 });
-els.audio.addEventListener("playing", () => clearPlaybackRecovery());
-els.audio.addEventListener("waiting", () => schedulePlaybackRecovery(2500));
+els.audio.addEventListener("playing", () => {
+  audioController.audible = true;
+  audioController.transitioning = false;
+  clearPlaybackRecovery();
+  updateNowPlayingMetadata();
+});
+els.audio.addEventListener("canplay", () => clearPlaybackRecovery());
+els.audio.addEventListener("waiting", () => {
+  audioController.audible = false;
+  updateNowPlayingMetadata();
+  schedulePlaybackRecovery(2500);
+});
 els.audio.addEventListener("stalled", () => schedulePlaybackRecovery(1000));
+async function handleMediaCommand(command) {
+  if (command === "play") {
+    if (audioController.is("reader") && window.ZakReader?.play) {
+      await window.ZakReader.play();
+    } else if (!audioController.is("radio")) {
+      await audioController.play();
+    } else if (state.station?.playing) {
+      state.userActivatedAudio = true;
+      state.localRadioSuspended = false;
+      await syncAudioToStation();
+    } else {
+      await togglePlayback();
+    }
+  } else if (command === "pause") {
+    if (audioController.is("radio") && state.station?.playing) {
+      state.localRadioSuspended = true;
+    }
+    audioController.pause();
+    updateNowPlayingMetadata();
+  } else if (command === "stop" && audioController.owner) {
+    if (audioController.is("radio")) {
+      state.radioStopped = true;
+      state.localRadioSuspended = true;
+      state.userActivatedAudio = false;
+    }
+    audioController.clear(audioController.owner);
+  }
+}
+
+window.addEventListener("zakstak-native-media-command", (event) => {
+  const command = event.detail?.command;
+  if (["play", "pause", "stop"].includes(command)) {
+    void handleMediaCommand(command);
+  }
+});
+
 if ("mediaSession" in navigator) {
   try {
-    navigator.mediaSession.setActionHandler("play", async () => {
-      if (audioController.is("reader") && window.ZakReader?.play) {
-        await window.ZakReader.play();
-      } else if (!audioController.is("radio")) {
-        await audioController.play();
-      } else if (state.station?.playing) {
-        state.userActivatedAudio = true;
-        state.localRadioSuspended = false;
-        await syncAudioToStation();
-      } else {
-        await togglePlayback();
-      }
-    });
-    navigator.mediaSession.setActionHandler("pause", () => {
-      if (audioController.is("radio") && state.station?.playing) {
-        state.localRadioSuspended = true;
-      }
-      els.audio.pause();
-    });
+    navigator.mediaSession.setActionHandler("play", () =>
+      handleMediaCommand("play"),
+    );
+    navigator.mediaSession.setActionHandler("pause", () =>
+      handleMediaCommand("pause"),
+    );
     navigator.mediaSession.setActionHandler("seekbackward", (details) => {
       const offset = Number(details.seekOffset || 10);
       if (audioController.is("reader")) window.ZakReader?.seekBy?.(-offset);
@@ -2579,7 +2682,10 @@ els.audio.addEventListener("loadedmetadata", () => {
   }
 });
 els.audio.addEventListener("ended", () => {
+  audioController.audible = false;
   if (!audioController.is("radio")) return;
+  audioController.transitioning = true;
+  updateNowPlayingMetadata();
   // Track boundaries are server-authoritative. Every listener receives the
   // resulting revision through SSE; refresh immediately as a degraded-path
   // fallback when the stream is temporarily unavailable.

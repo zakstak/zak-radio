@@ -1,5 +1,90 @@
 const storageFallback = new Map();
 
+const NATIVE_SCHEMA = "zakstak.native.v1";
+let mediaCapabilities = {};
+let mediaRequestSequence = 0;
+let lastMediaMessage = "";
+const mediaPreparations = new Map();
+
+if (window.ZakstakNativeBridge) {
+  window.ZakstakNativeBridge.onmessage = (event) => {
+    let response;
+    try {
+      response = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (response.schema !== NATIVE_SCHEMA) return;
+    if (response.type === "capabilities") mediaCapabilities = response;
+    if (response.type === "media.ready") {
+      mediaPreparations.get(response.requestId)?.(response.ready === true);
+    }
+  };
+}
+
+function postNative(message) {
+  try {
+    window.ZakstakNativeBridge?.postMessage(
+      JSON.stringify({ schema: NATIVE_SCHEMA, ...message }),
+    );
+    return Boolean(window.ZakstakNativeBridge);
+  } catch {
+    return false;
+  }
+}
+
+window.ZakNativeHost = {
+  prepare({ title, subtitle }) {
+    // Old hosts/browsers keep their existing playback path; no new state is sent.
+    if (!mediaCapabilities.foregroundMediaPreparation)
+      return Promise.resolve(true);
+    // Preparation changes native state even when the last web state was paused.
+    lastMediaMessage = "";
+    const requestId = `radio-media-${++mediaRequestSequence}`;
+    return new Promise((resolve) => {
+      const timeout = window.setTimeout(() => finish(false), 5500);
+      const finish = (ready) => {
+        window.clearTimeout(timeout);
+        mediaPreparations.delete(requestId);
+        resolve(ready);
+      };
+      mediaPreparations.set(requestId, finish);
+      if (
+        !postNative({
+          type: "media.prepare",
+          requestId,
+          title: String(title || "Zak Radio").slice(0, 120),
+          subtitle: String(subtitle || "Zakstak").slice(0, 160),
+        })
+      )
+        finish(false);
+    });
+  },
+  hello() {
+    return postNative({ type: "hello", product: "zak-radio" });
+  },
+  media({ state, title, subtitle }) {
+    if (!["playing", "buffering", "paused", "none"].includes(state))
+      return false;
+    const message = {
+      type: "media",
+      state:
+        state === "buffering" && !mediaCapabilities.mediaBuffering
+          ? "paused"
+          : state,
+      title: String(title || "Zak Radio").slice(0, 120),
+      subtitle: String(subtitle || "Zakstak").slice(0, 160),
+    };
+    const encoded = JSON.stringify(message);
+    if (encoded === lastMediaMessage)
+      return Boolean(window.ZakstakNativeBridge);
+    lastMediaMessage = encoded;
+    return postNative(message);
+  },
+};
+
+window.ZakNativeHost.hello();
+
 window.ZakStorage = {
   get(key, fallback = "") {
     try {
