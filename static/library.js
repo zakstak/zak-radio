@@ -201,11 +201,9 @@
       els.stationEditorSummary.textContent =
         "Choose the songs to save in this station.";
     } else if (definition) {
-      els.stationEditorSummary.textContent =
-        `Live filter: ${definition.filter_mode}${definition.filter_query ? ` matching “${definition.filter_query}”` : ""}.`;
+      els.stationEditorSummary.textContent = `Live filter: ${definition.filter_mode}${definition.filter_query ? ` matching “${definition.filter_query}”` : ""}.`;
     } else {
-      els.stationEditorSummary.textContent =
-        `Live filter: ${currentFilterDescription()}. New matching songs join automatically.`;
+      els.stationEditorSummary.textContent = `Live filter: ${currentFilterDescription()}. New matching songs join automatically.`;
     }
     renderEditorMembers();
     const focusEditor = () => {
@@ -356,7 +354,8 @@
           source_type: sourceType,
           filter_mode: sourceType === "filter" ? state.filter : "all",
           filter_query: sourceType === "filter" ? els.search.value.trim() : "",
-          track_ids: sourceType === "list" ? state.editingStation.track_ids : [],
+          track_ids:
+            sourceType === "list" ? state.editingStation.track_ids : [],
         });
         const created = await window.ZakAPI("/api/stations", {
           method: "POST",
@@ -824,7 +823,10 @@
     beginStationEditor("filter", null, { reveal: true }),
   );
   window.addEventListener("zak-new-list-station", (event) =>
-    beginStationEditor("list", null, { reveal: true, track: event.detail?.track }),
+    beginStationEditor("list", null, {
+      reveal: true,
+      track: event.detail?.track,
+    }),
   );
   els.createFilterStation.addEventListener("click", () =>
     beginStationEditor("filter"),
