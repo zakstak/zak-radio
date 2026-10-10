@@ -425,6 +425,7 @@
     state.position = position;
     if (!changed) els.audio.currentTime = position;
     else {
+      const pauseRequests = window.ZakAudio.pauseRequests;
       state.metadataHandler = () => {
         state.metadataHandler = null;
         if (
@@ -434,7 +435,9 @@
         )
           return;
         els.audio.currentTime = position;
-        if (play) window.ZakAudio.play();
+        // An explicit Pause while the segment loads cancels the deferred start.
+        if (play && window.ZakAudio.pauseRequests === pauseRequests)
+          window.ZakAudio.play();
       };
       els.audio.addEventListener("loadedmetadata", state.metadataHandler, {
         once: true,
@@ -458,7 +461,7 @@
     }
     const position = els.audio.currentTime || 0;
     savePlayback(false, true, position);
-    els.audio.pause();
+    window.ZakAudio.pause();
     state.activePlayback = null;
     window.ZakAudio.clear("reader");
   }
@@ -1136,7 +1139,7 @@
           state.resumeReady[body.item_id] = false;
           state.resumeError = true;
           if (window.ZakAudio.is("reader")) {
-            els.audio.pause();
+            window.ZakAudio.pause();
             state.activePlayback = null;
             window.ZakAudio.clear("reader");
           }
@@ -1215,7 +1218,7 @@
         state.index = finalIndex;
         const duration = segmentDuration(state.segments[finalIndex]);
         loadAudio(duration, false);
-        els.audio.pause();
+        window.ZakAudio.pause();
         state.position = duration;
         renderProgress();
         savePlayback(false, true, duration);
@@ -1298,7 +1301,7 @@
         await window.ZakAudio.play();
       }
     } else {
-      els.audio.pause();
+      window.ZakAudio.pause();
       savePlayback(false);
     }
   }
@@ -1540,6 +1543,7 @@
         : state.attemptedID || state.item?.id || "";
     },
     play: toggleReaderPlayback,
+    stop: stopActivePlayback,
     seekBy(offset) {
       seekAbsolute(absoluteOffset() + Number(offset || 0));
     },

@@ -24,8 +24,10 @@ Application code may depend on those packages; they must not import the
 application package.
 
 The browser loads `platform.js` before feature code. That module owns shared
-storage and HTTP behavior. `app.js` owns the persistent shell and shared radio,
-while `library.js` and `reader.js` own their respective views.
+storage, HTTP behavior, and the Vessel native playback bridge described in
+[docs/native-playback.md](docs/native-playback.md). `app.js` owns the persistent
+shell and shared radio, while `library.js` and `reader.js` own their respective
+views.
 
 The release may also carry an immutable timed-lyrics directory. Its sidecars are
 audio-digest-bound, schema-validated during startup, and digest-verified again

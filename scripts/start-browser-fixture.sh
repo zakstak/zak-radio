@@ -23,8 +23,14 @@ archive="$fixture_root/archive"
 mkdir -p "$archive/tracks/alpha" "$fixture_root/reader-library"
 cp -- "$repo_root/tests/fixtures/tone.mp3" "$archive/tracks/alpha/audio.mp3"
 audio_sha="$(sha256sum "$archive/tracks/alpha/audio.mp3" | cut -d' ' -f1)"
+extra_track=""
+if [[ "${ZAK_RADIO_TWO_TRACK_FIXTURE:-0}" == "1" ]]; then
+  mkdir -p "$archive/tracks/beta"
+  cp -- "$repo_root/tests/fixtures/tone.mp3" "$archive/tracks/beta/audio.mp3"
+  extra_track=",{\"id\":\"beta\",\"title\":\"Beta Sunset\",\"artist\":\"Signal Garden\",\"source\":\"fixture\",\"created_at\":\"2026-07-01\",\"batch_index\":2,\"duration\":1.5,\"play_count\":1,\"organized_dir\":\"tracks/beta\",\"audio_sha256\":\"$audio_sha\"}"
+fi
 cat >"$archive/index.json" <<EOF
-{"tracks":[{"id":"alpha","title":"Alpha Sunrise","artist":"Signal Garden","source":"fixture","created_at":"2026-07-01","batch_index":1,"duration":1.5,"play_count":1,"organized_dir":"tracks/alpha","audio_sha256":"$audio_sha"}]}
+{"tracks":[{"id":"alpha","title":"Alpha Sunrise","artist":"Signal Garden","source":"fixture","created_at":"2026-07-01","batch_index":1,"duration":1.5,"play_count":1,"organized_dir":"tracks/alpha","audio_sha256":"$audio_sha"}$extra_track]}
 EOF
 cat >"$fixture_root/curated-tracks.json" <<'EOF'
 {"tracks":{"alpha":{"title":"Alpha Sunrise","artist":"Signal Garden","summary":"Browser behavior fixture."}}}

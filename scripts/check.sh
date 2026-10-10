@@ -85,11 +85,13 @@ node --check static/reader.js
 node --check static/service-switcher.js
 
 echo "==> frontend behavior and accessibility"
-browser_port="$(
-  python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
-)"
-[[ "$browser_port" =~ ^[0-9]+$ ]]
+# Two fixtures run side by side: the default catalog and a two-track station.
+read -r browser_port two_track_port < <(
+  python3 -c 'import socket; s=[socket.socket() for _ in range(2)]; [x.bind(("127.0.0.1", 0)) for x in s]; print(*(x.getsockname()[1] for x in s)); [x.close() for x in s]'
+)
+[[ "$browser_port" =~ ^[0-9]+$ && "$two_track_port" =~ ^[0-9]+$ ]]
 ZAK_RADIO_BROWSER_PORT="$browser_port" \
+  ZAK_RADIO_TWO_TRACK_BROWSER_PORT="$two_track_port" \
   ZAK_RADIO_PLAYWRIGHT_OUTPUT="$scratch_dir/playwright" \
   npm run test:browser
 
