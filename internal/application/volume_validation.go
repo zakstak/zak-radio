@@ -43,8 +43,8 @@ func validateVolume(ctx context.Context, root string) error {
 	if err != nil || root == string(filepath.Separator) {
 		return fmt.Errorf("invalid retained volume root")
 	}
-	if err := validateRetainedTreeBudget(root); err != nil {
-		return fmt.Errorf("validate retained-volume budget: %w", err)
+	if validateRetainedTreeBudgetErr := validateRetainedTreeBudget(root); validateRetainedTreeBudgetErr != nil {
+		return fmt.Errorf("validate retained-volume budget: %w", validateRetainedTreeBudgetErr)
 	}
 	cfg := appconfig.Config{
 		MetadataRoot:  root,
@@ -52,46 +52,46 @@ func validateVolume(ctx context.Context, root string) error {
 		DBPath:        filepath.Join(root, "station.sqlite3"),
 		ReaderLibrary: filepath.Join(root, "reader-library"),
 	}
-	if err := validateVolumeDataPaths(cfg); err != nil {
-		return fmt.Errorf("validate retained paths: %w", err)
+	if validateVolumeDataPathsErr := validateVolumeDataPaths(cfg); validateVolumeDataPathsErr != nil {
+		return fmt.Errorf("validate retained paths: %w", validateVolumeDataPathsErr)
 	}
-	if err := rejectSQLiteSidecars(cfg.DBPath); err != nil {
-		return err
+	if rejectSQLiteSidecarsErr := rejectSQLiteSidecars(cfg.DBPath); rejectSQLiteSidecarsErr != nil {
+		return rejectSQLiteSidecarsErr
 	}
 	archiveRoot, err := os.OpenRoot(cfg.Archive)
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)
 	}
-	defer archiveRoot.Close()
+	defer func() { _ = archiveRoot.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	metadataRoot, err := os.OpenRoot(cfg.MetadataRoot)
 	if err != nil {
 		return fmt.Errorf("open metadata: %w", err)
 	}
-	defer metadataRoot.Close()
+	defer func() { _ = metadataRoot.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	readerRoot, err := os.OpenRoot(cfg.ReaderLibrary)
 	if err != nil {
 		return fmt.Errorf("open Reader library: %w", err)
 	}
-	defer readerRoot.Close()
+	defer func() { _ = readerRoot.Close() }() // Best-effort cleanup; operation errors are checked separately.
 
 	catalog, err := loadCatalog(cfg, archiveRoot, metadataRoot, nil)
 	if err != nil {
 		return err
 	}
 	for _, track := range catalog.Tracks {
-		if err := verifyRootedDigest(archiveRoot, cfg.Archive, track.AudioPath, track.AudioBytes, track.AudioSHA256); err != nil {
-			return fmt.Errorf("track %q: %w", track.ID, err)
+		if verifyRootedDigestErr := verifyRootedDigest(archiveRoot, cfg.Archive, track.AudioPath, track.AudioBytes, track.AudioSHA256); verifyRootedDigestErr != nil {
+			return fmt.Errorf("track %q: %w", track.ID, verifyRootedDigestErr)
 		}
 		if track.HasCover {
 			coverRoot, coverRootPath := archiveRoot, cfg.Archive
 			if containedPath(track.CoverPath, cfg.MetadataRoot) {
 				coverRoot, coverRootPath = metadataRoot, cfg.MetadataRoot
 			}
-			if err := verifyRootedDigest(
+			if verifyRootedDigestErr2 := verifyRootedDigest(
 				coverRoot, coverRootPath, track.CoverPath,
 				track.CoverBytes, track.CoverSHA256,
-			); err != nil {
-				return fmt.Errorf("track %q cover: %w", track.ID, err)
+			); verifyRootedDigestErr2 != nil {
+				return fmt.Errorf("track %q cover: %w", track.ID, verifyRootedDigestErr2)
 			}
 		}
 	}
@@ -101,18 +101,18 @@ func validateVolume(ctx context.Context, root string) error {
 	if err != nil {
 		return fmt.Errorf("open retained database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	db.SetMaxOpenConns(1)
 	var version int
-	if err := db.QueryRowContext(ctx, "pragma user_version").Scan(&version); err != nil {
-		return fmt.Errorf("read retained schema: %w", err)
+	if scanErr := db.QueryRowContext(ctx, "pragma user_version").Scan(&version); scanErr != nil {
+		return fmt.Errorf("read retained schema: %w", scanErr)
 	}
 	if version != currentSchemaVersion {
 		return fmt.Errorf("retained schema is %d, want %d", version, currentSchemaVersion)
 	}
 	var quickCheck string
-	if err := db.QueryRowContext(ctx, "pragma quick_check").Scan(&quickCheck); err != nil || quickCheck != "ok" {
-		return fmt.Errorf("retained SQLite quick_check=%q: %w", quickCheck, err)
+	if scanErr2 := db.QueryRowContext(ctx, "pragma quick_check").Scan(&quickCheck); scanErr2 != nil || quickCheck != "ok" {
+		return fmt.Errorf("retained SQLite quick_check=%q: %w", quickCheck, scanErr2)
 	}
 	foreignKeys, err := db.QueryContext(ctx, "pragma foreign_key_check")
 	if err != nil {
@@ -123,10 +123,10 @@ func validateVolume(ctx context.Context, root string) error {
 		var rowID any
 		var foreignKeyID int
 		if err := foreignKeys.Scan(&table, &rowID, &parent, &foreignKeyID); err != nil {
-			foreignKeys.Close()
+			_ = foreignKeys.Close() // Preserve the primary result while releasing resources.
 			return fmt.Errorf("inspect retained SQLite foreign key failure: %w", err)
 		}
-		foreignKeys.Close()
+		_ = foreignKeys.Close() // Preserve the primary result while releasing resources.
 		return fmt.Errorf("retained SQLite has a foreign key failure in %q row %v referencing %q constraint %d", table, rowID, parent, foreignKeyID)
 	}
 	if err := foreignKeys.Close(); err != nil {
@@ -170,14 +170,14 @@ func validateMigrationSourceVolume(ctx context.Context, root string) error {
 		DBPath:        filepath.Join(root, "station.sqlite3"),
 		ReaderLibrary: filepath.Join(root, "reader-library"),
 	}
-	if err := validateVolumeDataPaths(cfg); err != nil {
-		return fmt.Errorf("validate retained paths: %w", err)
+	if validateVolumeDataPathsErr2 := validateVolumeDataPaths(cfg); validateVolumeDataPathsErr2 != nil {
+		return fmt.Errorf("validate retained paths: %w", validateVolumeDataPathsErr2)
 	}
-	if err := validateRetainedTreeBudget(root); err != nil {
-		return fmt.Errorf("validate retained-volume budget: %w", err)
+	if validateRetainedTreeBudgetErr2 := validateRetainedTreeBudget(root); validateRetainedTreeBudgetErr2 != nil {
+		return fmt.Errorf("validate retained-volume budget: %w", validateRetainedTreeBudgetErr2)
 	}
-	if err := rejectSQLiteSidecars(cfg.DBPath); err != nil {
-		return err
+	if rejectSQLiteSidecarsErr2 := rejectSQLiteSidecars(cfg.DBPath); rejectSQLiteSidecarsErr2 != nil {
+		return rejectSQLiteSidecarsErr2
 	}
 	databaseInfo, err := os.Lstat(cfg.DBPath)
 	if err != nil || !databaseInfo.Mode().IsRegular() || databaseInfo.Size() <= 0 {
@@ -187,38 +187,38 @@ func validateMigrationSourceVolume(ctx context.Context, root string) error {
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)
 	}
-	defer archiveRoot.Close()
+	defer func() { _ = archiveRoot.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	metadataRoot, err := os.OpenRoot(cfg.MetadataRoot)
 	if err != nil {
 		return fmt.Errorf("open metadata: %w", err)
 	}
-	defer metadataRoot.Close()
+	defer func() { _ = metadataRoot.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	readerRoot, err := os.OpenRoot(cfg.ReaderLibrary)
 	if err != nil {
 		return fmt.Errorf("open Reader library: %w", err)
 	}
-	defer readerRoot.Close()
+	defer func() { _ = readerRoot.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	catalog, err := loadCatalog(cfg, archiveRoot, metadataRoot, nil)
 	if err != nil {
 		return err
 	}
 	for _, track := range catalog.Tracks {
-		if err := verifyRootedDigest(
+		if verifyRootedDigestErr3 := verifyRootedDigest(
 			archiveRoot, cfg.Archive, track.AudioPath,
 			track.AudioBytes, track.AudioSHA256,
-		); err != nil {
-			return fmt.Errorf("track %q: %w", track.ID, err)
+		); verifyRootedDigestErr3 != nil {
+			return fmt.Errorf("track %q: %w", track.ID, verifyRootedDigestErr3)
 		}
 		if track.HasCover {
 			coverRoot, coverRootPath := archiveRoot, cfg.Archive
 			if containedPath(track.CoverPath, cfg.MetadataRoot) {
 				coverRoot, coverRootPath = metadataRoot, cfg.MetadataRoot
 			}
-			if err := verifyRootedDigest(
+			if verifyRootedDigestErr4 := verifyRootedDigest(
 				coverRoot, coverRootPath, track.CoverPath,
 				track.CoverBytes, track.CoverSHA256,
-			); err != nil {
-				return fmt.Errorf("track %q cover: %w", track.ID, err)
+			); verifyRootedDigestErr4 != nil {
+				return fmt.Errorf("track %q cover: %w", track.ID, verifyRootedDigestErr4)
 			}
 		}
 	}
@@ -229,7 +229,7 @@ func validateMigrationSourceVolume(ctx context.Context, root string) error {
 	if err != nil {
 		return fmt.Errorf("open migration source database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	db.SetMaxOpenConns(1)
 	var version int
 	if err := db.QueryRowContext(ctx, "pragma user_version").Scan(&version); err != nil {
@@ -282,30 +282,30 @@ from reader_items`)
 	}
 	for rows.Next() {
 		var id, storage, source, normalized, manifest string
-		if err := rows.Scan(&id, &storage, &source, &normalized, &manifest); err != nil {
-			rows.Close()
-			return err
+		if scanErr3 := rows.Scan(&id, &storage, &source, &normalized, &manifest); scanErr3 != nil {
+			_ = rows.Close() // Preserve the primary result while releasing resources.
+			return scanErr3
 		}
-		currentStorage, err := virtualReaderStorage(id, storage, "", root)
-		if !validRouteID(id) || err != nil {
-			rows.Close()
+		currentStorage, virtualReaderStorageErr := virtualReaderStorage(id, storage, "", root)
+		if !validRouteID(id) || virtualReaderStorageErr != nil {
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return fmt.Errorf("legacy Reader item %q has invalid storage", id)
 		}
 		storageByItem[id] = storageMapping{old: storage, current: currentStorage}
 		for _, path := range []string{source, normalized, manifest} {
-			currentPath, err := relocateReaderPath(storage, currentStorage, path)
-			if err != nil {
-				rows.Close()
-				return err
+			currentPath, relocateReaderPathErr := relocateReaderPath(storage, currentStorage, path)
+			if relocateReaderPathErr != nil {
+				_ = rows.Close() // Preserve the primary result while releasing resources.
+				return relocateReaderPathErr
 			}
-			if _, err := rootedRegularInfo(readerRoot, root, currentPath); err != nil {
-				rows.Close()
-				return fmt.Errorf("legacy Reader item %q artifact: %w", id, err)
+			if _, rootedRegularInfoErr := rootedRegularInfo(readerRoot, root, currentPath); rootedRegularInfoErr != nil {
+				_ = rows.Close() // Preserve the primary result while releasing resources.
+				return fmt.Errorf("legacy Reader item %q artifact: %w", id, rootedRegularInfoErr)
 			}
 		}
 	}
-	if err := rows.Close(); err != nil {
-		return err
+	if closeErr := rows.Close(); closeErr != nil {
+		return closeErr
 	}
 	rows, err = db.QueryContext(ctx, `
 select item_id, status, coalesce(audio_path, ''), audio_bytes from reader_segments`)
@@ -316,7 +316,7 @@ select item_id, status, coalesce(audio_path, ''), audio_bytes from reader_segmen
 		var id, status, path string
 		var bytes int64
 		if err := rows.Scan(&id, &status, &path, &bytes); err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return err
 		}
 		if status != "ready" {
@@ -325,17 +325,17 @@ select item_id, status, coalesce(audio_path, ''), audio_bytes from reader_segmen
 		mapping, ok := storageByItem[id]
 		if !ok || path == "" || !supportedAudioPath(path) ||
 			bytes <= 0 || bytes > maxReaderAudioBytes {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return fmt.Errorf("legacy Reader item %q has invalid ready audio metadata", id)
 		}
 		currentPath, err := relocateReaderPath(mapping.old, mapping.current, path)
 		if err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return err
 		}
 		info, err := rootedRegularInfo(readerRoot, root, currentPath)
 		if err != nil || info.Size() != bytes {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return fmt.Errorf("legacy Reader item %q audio is missing or changed", id)
 		}
 	}
@@ -474,19 +474,19 @@ order by type, name`)
 	for rows.Next() {
 		var kind, name, table, statement string
 		if err := rows.Scan(&kind, &name, &table, &statement); err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return err
 		}
 		normalized := normalizeSchemaSQL(statement)
 		switch kind {
 		case "table":
 			if _, ok := expectedTables[name]; !ok {
-				rows.Close()
+				_ = rows.Close() // Preserve the primary result while releasing resources.
 				return fmt.Errorf("retained schema contains unexpected table %q", name)
 			}
 			seenTables[name] = true
 			if normalized != expectedTableSQL[name] {
-				rows.Close()
+				_ = rows.Close() // Preserve the primary result while releasing resources.
 				return fmt.Errorf(
 					"retained table %q definition is not canonical: got %q, want %q",
 					name, normalized, expectedTableSQL[name])
@@ -494,7 +494,7 @@ order by type, name`)
 		case "index":
 			if name != "stations_expiry" || table != "stations" ||
 				normalized != "create index stations_expiry on stations(expires_at) where expires_at is not null" {
-				rows.Close()
+				_ = rows.Close() // Preserve the primary result while releasing resources.
 				return fmt.Errorf("retained schema contains non-canonical index %q", name)
 			}
 			seenIndex = true
@@ -507,12 +507,12 @@ order by type, name`)
 				"begin select raise(abort, 'temporary station capacity reached'); end"
 			if name != "temporary_station_capacity" || table != "stations" ||
 				normalized != capacityTrigger {
-				rows.Close()
+				_ = rows.Close() // Preserve the primary result while releasing resources.
 				return fmt.Errorf("retained schema contains non-canonical trigger %q", name)
 			}
 			seenTrigger = true
 		default:
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return fmt.Errorf("retained schema contains unexpected %s %q", kind, name)
 		}
 	}
@@ -533,7 +533,7 @@ order by type, name`)
 			var name, columnType string
 			var defaultValue any
 			if err := columns.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-				columns.Close()
+				_ = columns.Close() // Preserve the primary result while releasing resources.
 				return err
 			}
 			actual = append(actual, name)
@@ -587,35 +587,35 @@ select id, storage_dir, source_path, normalized_text_path, manifest_path from re
 	}
 	for rows.Next() {
 		var id, storage, source, normalized, manifest string
-		if err := rows.Scan(&id, &storage, &source, &normalized, &manifest); err != nil {
-			rows.Close()
-			return err
+		if scanErr4 := rows.Scan(&id, &storage, &source, &normalized, &manifest); scanErr4 != nil {
+			_ = rows.Close() // Preserve the primary result while releasing resources.
+			return scanErr4
 		}
-		currentStorage, err := virtualReaderStorage(id, storage, storedRoot, root)
-		if !validRouteID(id) || err != nil {
-			rows.Close()
-			return fmt.Errorf("Reader item %q has invalid identity or storage", id)
+		currentStorage, virtualReaderStorageErr2 := virtualReaderStorage(id, storage, storedRoot, root)
+		if !validRouteID(id) || virtualReaderStorageErr2 != nil {
+			_ = rows.Close() // Preserve the primary result while releasing resources.
+			return fmt.Errorf("reader item %q has invalid identity or storage", id)
 		}
 		storageByItem[id] = storageMapping{old: storage, current: currentStorage}
 		for artifactIndex, path := range []string{source, normalized, manifest} {
 			currentPath, pathErr := relocateReaderPath(storage, currentStorage, path)
 			if pathErr != nil {
-				rows.Close()
-				return fmt.Errorf("Reader item %q artifact path: %w", id, pathErr)
+				_ = rows.Close() // Preserve the primary result while releasing resources.
+				return fmt.Errorf("reader item %q artifact path: %w", id, pathErr)
 			}
-			info, err := rootedRegularInfo(readerRoot, root, currentPath)
-			if err != nil {
-				rows.Close()
-				return fmt.Errorf("Reader item %q artifact %q: %w", id, filepath.Base(path), err)
+			info, rootedRegularInfoErr2 := rootedRegularInfo(readerRoot, root, currentPath)
+			if rootedRegularInfoErr2 != nil {
+				_ = rows.Close() // Preserve the primary result while releasing resources.
+				return fmt.Errorf("reader item %q artifact %q: %w", id, filepath.Base(path), rootedRegularInfoErr2)
 			}
 			if artifactIndex == 0 && (info.Size() <= 0 || info.Size() > maxReaderSourceBytes) {
-				rows.Close()
-				return fmt.Errorf("Reader item %q source is outside the retained size limit", id)
+				_ = rows.Close() // Preserve the primary result while releasing resources.
+				return fmt.Errorf("reader item %q source is outside the retained size limit", id)
 			}
 		}
 	}
-	if err := rows.Close(); err != nil {
-		return err
+	if closeErr2 := rows.Close(); closeErr2 != nil {
+		return closeErr2
 	}
 	rows, err = db.QueryContext(ctx, `
 select item_id, status, coalesce(audio_path, ''), audio_bytes, audio_sha256
@@ -627,7 +627,7 @@ from reader_segments`)
 		var id, status, path, digest string
 		var bytes int64
 		if err := rows.Scan(&id, &status, &path, &bytes, &digest); err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return err
 		}
 		if path == "" && status != "ready" {
@@ -635,23 +635,23 @@ from reader_segments`)
 		}
 		if status == "ready" && (path == "" || !supportedAudioPath(path) ||
 			!sha256Pattern.MatchString(digest) || bytes <= 0 || bytes > maxReaderAudioBytes) {
-			rows.Close()
-			return fmt.Errorf("Reader item %q has invalid ready audio metadata", id)
+			_ = rows.Close() // Preserve the primary result while releasing resources.
+			return fmt.Errorf("reader item %q has invalid ready audio metadata", id)
 		}
 		if path != "" {
 			mapping, ok := storageByItem[id]
 			if !ok {
-				rows.Close()
-				return fmt.Errorf("Reader segment for %q has no storage mapping", id)
+				_ = rows.Close() // Preserve the primary result while releasing resources.
+				return fmt.Errorf("reader segment for %q has no storage mapping", id)
 			}
 			currentPath, pathErr := relocateReaderPath(mapping.old, mapping.current, path)
 			if pathErr != nil {
-				rows.Close()
-				return fmt.Errorf("Reader item %q audio path: %w", id, pathErr)
+				_ = rows.Close() // Preserve the primary result while releasing resources.
+				return fmt.Errorf("reader item %q audio path: %w", id, pathErr)
 			}
 			if err := verifyRootedDigest(readerRoot, root, currentPath, bytes, digest); err != nil {
-				rows.Close()
-				return fmt.Errorf("Reader item %q audio: %w", id, err)
+				_ = rows.Close() // Preserve the primary result while releasing resources.
+				return fmt.Errorf("reader item %q audio: %w", id, err)
 			}
 		}
 	}
@@ -703,7 +703,7 @@ func verifyRootedDigestContext(ctx context.Context, rootHandle *os.Root, root, p
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	if stat.Size() != expectedBytes {
 		return fmt.Errorf("%s size is %d, want %d", filepath.Base(path), stat.Size(), expectedBytes)
 	}
@@ -738,7 +738,7 @@ func rootedDigest(rootHandle *os.Root, root, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
 		return "", err

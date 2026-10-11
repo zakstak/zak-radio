@@ -138,7 +138,7 @@ window.ZakAPI = async function api(path, options = {}) {
     init.body = JSON.stringify(init.body);
     init.headers = {
       "Content-Type": "application/json",
-      ...(init.headers || {}),
+      ...init.headers,
     };
   }
   const externalSignal = init.signal;

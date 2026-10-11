@@ -19,54 +19,54 @@ const (
 )
 
 type TimedLyrics struct {
-	Version      int                `json:"version"`
+	Generator    map[string]any     `json:"generator,omitempty"`
 	TrackID      string             `json:"track_id"`
 	AudioSHA256  string             `json:"audio_sha256"`
-	Duration     float64            `json:"duration"`
 	Language     string             `json:"language,omitempty"`
 	DisplayText  string             `json:"display_text,omitempty"`
 	Origin       string             `json:"origin,omitempty"`
 	SourceSHA256 string             `json:"source_lyrics_sha256,omitempty"`
-	Generator    map[string]any     `json:"generator,omitempty"`
-	Quality      TimedLyricsQuality `json:"quality"`
 	Cues         []TimedLyricCue    `json:"cues"`
+	Quality      TimedLyricsQuality `json:"quality"`
+	Version      int                `json:"version"`
+	Duration     float64            `json:"duration"`
 }
 
 type TimedLyricsQuality struct {
 	Status                    string   `json:"status,omitempty"`
+	Warnings                  []string `json:"warnings,omitempty"`
 	CandidateLines            int      `json:"candidate_lines"`
 	AlignedLines              int      `json:"aligned_lines"`
 	LineCoverage              float64  `json:"line_coverage"`
 	WordCoverage              float64  `json:"word_coverage"`
 	TimingCoverage            float64  `json:"timing_coverage,omitempty"`
 	MeanConfidence            float64  `json:"mean_confidence"`
-	Warnings                  []string `json:"warnings,omitempty"`
 	AlternateVocalsDetected   bool     `json:"alternate_vocals_detected,omitempty"`
 	AlternateVocalsUnresolved bool     `json:"alternate_vocals_unresolved,omitempty"`
 }
 
 type TimedLyricCue struct {
-	Start           float64          `json:"start"`
-	End             float64          `json:"end"`
+	VocalEvidence   string           `json:"vocal_evidence,omitempty"`
+	Origin          string           `json:"origin,omitempty"`
 	Section         string           `json:"section,omitempty"`
 	Text            string           `json:"text"`
 	SecondaryText   string           `json:"secondary_text,omitempty"`
 	SecondaryOrigin string           `json:"secondary_origin,omitempty"`
-	VocalEvidence   string           `json:"vocal_evidence,omitempty"`
-	Origin          string           `json:"origin,omitempty"`
 	QualityStatus   string           `json:"quality_status,omitempty"`
-	LineCoverage    float64          `json:"line_coverage,omitempty"`
-	MeanConfidence  float64          `json:"mean_confidence,omitempty"`
-	TimingConsensus int              `json:"timing_consensus,omitempty"`
-	TimingRepaired  bool             `json:"timing_repaired,omitempty"`
 	Words           []TimedLyricWord `json:"words,omitempty"`
 	SecondaryWords  []TimedLyricWord `json:"secondary_words,omitempty"`
+	MeanConfidence  float64          `json:"mean_confidence,omitempty"`
+	Start           float64          `json:"start"`
+	LineCoverage    float64          `json:"line_coverage,omitempty"`
+	End             float64          `json:"end"`
+	TimingConsensus int              `json:"timing_consensus,omitempty"`
+	TimingRepaired  bool             `json:"timing_repaired,omitempty"`
 }
 
 type TimedLyricWord struct {
+	Text       string  `json:"text"`
 	Start      float64 `json:"start"`
 	End        float64 `json:"end"`
-	Text       string  `json:"text"`
 	Confidence float64 `json:"confidence,omitempty"`
 }
 

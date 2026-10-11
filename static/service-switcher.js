@@ -19,6 +19,8 @@ function boundedText(value, maximum) {
     typeof value === "string" &&
     value.length > 0 &&
     value.length <= maximum &&
+    // Directory labels must reject control characters, including DEL.
+    // oxlint-disable-next-line no-control-regex
     !/[\u0000-\u001f\u007f]/.test(value) &&
     value.trim() === value
   );

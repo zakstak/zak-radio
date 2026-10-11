@@ -110,11 +110,11 @@ func TestStationClockHighWaterSurvivesServiceRestart(t *testing.T) {
 	}
 	retained := float64(1_900_000_000)
 	retainedExpiry := retained + tempStationLife.Seconds()
-	if _, err := app.db.Exec(`
+	if _, execErr := app.db.Exec(`
 update stations set position=2, playing=1, updated_at=?, track_changed_at=?,
 	expires_at=? where id=?`,
-		retained, retained-10, retainedExpiry, stationID); err != nil {
-		t.Fatal(err)
+		retained, retained-10, retainedExpiry, stationID); execErr != nil {
+		t.Fatal(execErr)
 	}
 	restarted := NewStationService(app.db, app.catalog, appevents.NewBroadcaster())
 	restarted.clock = func() time.Time {
@@ -147,8 +147,8 @@ update stations set position=2, playing=1, updated_at=?, track_changed_at=?,
 		math.Abs(advanced.Position-7) > 0.001 {
 		t.Fatalf("monotonic elapsed time did not advance rolled-back wall time: %#v", advanced)
 	}
-	if err := restarted.persistLogicalClock(context.Background()); err != nil {
-		t.Fatal(err)
+	if persistLogicalClockErr := restarted.persistLogicalClock(context.Background()); persistLogicalClockErr != nil {
+		t.Fatal(persistLogicalClockErr)
 	}
 	secondRestart := NewStationService(app.db, app.catalog, appevents.NewBroadcaster())
 	secondRestart.clock = func() time.Time {
@@ -171,10 +171,10 @@ update stations set position=2, playing=1, updated_at=?, track_changed_at=?,
 func TestCommandsNormalizeElapsedTrackBoundaries(t *testing.T) {
 	for _, test := range []struct {
 		name        string
-		repeatOne   bool
 		action      string
 		wantTrack   string
 		wantPos     float64
+		repeatOne   bool
 		wantPlaying bool
 	}{
 		{name: "pause advances", action: "pause", wantTrack: "two", wantPos: 2},
@@ -231,17 +231,17 @@ func TestStartupReconcilesRemovedCurrentTrack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.db.Exec("update stations set track_id='removed', playing=1 where id=?", mainStationID); err != nil {
-		t.Fatal(err)
+	if _, execErr2 := app.db.Exec("update stations set track_id='removed', playing=1 where id=?", mainStationID); execErr2 != nil {
+		t.Fatal(execErr2)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := app.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	app, err = NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer app.Close()
+	defer func() { _ = app.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	snapshot, err := app.station.Snapshot(context.Background(), mainStationID)
 	if err != nil {
 		t.Fatal(err)
@@ -341,15 +341,15 @@ func TestConcurrentLikesAccumulateAtomically(t *testing.T) {
 func TestConcurrentLikeResponsesAreRevisionConsistent(t *testing.T) {
 	app := newTestApp(t)
 	type result struct {
-		status    int
-		revision  int64
-		liked     bool
-		likeCount int
-		tracks    []struct {
+		tracks []struct {
 			TrackID   string `json:"track_id"`
 			Liked     bool   `json:"liked"`
 			LikeCount int    `json:"like_count"`
 		}
+		status    int
+		revision  int64
+		likeCount int
+		liked     bool
 	}
 	results := make(chan result, 2)
 	var wg sync.WaitGroup
@@ -363,14 +363,14 @@ func TestConcurrentLikeResponsesAreRevisionConsistent(t *testing.T) {
 			app.apiReaction(res, req)
 			value := result{status: res.Code}
 			var payload struct {
-				Revision  int64 `json:"revision"`
-				Liked     bool  `json:"liked"`
-				LikeCount int   `json:"like_count"`
-				Tracks    []struct {
+				Tracks []struct {
 					TrackID   string `json:"track_id"`
 					Liked     bool   `json:"liked"`
 					LikeCount int    `json:"like_count"`
 				} `json:"tracks"`
+				Revision  int64 `json:"revision"`
+				LikeCount int   `json:"like_count"`
+				Liked     bool  `json:"liked"`
 			}
 			if json.Unmarshal(res.Body.Bytes(), &payload) == nil {
 				value.revision, value.liked, value.likeCount, value.tracks =
@@ -461,7 +461,7 @@ func TestMediaHEADAndSecurityBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -534,8 +534,9 @@ func TestStationCreationRetriesAreIdempotent(t *testing.T) {
 	ownerToken := "0123456789abcdef0123456789abcdef0123456789abcdef"
 	creator := tokenHash("idempotent-creator")
 	type result struct {
-		id, token string
-		err       error
+		err   error
+		id    string
+		token string
 	}
 	create := func() result {
 		id, token, _, err := app.station.CreateIdempotent(
@@ -647,20 +648,20 @@ func TestMigrationCreatesValidatedBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`create table station (
+	if _, execErr3 := db.Exec(`create table station (
 		id integer primary key, track_id text not null, position real not null,
 		playing integer not null, updated_at real not null, track_changed_at real not null
-	); insert into station values (1, 'one', 0, 0, 1, 1);`); err != nil {
-		t.Fatal(err)
+	); insert into station values (1, 'one', 0, 0, 1, 1);`); execErr3 != nil {
+		t.Fatal(execErr3)
 	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr2 := db.Close(); closeErr2 != nil {
+		t.Fatal(closeErr2)
 	}
 	app, err := NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer app.Close()
+	defer func() { _ = app.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	backups, err := filepath.Glob(cfg.DBPath + ".schema-v0-*.bak")
 	if err != nil {
 		t.Fatal(err)
@@ -672,7 +673,7 @@ func TestMigrationCreatesValidatedBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer check.Close()
+	defer func() { _ = check.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var result string
 	if err := check.QueryRow("PRAGMA quick_check").Scan(&result); err != nil || result != "ok" {
 		t.Fatalf("backup quick_check = %q, err=%v", result, err)
@@ -730,10 +731,10 @@ func TestReaderItemCursorIsStableAcrossNewInsertions(t *testing.T) {
 		}
 	}
 	page := func(path string) struct {
-		Items []struct {
+		NextCursor string `json:"next_cursor"`
+		Items      []struct {
 			ID string `json:"id"`
 		} `json:"items"`
-		NextCursor string `json:"next_cursor"`
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		res := httptest.NewRecorder()
@@ -742,10 +743,10 @@ func TestReaderItemCursorIsStableAcrossNewInsertions(t *testing.T) {
 			t.Fatalf("%s status=%d body=%s", path, res.Code, res.Body.String())
 		}
 		var payload struct {
-			Items []struct {
+			NextCursor string `json:"next_cursor"`
+			Items      []struct {
 				ID string `json:"id"`
 			} `json:"items"`
-			NextCursor string `json:"next_cursor"`
 		}
 		if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 			t.Fatal(err)
@@ -791,11 +792,11 @@ func TestLikePublishesFreshSnapshot(t *testing.T) {
 		t.Fatalf("like status=%d body=%s", res.Code, res.Body.String())
 	}
 	var response struct {
-		Revision int64 `json:"revision"`
-		Tracks   []struct {
+		Tracks []struct {
 			TrackID string `json:"track_id"`
 			Liked   bool   `json:"liked"`
 		} `json:"tracks"`
+		Revision int64 `json:"revision"`
 	}
 	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
@@ -806,12 +807,12 @@ func TestLikePublishesFreshSnapshot(t *testing.T) {
 	select {
 	case payload := <-events:
 		var event struct {
-			Revision int64 `json:"revision"`
-			Tracks   []struct {
+			Tracks []struct {
 				TrackID   string `json:"track_id"`
 				Liked     bool   `json:"liked"`
 				SkipCount int    `json:"skip_count"`
 			} `json:"tracks"`
+			Revision int64 `json:"revision"`
 		}
 		if err := json.Unmarshal(payload, &event); err != nil {
 			t.Fatal(err)
@@ -1040,11 +1041,11 @@ func TestTrackStatsCoalesceCompleteCatalogState(t *testing.T) {
 	select {
 	case payload := <-events:
 		var event struct {
-			Revision int64 `json:"revision"`
-			Tracks   []struct {
+			Tracks []struct {
 				TrackID string `json:"track_id"`
 				Liked   bool   `json:"liked"`
 			} `json:"tracks"`
+			Revision int64 `json:"revision"`
 		}
 		if err := json.Unmarshal(payload, &event); err != nil {
 			t.Fatal(err)
@@ -1075,11 +1076,11 @@ func TestEarlySkipPublishesTrackStats(t *testing.T) {
 	select {
 	case payload := <-events:
 		var event struct {
-			Revision int64 `json:"revision"`
-			Tracks   []struct {
+			Tracks []struct {
 				TrackID   string `json:"track_id"`
 				SkipCount int    `json:"skip_count"`
 			} `json:"tracks"`
+			Revision int64 `json:"revision"`
 		}
 		if err := json.Unmarshal(payload, &event); err != nil {
 			t.Fatal(err)

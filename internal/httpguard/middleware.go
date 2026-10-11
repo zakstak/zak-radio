@@ -31,18 +31,18 @@ type rateEntry struct {
 }
 
 type RequestLimiter struct {
-	mu      sync.Mutex
 	entries map[string]rateEntry
 	ring    []string
 	cursor  int
+	mu      sync.Mutex
 }
 
 type StreamLimiter struct {
-	mu       sync.Mutex
-	total    int
 	byClient map[string]int
+	total    int
 	maxTotal int
 	maxEach  int
+	mu       sync.Mutex
 }
 
 func Wrap(next http.Handler, allowedHosts, allowedOrigins, trustedProxies string) http.Handler {

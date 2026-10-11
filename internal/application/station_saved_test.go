@@ -26,17 +26,17 @@ func TestSavedStationCRUDPersistsPastPrivateExpiry(t *testing.T) {
 	if definition.SourceType != "list" || len(definition.TrackIDs) != 1 {
 		t.Fatalf("created definition = %#v", definition)
 	}
-	if _, err := app.db.Exec(
-		"update stations set expires_at=0 where id=?", definition.StationID); err != nil {
-		t.Fatal(err)
+	if _, execErr := app.db.Exec(
+		"update stations set expires_at=0 where id=?", definition.StationID); execErr != nil {
+		t.Fatal(execErr)
 	}
-	app.Close()
+	_ = app.Close() // Preserve the primary result while releasing resources.
 
 	reopened, err := NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	snapshot, err := reopened.station.Snapshot(context.Background(), definition.StationID)
 	if err != nil {
 		t.Fatal(err)
@@ -99,15 +99,15 @@ on conflict(track_id) do update set disliked=1`); err != nil {
 	}
 
 	skip = false
-	if _, err := app.station.Execute(context.Background(), stationmodel.Command{
+	if _, executeErr := app.station.Execute(context.Background(), stationmodel.Command{
 		Action: "set_station_skip_disliked", SkipDisliked: &skip,
-	}); err != nil {
-		t.Fatal(err)
+	}); executeErr != nil {
+		t.Fatal(executeErr)
 	}
-	if _, err := app.station.Execute(context.Background(), stationmodel.Command{
+	if _, executeErr2 := app.station.Execute(context.Background(), stationmodel.Command{
 		Action: "select", TrackID: "one",
-	}); err != nil {
-		t.Fatal(err)
+	}); executeErr2 != nil {
+		t.Fatal(executeErr2)
 	}
 	app.station.randomIndex = func(int) int { return 0 }
 	snapshot, err = app.station.Execute(context.Background(), stationmodel.Command{

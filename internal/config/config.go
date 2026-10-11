@@ -10,20 +10,20 @@ import (
 )
 
 type Config struct {
-	MetadataRoot      string
-	Archive           string
+	AllowedHosts      string
+	Host              string
 	DBPath            string
 	ReaderLibrary     string
 	StaticDir         string
 	TimedLyricsRoot   string
-	AllowedHosts      string
-	AllowedOrigins    string
 	TrustedProxies    string
+	MetadataRoot      string
+	Archive           string
 	TrustedIngress    string
+	AllowedOrigins    string
 	ClientIPv6Prefix  int
-	DeferStartupAudit bool
-	Host              string
 	Port              int
+	DeferStartupAudit bool
 }
 
 func Load() (Config, error) {

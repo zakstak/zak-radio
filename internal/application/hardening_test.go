@@ -148,9 +148,9 @@ func TestReaderWriterSequenceMigrationDropsLegacyOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(`
+	if _, execErr := db.Exec(`
 create table reader_items (id text primary key);
 create table reader_playback (
 	item_id text primary key,
@@ -162,8 +162,8 @@ create table reader_playback (
 );
 insert into reader_items(id) values ('valid');
 insert into reader_playback(item_id, updated_at) values
-	('valid', 1), ('None', 2), ('null', 3);`); err != nil {
-		t.Fatal(err)
+	('valid', 1), ('None', 2), ('null', 3);`); execErr != nil {
+		t.Fatal(execErr)
 	}
 	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
@@ -327,7 +327,7 @@ func TestRetainedAdmissionRejectsNumericBlob(t *testing.T) {
 		t.Fatal(err)
 	}
 	if reopened, err := NewApp(cfg); err == nil {
-		reopened.Close()
+		_ = reopened.Close() // Preserve the primary result while releasing resources.
 		t.Fatal("numeric BLOB passed retained-data admission")
 	}
 }
@@ -338,21 +338,21 @@ func TestLegacyPreflightRejectsOversizedFieldBeforeBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`
+	if _, execErr2 := db.Exec(`
 create table station (
 	id integer primary key, track_id text not null, position real not null,
 	playing integer not null, updated_at real not null, track_changed_at real not null
 );
 insert into station values (1, ?, 0, 0, 1, 1)`,
-		strings.Repeat("x", maxTrackTextBytes+1)); err != nil {
-		db.Close()
-		t.Fatal(err)
+		strings.Repeat("x", maxTrackTextBytes+1)); execErr2 != nil {
+		_ = db.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(execErr2)
 	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := db.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
-	if app, err := NewApp(cfg); err == nil {
-		app.Close()
+	if app, newAppErr := NewApp(cfg); newAppErr == nil {
+		_ = app.Close() // Preserve the primary result while releasing resources.
 		t.Fatal("oversized legacy field reached migration")
 	}
 	backups, err := filepath.Glob(cfg.DBPath + ".schema-v*.bak")
@@ -370,8 +370,8 @@ func TestLegacyPreflightReadsCommittedWALBeforeBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	if _, err := db.Exec(`
+	defer func() { _ = db.Close() }() // Best-effort cleanup; operation errors are checked separately.
+	if _, execErr3 := db.Exec(`
 pragma journal_mode=wal;
 pragma wal_autocheckpoint=0;
 create table station (
@@ -379,10 +379,10 @@ create table station (
 	playing integer not null, updated_at real not null, track_changed_at real not null
 );
 insert into station values (1, ?, 0, 0, 1, 1)`,
-		strings.Repeat("x", maxTrackTextBytes+1)); err != nil {
-		t.Fatal(err)
+		strings.Repeat("x", maxTrackTextBytes+1)); execErr3 != nil {
+		t.Fatal(execErr3)
 	}
-	if _, err := openDatabase(context.Background(), cfg.DBPath, cfg.MetadataRoot); err == nil {
+	if _, openDatabaseErr := openDatabase(context.Background(), cfg.DBPath, cfg.MetadataRoot); openDatabaseErr == nil {
 		t.Fatal("oversized field committed only in WAL passed pre-migration admission")
 	}
 	backups, err := filepath.Glob(cfg.DBPath + ".schema-v*.bak")
@@ -400,12 +400,12 @@ func TestOccupiedPortLeavesLegacyDatabaseUnmigrated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`create table legacy_marker(value text); insert into legacy_marker values ('unchanged')`); err != nil {
-		db.Close()
-		t.Fatal(err)
+	if _, execErr4 := db.Exec(`create table legacy_marker(value text); insert into legacy_marker values ('unchanged')`); execErr4 != nil {
+		_ = db.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(execErr4)
 	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr2 := db.Close(); closeErr2 != nil {
+		t.Fatal(closeErr2)
 	}
 	before, err := os.ReadFile(cfg.DBPath)
 	if err != nil {
@@ -415,12 +415,12 @@ func TestOccupiedPortLeavesLegacyDatabaseUnmigrated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	port := listener.Addr().(*net.TCPAddr).Port
 	binary := filepath.Join(t.TempDir(), "zak-radio")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/zak-radio")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build test binary: %v\n%s", err, output)
+	if output, combinedOutputErr := build.CombinedOutput(); combinedOutputErr != nil {
+		t.Fatalf("build test binary: %v\n%s", combinedOutputErr, output)
 	}
 	command := exec.Command(binary,
 		"--host", "127.0.0.1", "--port", fmt.Sprint(port),
@@ -429,7 +429,7 @@ func TestOccupiedPortLeavesLegacyDatabaseUnmigrated(t *testing.T) {
 	command.Env = append(os.Environ(),
 		"ZAK_RADIO_METADATA_ROOT="+cfg.MetadataRoot,
 		"ZAK_RADIO_STATIC="+cfg.StaticDir)
-	if output, err := command.CombinedOutput(); err == nil {
+	if output, combinedOutputErr2 := command.CombinedOutput(); combinedOutputErr2 == nil {
 		t.Fatalf("server unexpectedly acquired occupied port: %s", output)
 	}
 	after, err := os.ReadFile(cfg.DBPath)
@@ -603,9 +603,9 @@ func TestMigrationRejectsUnrelatedPreexistingBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer app.Close()
-	if _, err := app.db.Exec("pragma wal_checkpoint(truncate)"); err != nil {
-		t.Fatal(err)
+	defer func() { _ = app.Close() }() // Best-effort cleanup; operation errors are checked separately.
+	if _, execErr5 := app.db.Exec("pragma wal_checkpoint(truncate)"); execErr5 != nil {
+		t.Fatal(execErr5)
 	}
 	sourceDigest, err := fileSHA256(cfg.DBPath)
 	if err != nil {
@@ -618,7 +618,7 @@ func TestMigrationRejectsUnrelatedPreexistingBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := unrelated.Exec("create table unrelated(value text)"); err != nil {
-		unrelated.Close()
+		_ = unrelated.Close() // Preserve the primary result while releasing resources.
 		t.Fatal(err)
 	}
 	if err := unrelated.Close(); err != nil {
@@ -643,7 +643,7 @@ func TestMigrationFinalizationIsScopedAndRetryable(t *testing.T) {
 		currentSchemaVersion,
 	)
 	if err != nil {
-		app.Close()
+		_ = app.Close() // Preserve the primary result while releasing resources.
 		t.Fatal(err)
 	}
 	if err := app.Close(); err != nil {
@@ -700,21 +700,21 @@ func TestRuntimeVolumeLockAllowsRollingDeploymentPeer(t *testing.T) {
 	}
 	second, err := lifecycle.AcquireRuntimeVolumeLock(cfg.MetadataRoot)
 	if err != nil {
-		first.Close()
+		_ = first.Close() // Preserve the primary result while releasing resources.
 		t.Fatalf("rolling deployment peer could not acquire runtime lock: %v", err)
 	}
-	if err := second.Close(); err != nil {
-		first.Close()
-		t.Fatal(err)
+	if closeErr3 := second.Close(); closeErr3 != nil {
+		_ = first.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(closeErr3)
 	}
-	if err := first.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr4 := first.Close(); closeErr4 != nil {
+		t.Fatal(closeErr4)
 	}
 	reopened, err := lifecycle.AcquireRuntimeVolumeLock(cfg.MetadataRoot)
 	if err != nil {
 		t.Fatalf("released lifecycle lock could not be reacquired: %v", err)
 	}
-	reopened.Close()
+	_ = reopened.Close() // Preserve the primary result while releasing resources.
 }
 
 func TestInheritedVolumeLockRejectsUnrelatedDescriptor(t *testing.T) {
@@ -723,12 +723,12 @@ func TestInheritedVolumeLockRejectsUnrelatedDescriptor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rootHandle.Close()
+	defer func() { _ = rootHandle.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	unrelated, err := os.Open("/dev/null")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer unrelated.Close()
+	defer func() { _ = unrelated.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	command := exec.Command(
 		"python3", "scripts/with-volume-lock.py", "--verify", root,
 	)
@@ -771,7 +771,7 @@ func TestLegacyPreflightRejectsGeneratedColumnsBeforeBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`
+	if _, execErr6 := db.Exec(`
 create table station (
 	id integer primary key,
 	track_id text not null,
@@ -783,21 +783,21 @@ create table station (
 );
 insert into station(id, track_id, position, playing, updated_at, track_changed_at)
 values (1, 'one', 0, 0, 1, 1);
-pragma user_version=0`); err != nil {
-		db.Close()
-		t.Fatal(err)
+pragma user_version=0`); execErr6 != nil {
+		_ = db.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(execErr6)
 	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr5 := db.Close(); closeErr5 != nil {
+		t.Fatal(closeErr5)
 	}
 	info, err := os.Stat(cfg.DBPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := preflightDatabase(
+	if preflightDatabaseErr := preflightDatabase(
 		context.Background(), cfg.DBPath, info.Size(),
-	); err == nil || !strings.Contains(err.Error(), "generated or hidden") {
-		t.Fatalf("generated legacy column passed bounded preflight: %v", err)
+	); preflightDatabaseErr == nil || !strings.Contains(preflightDatabaseErr.Error(), "generated or hidden") {
+		t.Fatalf("generated legacy column passed bounded preflight: %v", preflightDatabaseErr)
 	}
 	backups, err := filepath.Glob(cfg.DBPath + ".schema-v*.bak")
 	if err != nil || len(backups) != 0 {
@@ -825,14 +825,14 @@ func TestReaderJSONFieldsRequireBoundedStringArrays(t *testing.T) {
 			}
 			seedReaderItem(t, app, "shape")
 			if _, err := app.db.Exec(test.mutate); err != nil {
-				app.Close()
+				_ = app.Close() // Preserve the primary result while releasing resources.
 				t.Fatal(err)
 			}
 			if err := app.Close(); err != nil {
 				t.Fatal(err)
 			}
 			if reopened, err := NewApp(cfg); err == nil {
-				reopened.Close()
+				_ = reopened.Close() // Preserve the primary result while releasing resources.
 				t.Fatalf("startup accepted %s", test.name)
 			}
 		})
@@ -872,15 +872,16 @@ func TestCatalogDecodersStopAtCardinalityLimit(t *testing.T) {
 func TestRouteMethodMatrixDistinguishesKnownResources(t *testing.T) {
 	app := newTestApp(t)
 	tests := []struct {
-		method, path string
-		status       int
-		allow        string
+		method string
+		path   string
+		allow  string
+		status int
 	}{
-		{http.MethodPost, "/api/tracks", http.StatusMethodNotAllowed, "GET"},
-		{http.MethodPut, "/api/stations", http.StatusMethodNotAllowed, "GET, POST"},
-		{http.MethodPut, "/api/station", http.StatusMethodNotAllowed, "GET"},
-		{http.MethodHead, "/apix", http.StatusNotFound, ""},
-		{http.MethodGet, "/api/not-a-resource", http.StatusNotFound, ""},
+		{method: http.MethodPost, path: "/api/tracks", status: http.StatusMethodNotAllowed, allow: "GET"},
+		{method: http.MethodPut, path: "/api/stations", status: http.StatusMethodNotAllowed, allow: "GET, POST"},
+		{method: http.MethodPut, path: "/api/station", status: http.StatusMethodNotAllowed, allow: "GET"},
+		{method: http.MethodHead, path: "/apix", status: http.StatusNotFound, allow: ""},
+		{method: http.MethodGet, path: "/api/not-a-resource", status: http.StatusNotFound, allow: ""},
 	}
 	for _, test := range tests {
 		request := httptest.NewRequest(test.method, test.path, nil)
@@ -921,33 +922,33 @@ func TestMigrationBackupIsIdempotentAndUsesDurableReserve(t *testing.T) {
 		t.Fatal(err)
 	}
 	for attempt := 0; attempt < 3; attempt++ {
-		if _, err := backupBeforeMigration(
+		if _, backupBeforeMigrationErr := backupBeforeMigration(
 			context.Background(), app.db, cfg.DBPath, cfg.MetadataRoot,
 			currentSchemaVersion,
-		); err != nil {
-			app.Close()
-			t.Fatalf("protected backup attempt %d: %v", attempt+1, err)
+		); backupBeforeMigrationErr != nil {
+			_ = app.Close() // Preserve the primary result while releasing resources.
+			t.Fatalf("protected backup attempt %d: %v", attempt+1, backupBeforeMigrationErr)
 		}
 	}
-	if _, err := app.db.Exec(
-		"update stations set updated_at=updated_at+1 where id='main'"); err != nil {
-		app.Close()
-		t.Fatal(err)
+	if _, execErr7 := app.db.Exec(
+		"update stations set updated_at=updated_at+1 where id='main'"); execErr7 != nil {
+		_ = app.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(execErr7)
 	}
-	if _, err := backupBeforeMigration(
+	if _, backupBeforeMigrationErr2 := backupBeforeMigration(
 		context.Background(), app.db, cfg.DBPath, cfg.MetadataRoot,
 		currentSchemaVersion,
-	); err == nil || !strings.Contains(err.Error(), "does not match the live source") {
-		app.Close()
-		t.Fatalf("stale same-version migration receipt was reused: %v", err)
+	); backupBeforeMigrationErr2 == nil || !strings.Contains(backupBeforeMigrationErr2.Error(), "does not match the live source") {
+		_ = app.Close() // Preserve the primary result while releasing resources.
+		t.Fatalf("stale same-version migration receipt was reused: %v", backupBeforeMigrationErr2)
 	}
 	backups, err := filepath.Glob(cfg.DBPath + ".schema-v*.bak")
 	if err != nil || len(backups) != 1 {
-		app.Close()
+		_ = app.Close() // Preserve the primary result while releasing resources.
 		t.Fatalf("idempotent backups=%v err=%v", backups, err)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr6 := app.Close(); closeErr6 != nil {
+		t.Fatal(closeErr6)
 	}
 	usage, err := inspectRetainedTree(cfg.MetadataRoot)
 	if err != nil {
@@ -958,20 +959,20 @@ func TestMigrationBackupIsIdempotentAndUsesDurableReserve(t *testing.T) {
 		t.Fatalf("fixture unexpectedly exhausts product budget: %#v", usage)
 	}
 	filler := filepath.Join(cfg.MetadataRoot, "capacity-filler")
-	if err := os.WriteFile(filler, nil, 0o600); err != nil {
-		t.Fatal(err)
+	if writeFileErr := os.WriteFile(filler, nil, 0o600); writeFileErr != nil {
+		t.Fatal(writeFileErr)
 	}
-	if err := os.Truncate(filler, fillerBytes); err != nil {
-		t.Fatal(err)
+	if truncateErr := os.Truncate(filler, fillerBytes); truncateErr != nil {
+		t.Fatal(truncateErr)
 	}
-	if err := validateRetainedTreeBudget(cfg.MetadataRoot); err != nil {
-		t.Fatalf("valid product-plus-backup budget rejected: %v", err)
+	if validateRetainedTreeBudgetErr := validateRetainedTreeBudget(cfg.MetadataRoot); validateRetainedTreeBudgetErr != nil {
+		t.Fatalf("valid product-plus-backup budget rejected: %v", validateRetainedTreeBudgetErr)
 	}
 	reopened, err := NewApp(cfg)
 	if err != nil {
 		t.Fatalf("post-backup near-boundary volume did not restart: %v", err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }() // Best-effort cleanup; operation errors are checked separately.
 }
 
 func TestPlayingAtExactEOFCanonicalizesBeforeCommit(t *testing.T) {
@@ -1033,7 +1034,7 @@ func TestStationEventReconnectStartsFromCurrentRevision(t *testing.T) {
 			cancel()
 			t.Fatal(err)
 		}
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }() // Best-effort cleanup; operation errors are checked separately.
 		scanner := bufio.NewScanner(response.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -1071,7 +1072,7 @@ func TestStartupReadinessWaitsForCompleteDigestAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer app.Close()
+	defer func() { _ = app.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	res := httptest.NewRecorder()
 	app.health(res, req)

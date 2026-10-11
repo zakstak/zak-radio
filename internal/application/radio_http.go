@@ -45,7 +45,7 @@ func (a *App) tracksWithStats(ctx context.Context) ([]catalogmodel.Track, int64,
 	if err != nil {
 		return nil, 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; operation errors are checked separately.
 	revision, err := readTrackStatsRevision(ctx, tx)
 	if err != nil {
 		return nil, 0, err
@@ -57,18 +57,18 @@ func (a *App) tracksWithStats(ctx context.Context) ([]catalogmodel.Track, int64,
 	for rows.Next() {
 		var id string
 		var liked, disliked int
-		if err := rows.Scan(&id, &liked, &disliked); err != nil {
-			rows.Close()
-			return nil, 0, err
+		if scanErr := rows.Scan(&id, &liked, &disliked); scanErr != nil {
+			_ = rows.Close() // Preserve the primary result while releasing resources.
+			return nil, 0, scanErr
 		}
 		likes[id], dislikes[id] = liked, disliked
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, 0, err
+	if iterationErr := rows.Err(); iterationErr != nil {
+		_ = rows.Close() // Preserve the primary result while releasing resources.
+		return nil, 0, iterationErr
 	}
-	if err := rows.Close(); err != nil {
-		return nil, 0, err
+	if closeErr := rows.Close(); closeErr != nil {
+		return nil, 0, closeErr
 	}
 	rows, err = tx.QueryContext(ctx, "select track_id, skip_count from skip_counts")
 	if err != nil {
@@ -78,13 +78,13 @@ func (a *App) tracksWithStats(ctx context.Context) ([]catalogmodel.Track, int64,
 		var id string
 		var count int
 		if err := rows.Scan(&id, &count); err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return nil, 0, err
 		}
 		skips[id] = count
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		_ = rows.Close() // Preserve the primary result while releasing resources.
 		return nil, 0, err
 	}
 	if err := rows.Close(); err != nil {
@@ -163,18 +163,18 @@ func (a *App) trackStatsPayload(ctx context.Context, q queryer) (map[string]any,
 	for rows.Next() {
 		var id string
 		var liked, disliked int
-		if err := rows.Scan(&id, &liked, &disliked); err != nil {
-			rows.Close()
-			return nil, err
+		if scanErr2 := rows.Scan(&id, &liked, &disliked); scanErr2 != nil {
+			_ = rows.Close() // Preserve the primary result while releasing resources.
+			return nil, scanErr2
 		}
 		likes[id], dislikes[id] = liked, disliked
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
+	if iterationErr2 := rows.Err(); iterationErr2 != nil {
+		_ = rows.Close() // Preserve the primary result while releasing resources.
+		return nil, iterationErr2
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
+	if closeErr2 := rows.Close(); closeErr2 != nil {
+		return nil, closeErr2
 	}
 	rows, err = q.QueryContext(ctx, "select track_id, skip_count from skip_counts")
 	if err != nil {
@@ -184,13 +184,13 @@ func (a *App) trackStatsPayload(ctx context.Context, q queryer) (map[string]any,
 		var id string
 		var count int
 		if err := rows.Scan(&id, &count); err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return nil, err
 		}
 		skips[id] = count
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
+		_ = rows.Close() // Preserve the primary result while releasing resources.
 		return nil, err
 	}
 	if err := rows.Close(); err != nil {
@@ -234,8 +234,8 @@ func (a *App) createStation(w http.ResponseWriter, r *http.Request) {
 		FilterMode     string   `json:"filter_mode"`
 		FilterQuery    string   `json:"filter_query"`
 		RandomMode     string   `json:"random_mode"`
-		SkipDisliked   bool     `json:"skip_disliked"`
 		TrackIDs       []string `json:"track_ids"`
+		SkipDisliked   bool     `json:"skip_disliked"`
 	}
 	if !httpguard.DecodeJSON(w, r, &request, true) {
 		return
@@ -335,15 +335,15 @@ func (a *App) savedStation(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) apiControl(w http.ResponseWriter, r *http.Request) {
 	var request struct {
+		Position     *float64 `json:"position"`
+		RepeatOne    *bool    `json:"repeat_one"`
+		Shuffle      *bool    `json:"shuffle"`
+		SkipDisliked *bool    `json:"skip_disliked"`
 		StationID    string   `json:"station_id"`
 		OwnerToken   string   `json:"owner_token"`
 		Action       string   `json:"action"`
 		TrackID      string   `json:"track_id"`
-		Position     *float64 `json:"position"`
-		RepeatOne    *bool    `json:"repeat_one"`
-		Shuffle      *bool    `json:"shuffle"`
 		RandomMode   string   `json:"random_mode"`
-		SkipDisliked *bool    `json:"skip_disliked"`
 	}
 	if !httpguard.DecodeJSON(w, r, &request, false) {
 		return
@@ -410,10 +410,14 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	refreshStreamDeadline(w)
-	writeSSE(w, initial)
+	if writeErr := writeSSE(w, initial); writeErr != nil {
+		return
+	}
 	if payload, revision, statsErr := a.currentTrackStatsEvent(r.Context()); statsErr == nil {
 		trackRevision = revision
-		fmt.Fprintf(w, "event: track\ndata: %s\n\n", payload)
+		if _, writeErr := fmt.Fprintf(w, "event: track\ndata: %s\n\n", payload); writeErr != nil {
+			return
+		}
 	}
 	flusher.Flush()
 	heartbeat := time.NewTicker(15 * time.Second)
@@ -426,7 +430,9 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			if json.Unmarshal(payload, &lifecycle) == nil && lifecycle.Expired {
 				refreshStreamDeadline(w)
-				fmt.Fprint(w, "event: expired\ndata: {\"expired\":true}\n\n")
+				if _, writeErr := fmt.Fprint(w, "event: expired\ndata: {\"expired\":true}\n\n"); writeErr != nil {
+					return
+				}
 				flusher.Flush()
 				return
 			}
@@ -436,7 +442,9 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			initialRevision = event.Revision
 			refreshStreamDeadline(w)
-			fmt.Fprintf(w, "event: station\ndata: %s\n\n", payload)
+			if _, writeErr := fmt.Fprintf(w, "event: station\ndata: %s\n\n", payload); writeErr != nil {
+				return
+			}
 			flusher.Flush()
 		case payload := <-trackEvents:
 			revision, ok := trackEventRevision(payload)
@@ -445,12 +453,16 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			trackRevision = revision
 			refreshStreamDeadline(w)
-			fmt.Fprintf(w, "event: track\ndata: %s\n\n", payload)
+			if _, writeErr := fmt.Fprintf(w, "event: track\ndata: %s\n\n", payload); writeErr != nil {
+				return
+			}
 			flusher.Flush()
 		case <-heartbeat.C:
 			if _, err := a.station.Snapshot(r.Context(), id); errors.Is(err, sql.ErrNoRows) {
 				refreshStreamDeadline(w)
-				fmt.Fprint(w, "event: expired\ndata: {\"expired\":true}\n\n")
+				if _, writeErr := fmt.Fprint(w, "event: expired\ndata: {\"expired\":true}\n\n"); writeErr != nil {
+					return
+				}
 				flusher.Flush()
 				return
 			} else if err != nil {
@@ -460,11 +472,15 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 				revision > trackRevision {
 				trackRevision = revision
 				refreshStreamDeadline(w)
-				fmt.Fprintf(w, "event: track\ndata: %s\n\n", payload)
+				if _, writeErr := fmt.Fprintf(w, "event: track\ndata: %s\n\n", payload); writeErr != nil {
+					return
+				}
 				flusher.Flush()
 			}
 			refreshStreamDeadline(w)
-			fmt.Fprint(w, ": keep-alive\n\n")
+			if _, writeErr := fmt.Fprint(w, ": keep-alive\n\n"); writeErr != nil {
+				return
+			}
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
@@ -496,13 +512,13 @@ func (a *App) currentTrackStatsEvent(ctx context.Context) ([]byte, int64, error)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; operation errors are checked separately.
 	payload, err := a.trackStatsPayload(ctx, tx)
 	if err != nil {
 		return nil, 0, err
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, 0, err
+	if commitErr := tx.Commit(); commitErr != nil {
+		return nil, 0, commitErr
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -520,9 +536,13 @@ func refreshStreamDeadline(w http.ResponseWriter) {
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(30 * time.Second))
 }
 
-func writeSSE(w http.ResponseWriter, snapshot stationmodel.Snapshot) {
-	payload, _ := json.Marshal(snapshot)
-	fmt.Fprintf(w, "event: station\ndata: %s\n\n", payload)
+func writeSSE(w http.ResponseWriter, snapshot stationmodel.Snapshot) error {
+	payload, marshalErr := json.Marshal(snapshot)
+	if marshalErr != nil {
+		return marshalErr
+	}
+	_, writeErr := fmt.Fprintf(w, "event: station\ndata: %s\n\n", payload)
+	return writeErr
 }
 
 func (a *App) apiReaction(w http.ResponseWriter, r *http.Request) {
@@ -549,7 +569,7 @@ func (a *App) apiReaction(w http.ResponseWriter, r *http.Request) {
 		internalError(w)
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; operation errors are checked separately.
 	column := "liked"
 	if request.Reaction == "dislike" {
 		column = "disliked"
@@ -566,32 +586,32 @@ returning liked, disliked`, column, column, column)
 	} else {
 		dislikeIncrement = 1
 	}
-	if err := tx.QueryRowContext(r.Context(), query,
+	if scanErr3 := tx.QueryRowContext(r.Context(), query,
 		request.TrackID, likeIncrement, now, dislikeIncrement,
-		maxRevisionValue-3).Scan(&liked, &disliked); err != nil {
+		maxRevisionValue-3).Scan(&liked, &disliked); scanErr3 != nil {
 		internalError(w)
 		return
 	}
 	if request.Reaction == "dislike" {
-		if _, err := tx.ExecContext(r.Context(), `
+		if _, execContextErr := tx.ExecContext(r.Context(), `
 delete from station_rotation
 where track_id=? and station_id in (
 	select station_id from station_definitions where skip_disliked=1
-)`, request.TrackID); err != nil {
+)`, request.TrackID); execContextErr != nil {
 			internalError(w)
 			return
 		}
 	}
 	var skips int
-	if err := tx.QueryRowContext(r.Context(), "select coalesce((select skip_count from skip_counts where track_id=?), 0)", request.TrackID).Scan(&skips); err != nil {
+	if scanErr4 := tx.QueryRowContext(r.Context(), "select coalesce((select skip_count from skip_counts where track_id=?), 0)", request.TrackID).Scan(&skips); scanErr4 != nil {
 		internalError(w)
 		return
 	}
-	if err := tx.QueryRowContext(r.Context(), `
+	if scanErr5 := tx.QueryRowContext(r.Context(), `
 update app_metadata
 set value=cast(value as integer)+1
 where key='track_stats_revision' and cast(value as integer)<?
-returning cast(value as integer)`, maxRevisionValue-3).Scan(&revision); err != nil {
+returning cast(value as integer)`, maxRevisionValue-3).Scan(&revision); scanErr5 != nil {
 		internalError(w)
 		return
 	}
@@ -701,11 +721,11 @@ func (a *App) readTrackText(path string) string {
 	file, stat, err := openRootedRegular(rootHandle, root, path)
 	if err != nil || stat.Size() > 1<<20 {
 		if file != nil {
-			file.Close()
+			_ = file.Close() // Preserve the primary result while releasing resources.
 		}
 		return ""
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
 	if err != nil || len(data) > 1<<20 {
 		return ""

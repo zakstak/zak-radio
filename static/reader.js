@@ -865,7 +865,7 @@ export function initReader({ router }) {
           serverRevision < Number(localPlayback.revision || 0)
         ) {
           playback = {
-            ...(playback || {}),
+            ...playback,
             segment_index: localPlayback.segment_index,
             position: localPlayback.position,
             playing: localPlayback.playing,

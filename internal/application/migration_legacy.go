@@ -224,12 +224,19 @@ func copyStationTable(ctx context.Context, tx *sql.Tx, forceTemporary bool) erro
 }
 
 type migratedStation struct {
-	ID, Kind, OwnerHash, TrackID         string
-	Position                             float64
-	Playing, RepeatOne, Shuffle          bool
-	CreatedAt, UpdatedAt, TrackChangedAt float64
-	ExpiresAt                            *float64
-	Revision                             int64
+	ExpiresAt      *float64
+	ID             string
+	Kind           string
+	OwnerHash      string
+	TrackID        string
+	UpdatedAt      float64
+	CreatedAt      float64
+	TrackChangedAt float64
+	Position       float64
+	Revision       int64
+	RepeatOne      bool
+	Shuffle        bool
+	Playing        bool
 }
 
 func insertMigratedStation(ctx context.Context, tx *sql.Tx, s migratedStation) error {
@@ -272,21 +279,21 @@ func queryMaps(ctx context.Context, tx *sql.Tx, table string) ([]map[string]any,
 		var cid, notNull, primaryKey, hidden int
 		var name, columnType string
 		var defaultValue any
-		if err := columnRows.Scan(
+		if scanErr := columnRows.Scan(
 			&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey, &hidden,
-		); err != nil {
-			columnRows.Close()
-			return nil, err
+		); scanErr != nil {
+			_ = columnRows.Close() // Preserve the primary result while releasing resources.
+			return nil, scanErr
 		}
 		if hidden != 0 {
-			columnRows.Close()
+			_ = columnRows.Close() // Preserve the primary result while releasing resources.
 			return nil, fmt.Errorf(
 				"legacy table %q contains generated or hidden column %q", table, name)
 		}
 		admitted = append(admitted, quoteIdent(name))
 	}
-	if err := columnRows.Close(); err != nil {
-		return nil, err
+	if closeErr := columnRows.Close(); closeErr != nil {
+		return nil, closeErr
 	}
 	if len(admitted) == 0 {
 		return nil, fmt.Errorf("legacy table %q has no admitted columns", table)
@@ -296,7 +303,7 @@ func queryMaps(ctx context.Context, tx *sql.Tx, table string) ([]map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var result []map[string]any
 	for rows.Next() {
 		row, err := scanMap(rows)

@@ -68,34 +68,34 @@ func TestMigrationSourceValidatorAdmitsSupportedProductionShapedLegacyVolume(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := app.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	db, err := sql.Open("sqlite", cfg.DBPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`pragma user_version=12; pragma wal_checkpoint(truncate);`); err != nil {
-		db.Close()
-		t.Fatal(err)
+	if _, execErr := db.Exec(`pragma user_version=12; pragma wal_checkpoint(truncate);`); execErr != nil {
+		_ = db.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(execErr)
 	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr2 := db.Close(); closeErr2 != nil {
+		t.Fatal(closeErr2)
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
-		if err := os.Remove(cfg.DBPath + suffix); err != nil &&
-			!errors.Is(err, os.ErrNotExist) {
-			t.Fatal(err)
+		if removeErr := os.Remove(cfg.DBPath + suffix); removeErr != nil &&
+			!errors.Is(removeErr, os.ErrNotExist) {
+			t.Fatal(removeErr)
 		}
 	}
-	if err := validateMigrationSourceVolume(context.Background(), root); err != nil {
-		t.Fatalf("supported production-shaped legacy volume was rejected: %v", err)
+	if validateMigrationSourceVolumeErr := validateMigrationSourceVolume(context.Background(), root); validateMigrationSourceVolumeErr != nil {
+		t.Fatalf("supported production-shaped legacy volume was rejected: %v", validateMigrationSourceVolumeErr)
 	}
 	migrated, err := NewApp(cfg)
 	if err != nil {
 		t.Fatalf("admitted legacy volume did not migrate: %v", err)
 	}
-	defer migrated.Close()
+	defer func() { _ = migrated.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var version int
 	if err := migrated.db.QueryRow(`pragma user_version`).Scan(&version); err != nil {
 		t.Fatal(err)
@@ -153,17 +153,17 @@ func TestBootstrapAndBackupPreflightFreeSpaceBeforeTargetMutation(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr3 := app.Close(); closeErr3 != nil {
+		t.Fatal(closeErr3)
 	}
 	mountRoot := filepath.Join(root, "small-filesystem")
-	if err := os.Mkdir(mountRoot, 0o750); err != nil {
-		t.Fatal(err)
+	if mkdirErr := os.Mkdir(mountRoot, 0o750); mkdirErr != nil {
+		t.Fatal(mkdirErr)
 	}
-	if output, err := exec.Command(
+	if output, combinedOutputErr := exec.Command(
 		"mount", "-t", "tmpfs", "-o", "size=1m", "tmpfs", mountRoot,
-	).CombinedOutput(); err != nil {
-		t.Skipf("tmpfs mount unavailable: %v: %s", err, output)
+	).CombinedOutput(); combinedOutputErr != nil {
+		t.Skipf("tmpfs mount unavailable: %v: %s", combinedOutputErr, output)
 	}
 	t.Cleanup(func() {
 		_ = exec.Command("umount", mountRoot).Run()
@@ -173,18 +173,18 @@ func TestBootstrapAndBackupPreflightFreeSpaceBeforeTargetMutation(t *testing.T) 
 	bootstrap := exec.Command("scripts/bootstrap-volume.sh",
 		"--source", source, "--target", bootstrapTarget)
 	bootstrap.Env = append(os.Environ(), "ZAK_RADIO_SOURCE_QUIESCED=1")
-	if output, err := bootstrap.CombinedOutput(); err == nil ||
+	if output, combinedOutputErr2 := bootstrap.CombinedOutput(); combinedOutputErr2 == nil ||
 		!strings.Contains(string(output), "free bytes") {
-		t.Fatalf("bootstrap free-space preflight status=%v output=%s", err, output)
+		t.Fatalf("bootstrap free-space preflight status=%v output=%s", combinedOutputErr2, output)
 	}
-	if _, err := os.Stat(bootstrapTarget); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("failed bootstrap created target before free-space gate: %v", err)
+	if _, statErr := os.Stat(bootstrapTarget); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("failed bootstrap created target before free-space gate: %v", statErr)
 	}
 
 	releasePackage := filepath.Join(root, "release-package")
-	if output, err := exec.Command("scripts/prepare-kiln-package.sh",
-		"--output", releasePackage).CombinedOutput(); err != nil {
-		t.Fatalf("prepare release package: %v\n%s", err, output)
+	if output, combinedOutputErr3 := exec.Command("scripts/prepare-kiln-package.sh",
+		"--output", releasePackage).CombinedOutput(); combinedOutputErr3 != nil {
+		t.Fatalf("prepare release package: %v\n%s", combinedOutputErr3, output)
 	}
 	releaseBytes, err := os.ReadFile(filepath.Join(releasePackage, "RELEASE"))
 	if err != nil {
@@ -217,8 +217,8 @@ func TestStoppedVolumeValidatorRejectsReadyReaderWithoutAudioPath(t *testing.T) 
 		t.Fatal(err)
 	}
 	seedReaderItem(t, app, "missing-ready-audio")
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr4 := app.Close(); closeErr4 != nil {
+		t.Fatal(closeErr4)
 	}
 	db, err := sql.Open("sqlite", cfg.DBPath)
 	if err != nil {
@@ -227,7 +227,7 @@ func TestStoppedVolumeValidatorRejectsReadyReaderWithoutAudioPath(t *testing.T) 
 	if _, err := db.Exec(`
 update reader_segments set audio_path=null
 where item_id='missing-ready-audio' and status='ready'`); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
@@ -237,7 +237,7 @@ where item_id='missing-ready-audio' and status='ready'`); err != nil {
 		t.Fatal("stopped-volume validator accepted ready Reader audio without a path")
 	}
 	if reopened, err := NewApp(cfg); err == nil {
-		reopened.Close()
+		_ = reopened.Close() // Preserve the primary result while releasing resources.
 		t.Fatal("startup accepted ready Reader audio without a path")
 	}
 }
@@ -253,22 +253,22 @@ func TestStartupRejectsMissingOrMalformedTrackStatsRevision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := app.Close(); err != nil {
-				t.Fatal(err)
+			if closeErr5 := app.Close(); closeErr5 != nil {
+				t.Fatal(closeErr5)
 			}
 			db, err := sql.Open("sqlite", cfg.DBPath)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if _, err := db.Exec(mutation); err != nil {
-				db.Close()
+				_ = db.Close() // Preserve the primary result while releasing resources.
 				t.Fatal(err)
 			}
 			if err := db.Close(); err != nil {
 				t.Fatal(err)
 			}
 			if reopened, err := NewApp(cfg); err == nil {
-				reopened.Close()
+				_ = reopened.Close() // Preserve the primary result while releasing resources.
 				t.Fatal("startup accepted an unusable track-stat revision")
 			}
 		})
@@ -308,33 +308,33 @@ func TestReaderPathsRebaseAcrossRetainedVolumeMove(t *testing.T) {
 	}
 	seedReaderItem(t, app, "reader-move")
 	oldStorage := filepath.Join(string(filepath.Separator), "retired-mount", "reader-move")
-	if _, err := app.db.Exec(`
+	if _, execErr2 := app.db.Exec(`
 update reader_items
 set storage_dir=?, source_path=?, normalized_text_path=?, manifest_path=?
 where id='reader-move'`,
 		oldStorage, filepath.Join(oldStorage, "source.html"), filepath.Join(oldStorage, "source.html"),
-		filepath.Join(oldStorage, "manifest.json")); err != nil {
-		t.Fatal(err)
+		filepath.Join(oldStorage, "manifest.json")); execErr2 != nil {
+		t.Fatal(execErr2)
 	}
-	if _, err := app.db.Exec(`
+	if _, execErr3 := app.db.Exec(`
 update reader_segments set audio_path=? where item_id='reader-move'`,
-		filepath.Join(oldStorage, "audio", "0.mp3")); err != nil {
-		t.Fatal(err)
+		filepath.Join(oldStorage, "audio", "0.mp3")); execErr3 != nil {
+		t.Fatal(execErr3)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr6 := app.Close(); closeErr6 != nil {
+		t.Fatal(closeErr6)
 	}
 	reopened, err := NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var storage, source, audio string
-	if err := reopened.db.QueryRow(`
+	if scanErr := reopened.db.QueryRow(`
 select i.storage_dir, i.source_path, s.audio_path
 from reader_items i join reader_segments s on s.item_id=i.id
-where i.id='reader-move'`).Scan(&storage, &source, &audio); err != nil {
-		t.Fatal(err)
+where i.id='reader-move'`).Scan(&storage, &source, &audio); scanErr != nil {
+		t.Fatal(scanErr)
 	}
 	for _, path := range []string{storage, source, audio} {
 		if !containedPath(path, cfg.ReaderLibrary) {
@@ -369,33 +369,33 @@ func TestReaderPathsRebasePreservesNestedHierarchy(t *testing.T) {
 	source := seedReaderItem(t, app, "reader-nested")
 	originalStorage := filepath.Dir(source)
 	nestedStorage := filepath.Join(cfg.ReaderLibrary, "collection", "reader-nested")
-	if err := os.MkdirAll(filepath.Dir(nestedStorage), 0o750); err != nil {
-		t.Fatal(err)
+	if mkdirAllErr := os.MkdirAll(filepath.Dir(nestedStorage), 0o750); mkdirAllErr != nil {
+		t.Fatal(mkdirAllErr)
 	}
-	if err := os.Rename(originalStorage, nestedStorage); err != nil {
-		t.Fatal(err)
+	if renameErr := os.Rename(originalStorage, nestedStorage); renameErr != nil {
+		t.Fatal(renameErr)
 	}
 	legacyStorage := filepath.Join(string(filepath.Separator), "retired", "reader-library", "collection", "reader-nested")
-	if _, err := app.db.Exec(`
+	if _, execErr4 := app.db.Exec(`
 update reader_items
 set storage_dir=?, source_path=?, normalized_text_path=?, manifest_path=?
 where id='reader-nested'`,
 		legacyStorage, filepath.Join(legacyStorage, "source.html"), filepath.Join(legacyStorage, "source.html"),
-		filepath.Join(legacyStorage, "manifest.json")); err != nil {
-		t.Fatal(err)
+		filepath.Join(legacyStorage, "manifest.json")); execErr4 != nil {
+		t.Fatal(execErr4)
 	}
-	if _, err := app.db.Exec("update reader_segments set audio_path=? where item_id='reader-nested'",
-		filepath.Join(legacyStorage, "audio", "0.mp3")); err != nil {
-		t.Fatal(err)
+	if _, execErr5 := app.db.Exec("update reader_segments set audio_path=? where item_id='reader-nested'",
+		filepath.Join(legacyStorage, "audio", "0.mp3")); execErr5 != nil {
+		t.Fatal(execErr5)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr7 := app.Close(); closeErr7 != nil {
+		t.Fatal(closeErr7)
 	}
 	reopened, err := NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var got string
 	if err := reopened.db.QueryRow("select storage_dir from reader_items where id='reader-nested'").Scan(&got); err != nil {
 		t.Fatal(err)
@@ -414,27 +414,27 @@ func TestReaderPathsRebaseMixedLegacyFileRoots(t *testing.T) {
 	seedReaderItem(t, app, "reader-mixed")
 	storage := filepath.Join(cfg.ReaderLibrary, "reader-mixed")
 	normalized := filepath.Join(storage, "normalized.md")
-	if err := os.WriteFile(normalized, []byte("Reader text"), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr := os.WriteFile(normalized, []byte("Reader text"), 0o640); writeFileErr != nil {
+		t.Fatal(writeFileErr)
 	}
 	legacyStorage := filepath.Join(
 		string(filepath.Separator), "home", "agent", "Recovered", "suno-player",
 		"reader-library", "reader-mixed")
-	if _, err := app.db.Exec(`
+	if _, execErr6 := app.db.Exec(`
 update reader_items set normalized_text_path=?, manifest_path=?
 where id='reader-mixed'`,
 		filepath.Join(legacyStorage, "normalized.md"),
-		filepath.Join(legacyStorage, "manifest.json")); err != nil {
-		t.Fatal(err)
+		filepath.Join(legacyStorage, "manifest.json")); execErr6 != nil {
+		t.Fatal(execErr6)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr8 := app.Close(); closeErr8 != nil {
+		t.Fatal(closeErr8)
 	}
 	reopened, err := NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var gotNormalized, gotManifest string
 	if err := reopened.db.QueryRow(`
 select normalized_text_path, manifest_path from reader_items where id='reader-mixed'`).
@@ -457,26 +457,26 @@ func TestReaderPathRebaseRejectsDestinationCollisionWithoutMutation(t *testing.T
 	seedReaderItem(t, app, "reader-b")
 	legacyRoot := filepath.Join(string(filepath.Separator), "retired", "reader-library")
 	legacyStorage := filepath.Join(legacyRoot, "shared")
-	if _, err := app.db.Exec("update app_metadata set value=? where key='reader_root'", legacyRoot); err != nil {
-		t.Fatal(err)
+	if _, execErr7 := app.db.Exec("update app_metadata set value=? where key='reader_root'", legacyRoot); execErr7 != nil {
+		t.Fatal(execErr7)
 	}
 	for _, id := range []string{"reader-a", "reader-b"} {
-		if _, err := app.db.Exec("update reader_items set storage_dir=? where id=?", legacyStorage, id); err != nil {
-			t.Fatal(err)
+		if _, execErr8 := app.db.Exec("update reader_items set storage_dir=? where id=?", legacyStorage, id); execErr8 != nil {
+			t.Fatal(execErr8)
 		}
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr9 := app.Close(); closeErr9 != nil {
+		t.Fatal(closeErr9)
 	}
-	if reopened, err := NewApp(cfg); err == nil {
-		reopened.Close()
+	if reopened, newAppErr := NewApp(cfg); newAppErr == nil {
+		_ = reopened.Close() // Preserve the primary result while releasing resources.
 		t.Fatal("Reader destination collision was accepted")
 	}
 	db, err := sql.Open("sqlite", cfg.DBPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var count int
 	if err := db.QueryRow("select count(*) from reader_items where storage_dir=?", legacyStorage).Scan(&count); err != nil {
 		t.Fatal(err)
@@ -797,7 +797,7 @@ func TestStartupRejectsHardLinkedAndOverBudgetRetainedTrees(t *testing.T) {
 			t.Fatal(err)
 		}
 		if app, err := NewApp(cfg); err == nil {
-			app.Close()
+			_ = app.Close() // Preserve the primary result while releasing resources.
 			t.Fatal("startup accepted an outward hard link")
 		}
 		info, err := os.Stat(external)
@@ -815,7 +815,7 @@ func TestStartupRejectsHardLinkedAndOverBudgetRetainedTrees(t *testing.T) {
 			t.Fatal(err)
 		}
 		if app, err := NewApp(cfg); err == nil {
-			app.Close()
+			_ = app.Close() // Preserve the primary result while releasing resources.
 			t.Fatal("startup accepted an over-budget retained tree")
 		}
 	})
@@ -872,8 +872,8 @@ func TestTemporaryStationIDsUseModernEntropyAndRejectMalformedInput(t *testing.T
 
 func TestReaderImagesRejectOversizedAndNonRegularSource(t *testing.T) {
 	for _, test := range []struct {
-		name    string
 		replace func(string) error
+		name    string
 	}{
 		{
 			name: "oversized",
@@ -925,26 +925,26 @@ func TestReaderImagesAreCachedAndInvalidatedBySourceChange(t *testing.T) {
 	if err != nil || len(second) != 1 || len(app.readerImages) != 1 {
 		t.Fatalf("cached images=%#v cache=%d err=%v", second, len(app.readerImages), err)
 	}
-	if err := os.Remove(filepath.Join(imageDir, "000.png")); err != nil {
-		t.Fatal(err)
+	if removeErr2 := os.Remove(filepath.Join(imageDir, "000.png")); removeErr2 != nil {
+		t.Fatal(removeErr2)
 	}
 	missing, err := app.getImages(context.Background(), "reader-image-cache")
 	if err != nil || len(missing) != 0 {
 		t.Fatalf("artifact deletion images=%#v err=%v", missing, err)
 	}
-	if err := os.WriteFile(filepath.Join(imageDir, "000.png"), []byte("image-zero"), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr2 := os.WriteFile(filepath.Join(imageDir, "000.png"), []byte("image-zero"), 0o640); writeFileErr2 != nil {
+		t.Fatal(writeFileErr2)
 	}
 	restored, err := app.getImages(context.Background(), "reader-image-cache")
 	if err != nil || len(restored) != 1 {
 		t.Fatalf("artifact creation images=%#v err=%v", restored, err)
 	}
-	if err := os.WriteFile(filepath.Join(imageDir, "001.png"), []byte("image-one"), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr3 := os.WriteFile(filepath.Join(imageDir, "001.png"), []byte("image-one"), 0o640); writeFileErr3 != nil {
+		t.Fatal(writeFileErr3)
 	}
-	if err := os.WriteFile(source,
-		[]byte(`<img src="zero.png" alt="zero"><img src="one.png" alt="one">`), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr4 := os.WriteFile(source,
+		[]byte(`<img src="zero.png" alt="zero"><img src="one.png" alt="one">`), 0o640); writeFileErr4 != nil {
+		t.Fatal(writeFileErr4)
 	}
 	updated, err := app.getImages(context.Background(), "reader-image-cache")
 	if err != nil || len(updated) != 2 || len(app.readerImages) != 1 {
@@ -980,7 +980,7 @@ func TestReaderIDAdmissionMatchesPlaybackRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if reopened, err := NewApp(cfg); err == nil {
-		reopened.Close()
+		_ = reopened.Close() // Preserve the primary result while releasing resources.
 		t.Fatal("startup admitted a Reader item whose id is rejected by playback routes")
 	}
 }
@@ -1113,7 +1113,7 @@ func TestStreamAndRateLimiterStateIsBounded(t *testing.T) {
 	if !ok {
 		t.Fatal("first content stream was rejected")
 	}
-	if _, ok := content.Acquire("reader"); ok {
+	if _, okLocal34 := content.Acquire("reader"); okLocal34 {
 		t.Fatal("per-client content stream limit was ignored")
 	}
 	release()

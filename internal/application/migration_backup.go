@@ -28,38 +28,38 @@ func backupBeforeMigration(
 	if err != nil {
 		return "", fmt.Errorf("fingerprint pre-migration database: %w", err)
 	}
-	if backup, found, err := existingProtectedBackup(
+	if backup, found, existingProtectedBackupErr := existingProtectedBackup(
 		ctx, path, version, sourceSHA256,
-	); err != nil {
-		return "", err
+	); existingProtectedBackupErr != nil {
+		return "", existingProtectedBackupErr
 	} else if found {
 		return backup, nil
 	}
 	backup := fmt.Sprintf("%s.schema-v%d-%s.bak", path, version, sourceSHA256)
-	if info, err := os.Lstat(backup); err == nil {
+	if info, lstatErr := os.Lstat(backup); lstatErr == nil {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return "", fmt.Errorf("existing migration backup is unsafe")
 		}
-		backupSHA256, err := validateMigrationBackup(ctx, backup)
-		if err != nil {
-			return "", err
+		backupSHA256, validateMigrationBackupErr := validateMigrationBackup(ctx, backup)
+		if validateMigrationBackupErr != nil {
+			return "", validateMigrationBackupErr
 		}
 		if backupSHA256 != sourceSHA256 {
 			return "", fmt.Errorf(
 				"existing migration backup is not an exact copy of the live source")
 		}
-		if err := writeMigrationBackupReceipt(path, migrationBackupReceipt{
+		if writeMigrationBackupReceiptErr := writeMigrationBackupReceipt(path, migrationBackupReceipt{
 			TargetVersion: currentSchemaVersion,
 			SourceVersion: version,
 			SourceSHA256:  sourceSHA256,
 			Backup:        backup,
 			BackupSHA256:  backupSHA256,
-		}); err != nil {
-			return "", err
+		}); writeMigrationBackupReceiptErr != nil {
+			return "", writeMigrationBackupReceiptErr
 		}
 		return backup, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", err
+	} else if !errors.Is(lstatErr, os.ErrNotExist) {
+		return "", lstatErr
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -73,8 +73,8 @@ func backupBeforeMigration(
 			return "", statErr
 		}
 	}
-	if err := ensureMigrationHeadroom(path, projected, true); err != nil {
-		return "", err
+	if ensureMigrationHeadroomErr := ensureMigrationHeadroom(path, projected, true); ensureMigrationHeadroomErr != nil {
+		return "", ensureMigrationHeadroomErr
 	}
 	usage, err := inspectRetainedTree(retainedRoot)
 	if err != nil {
@@ -90,31 +90,31 @@ func backupBeforeMigration(
 		return "", err
 	}
 	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
-		return "", err
+	defer func() { _ = os.Remove(temporaryPath) }() // Best-effort cleanup; operation errors are checked separately.
+	if chmodErr := temporary.Chmod(0o600); chmodErr != nil {
+		_ = temporary.Close() // Preserve the primary result while releasing resources.
+		return "", chmodErr
 	}
 	source, err := os.Open(path)
 	if err != nil {
-		temporary.Close()
+		_ = temporary.Close() // Preserve the primary result while releasing resources.
 		return "", err
 	}
-	if _, err := io.Copy(temporary, source); err != nil {
-		source.Close()
-		temporary.Close()
-		return "", fmt.Errorf("copy pre-migration database: %w", err)
+	if _, copyErr := io.Copy(temporary, source); copyErr != nil {
+		_ = source.Close()    // Preserve the primary result while releasing resources.
+		_ = temporary.Close() // Preserve the primary result while releasing resources.
+		return "", fmt.Errorf("copy pre-migration database: %w", copyErr)
 	}
-	if err := source.Close(); err != nil {
-		temporary.Close()
-		return "", err
+	if closeErr := source.Close(); closeErr != nil {
+		_ = temporary.Close() // Preserve the primary result while releasing resources.
+		return "", closeErr
 	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return "", err
+	if syncErr := temporary.Sync(); syncErr != nil {
+		_ = temporary.Close() // Preserve the primary result while releasing resources.
+		return "", syncErr
 	}
-	if err := temporary.Close(); err != nil {
-		return "", err
+	if closeErr2 := temporary.Close(); closeErr2 != nil {
+		return "", closeErr2
 	}
 	temporaryInfo, err := os.Lstat(temporaryPath)
 	if err != nil || !temporaryInfo.Mode().IsRegular() {
@@ -161,11 +161,11 @@ func backupBeforeMigration(
 }
 
 type migrationBackupReceipt struct {
-	TargetVersion int    `json:"target_version"`
-	SourceVersion int    `json:"source_version"`
 	SourceSHA256  string `json:"source_sha256"`
 	Backup        string `json:"backup"`
 	BackupSHA256  string `json:"backup_sha256"`
+	TargetVersion int    `json:"target_version"`
+	SourceVersion int    `json:"source_version"`
 }
 
 func migrationBackupReceiptPath(path string) string {
@@ -231,10 +231,10 @@ func validateMigrationBackup(ctx context.Context, backup string) (string, error)
 		return "", fmt.Errorf("pre-migration backup is unsafe or oversized")
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
-		if _, err := os.Lstat(backup + suffix); err == nil {
+		if _, lstatErr2 := os.Lstat(backup + suffix); lstatErr2 == nil {
 			return "", fmt.Errorf("pre-migration backup has an unbound SQLite sidecar")
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", err
+		} else if !errors.Is(lstatErr2, os.ErrNotExist) {
+			return "", lstatErr2
 		}
 	}
 	check, err := sql.Open("sqlite", (&url.URL{
@@ -243,10 +243,10 @@ func validateMigrationBackup(ctx context.Context, backup string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("open pre-migration backup: %w", err)
 	}
-	defer check.Close()
+	defer func() { _ = check.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var result string
-	if err := check.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&result); err != nil || result != "ok" {
-		return "", fmt.Errorf("validate pre-migration backup: result=%q err=%w", result, err)
+	if scanErr := check.QueryRowContext(ctx, "PRAGMA quick_check").Scan(&result); scanErr != nil || result != "ok" {
+		return "", fmt.Errorf("validate pre-migration backup: result=%q err=%w", result, scanErr)
 	}
 	digest, err := fileSHA256(backup)
 	if err != nil {
@@ -266,17 +266,17 @@ func writeMigrationBackupReceipt(path string, receipt migrationBackupReceipt) er
 		return err
 	}
 	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
+	defer func() { _ = os.Remove(temporaryPath) }() // Best-effort cleanup; operation errors are checked separately.
 	if err := temporary.Chmod(0o600); err != nil {
-		temporary.Close()
+		_ = temporary.Close() // Preserve the primary result while releasing resources.
 		return err
 	}
 	if _, err := temporary.Write(append(data, '\n')); err != nil {
-		temporary.Close()
+		_ = temporary.Close() // Preserve the primary result while releasing resources.
 		return err
 	}
 	if err := temporary.Sync(); err != nil {
-		temporary.Close()
+		_ = temporary.Close() // Preserve the primary result while releasing resources.
 		return err
 	}
 	if err := temporary.Close(); err != nil {
@@ -305,7 +305,7 @@ func clearMigrationBackupReceipt(ctx context.Context, path string) error {
 		return err
 	}
 	entries, err := handle.ReadDir(maxRetainedVolumeEntries + 1)
-	handle.Close()
+	_ = handle.Close() // Preserve the primary result while releasing resources.
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
@@ -346,7 +346,7 @@ func syncRegularFile(path string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	return file.Sync()
 }
 
@@ -355,6 +355,6 @@ func syncDirectory(path string) error {
 	if err != nil {
 		return err
 	}
-	defer directory.Close()
+	defer func() { _ = directory.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	return directory.Sync()
 }

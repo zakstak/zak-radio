@@ -20,35 +20,35 @@ import (
 )
 
 type App struct {
-	cfg              appconfig.Config
-	db               *sql.DB
-	catalog          catalogmodel.Catalog
-	station          *StationService
-	events           *appevents.Broadcaster
 	staticFS         http.Handler
 	ctx              context.Context
-	cancel           context.CancelFunc
-	wg               sync.WaitGroup
-	readerImagesMu   sync.Mutex
-	readerImages     map[string]readerImageCache
-	readerImageBytes int64
-	readerParses     chan struct{}
-	readerParseCalls map[string]*readerParseCall
-	trackReads       chan struct{}
-	trackStatsMu     sync.RWMutex
-	trackStatsCache  []byte
-	trackStatsRev    int64
-	integrityMu      sync.RWMutex
-	integrity        map[string]bool
-	catalogDigests   []retainedDigest
-	auditMu          sync.Mutex
-	auditIndex       int
-	digestFailures   map[string]string
-	archiveRoot      *os.Root
-	metadataRoot     *os.Root
-	readerRoot       *os.Root
 	staticRoot       *os.Root
+	readerParseCalls map[string]*readerParseCall
+	events           *appevents.Broadcaster
+	metadataRoot     *os.Root
+	db               *sql.DB
+	cancel           context.CancelFunc
+	archiveRoot      *os.Root
+	readerRoot       *os.Root
+	readerImages     map[string]readerImageCache
+	trackReads       chan struct{}
+	readerParses     chan struct{}
+	station          *StationService
 	timedLyricsRoot  *os.Root
+	digestFailures   map[string]string
+	integrity        map[string]bool
+	catalog          catalogmodel.Catalog
+	trackStatsCache  []byte
+	catalogDigests   []retainedDigest
+	cfg              appconfig.Config
+	wg               sync.WaitGroup
+	trackStatsRev    int64
+	readerImageBytes int64
+	auditIndex       int
+	integrityMu      sync.RWMutex
+	trackStatsMu     sync.RWMutex
+	readerImagesMu   sync.Mutex
+	auditMu          sync.Mutex
 }
 
 func NewApp(cfg appconfig.Config) (*App, error) {
@@ -56,14 +56,14 @@ func NewApp(cfg appconfig.Config) (*App, error) {
 	if cfg, err = cfg.Normalized(); err != nil {
 		return nil, err
 	}
-	if err := validateDataPaths(cfg); err != nil {
-		return nil, err
+	if validateDataPathsErr := validateDataPaths(cfg); validateDataPathsErr != nil {
+		return nil, validateDataPathsErr
 	}
-	if err := cleanupMigrationTemporaryFiles(cfg.DBPath); err != nil {
-		return nil, fmt.Errorf("clean interrupted migration artifacts: %w", err)
+	if cleanupMigrationTemporaryFilesErr := cleanupMigrationTemporaryFiles(cfg.DBPath); cleanupMigrationTemporaryFilesErr != nil {
+		return nil, fmt.Errorf("clean interrupted migration artifacts: %w", cleanupMigrationTemporaryFilesErr)
 	}
-	if err := validateRetainedTreeBudget(cfg.MetadataRoot); err != nil {
-		return nil, fmt.Errorf("validate retained-volume budget: %w", err)
+	if validateRetainedTreeBudgetErr := validateRetainedTreeBudget(cfg.MetadataRoot); validateRetainedTreeBudgetErr != nil {
+		return nil, fmt.Errorf("validate retained-volume budget: %w", validateRetainedTreeBudgetErr)
 	}
 	archiveRoot, err := os.OpenRoot(cfg.Archive)
 	if err != nil {
@@ -71,42 +71,42 @@ func NewApp(cfg appconfig.Config) (*App, error) {
 	}
 	metadataRoot, err := os.OpenRoot(cfg.MetadataRoot)
 	if err != nil {
-		archiveRoot.Close()
+		_ = archiveRoot.Close() // Preserve the primary result while releasing resources.
 		return nil, err
 	}
 	readerRoot, err := os.OpenRoot(cfg.ReaderLibrary)
 	if err != nil {
-		archiveRoot.Close()
-		metadataRoot.Close()
+		_ = archiveRoot.Close()  // Preserve the primary result while releasing resources.
+		_ = metadataRoot.Close() // Preserve the primary result while releasing resources.
 		return nil, err
 	}
 	staticRoot, err := os.OpenRoot(cfg.StaticDir)
 	if err != nil {
-		archiveRoot.Close()
-		metadataRoot.Close()
-		readerRoot.Close()
+		_ = archiveRoot.Close()  // Preserve the primary result while releasing resources.
+		_ = metadataRoot.Close() // Preserve the primary result while releasing resources.
+		_ = readerRoot.Close()   // Preserve the primary result while releasing resources.
 		return nil, err
 	}
 	var timedLyricsRoot *os.Root
 	if cfg.TimedLyricsRoot != "" {
 		timedLyricsRoot, err = os.OpenRoot(cfg.TimedLyricsRoot)
 		if err != nil {
-			archiveRoot.Close()
-			metadataRoot.Close()
-			readerRoot.Close()
-			staticRoot.Close()
+			_ = archiveRoot.Close()  // Preserve the primary result while releasing resources.
+			_ = metadataRoot.Close() // Preserve the primary result while releasing resources.
+			_ = readerRoot.Close()   // Preserve the primary result while releasing resources.
+			_ = staticRoot.Close()   // Preserve the primary result while releasing resources.
 			return nil, err
 		}
 	}
 	rootsOpen := true
 	defer func() {
 		if rootsOpen {
-			archiveRoot.Close()
-			metadataRoot.Close()
-			readerRoot.Close()
-			staticRoot.Close()
+			_ = archiveRoot.Close()  // Preserve the primary result while releasing resources.
+			_ = metadataRoot.Close() // Preserve the primary result while releasing resources.
+			_ = readerRoot.Close()   // Preserve the primary result while releasing resources.
+			_ = staticRoot.Close()   // Preserve the primary result while releasing resources.
 			if timedLyricsRoot != nil {
-				timedLyricsRoot.Close()
+				_ = timedLyricsRoot.Close() // Preserve the primary result while releasing resources.
 			}
 		}
 	}()
@@ -157,41 +157,41 @@ func NewApp(cfg appconfig.Config) (*App, error) {
 		return nil, err
 	}
 	if err := databaseStructuralIntegrity(ctx, db); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		cancel()
 		return nil, fmt.Errorf("validate retained database: %w", err)
 	}
 	if err := retainedAdmissionIntegrity(ctx, db); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		cancel()
 		return nil, fmt.Errorf("validate retained-data admission: %w", err)
 	}
 	if err := reconcileReaderStorage(
 		ctx, db, cfg.DBPath, cfg.MetadataRoot, cfg.ReaderLibrary,
 	); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		cancel()
 		return nil, err
 	}
 	if err := clearMigrationBackupReceipt(ctx, cfg.DBPath); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		cancel()
 		return nil, fmt.Errorf("finalize protected migration backup: %w", err)
 	}
 	if err := readerRelationalIntegrity(ctx, db); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		cancel()
 		return nil, fmt.Errorf("validate retained Reader relationships: %w", err)
 	}
 	events := appevents.NewBroadcaster()
 	service := NewStationService(db, catalog, events)
 	if err := service.EnsureMain(ctx); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		cancel()
 		return nil, err
 	}
 	if err := service.Advance(ctx); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		cancel()
 		return nil, err
 	}
