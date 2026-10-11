@@ -10,7 +10,7 @@ in this repository are the product source of truth. See
 
 ## Run locally
 
-Install Go 1.26.8+ and Node 24+. Build the browser assets:
+Install Go 1.27.2+ and Node 24+. Build the browser assets:
 
 ```bash
 npm ci
