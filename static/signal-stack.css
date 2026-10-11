@@ -539,39 +539,58 @@ a.zs-service-switcher__link:hover {
   content: "";
 }
 
+.zs-status:has(> .zs-status__dot)::before {
+  content: none;
+}
+
 .zs-status[data-state="healthy"],
-.zs-status[data-state="current"] {
+.zs-status[data-state="current"],
+.zs-status[data-state="connected"] {
   color: var(--zs-success);
 }
 
 .zs-status[data-state="healthy"]::before,
 .zs-status[data-state="current"]::before,
+.zs-status[data-state="connected"]::before,
 .zs-status[data-state="healthy"] .zs-status__dot,
-.zs-status[data-state="current"] .zs-status__dot {
+.zs-status[data-state="current"] .zs-status__dot,
+.zs-status[data-state="connected"] .zs-status__dot {
   background: var(--zs-success);
 }
 
 .zs-status[data-state="warning"],
-.zs-status[data-state="stale"] {
+.zs-status[data-state="stale"],
+.zs-status[data-state="degraded"],
+.zs-status[data-state="partial"] {
   color: var(--zs-warning);
 }
 
 .zs-status[data-state="warning"]::before,
 .zs-status[data-state="stale"]::before,
+.zs-status[data-state="degraded"]::before,
+.zs-status[data-state="partial"]::before,
 .zs-status[data-state="warning"] .zs-status__dot,
-.zs-status[data-state="stale"] .zs-status__dot {
+.zs-status[data-state="stale"] .zs-status__dot,
+.zs-status[data-state="degraded"] .zs-status__dot,
+.zs-status[data-state="partial"] .zs-status__dot {
   background: var(--zs-warning);
 }
 
 .zs-status[data-state="danger"],
-.zs-status[data-state="failed"] {
+.zs-status[data-state="failed"],
+.zs-status[data-state="forbidden"],
+.zs-status[data-state="disconnected"] {
   color: var(--zs-danger);
 }
 
 .zs-status[data-state="danger"]::before,
 .zs-status[data-state="failed"]::before,
+.zs-status[data-state="forbidden"]::before,
+.zs-status[data-state="disconnected"]::before,
 .zs-status[data-state="danger"] .zs-status__dot,
-.zs-status[data-state="failed"] .zs-status__dot {
+.zs-status[data-state="failed"] .zs-status__dot,
+.zs-status[data-state="forbidden"] .zs-status__dot,
+.zs-status[data-state="disconnected"] .zs-status__dot {
   background: var(--zs-danger);
 }
 

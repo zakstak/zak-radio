@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "build:css": "tailwindcss -i ./static/styles.tailwind.css -o ./static/styles.css --minify",
-    "watch:css": "tailwindcss -i ./static/styles.tailwind.css -o ./static/styles.css --watch"
+    "watch:css": "tailwindcss -i ./static/styles.tailwind.css -o ./static/styles.css --watch",
+    "test": "node --test scripts/service-switcher.test.js"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",

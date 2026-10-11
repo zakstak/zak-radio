@@ -13,6 +13,14 @@ const ENTRY_KEYS = ["enabled", "href", "id", "name", "order", "role"];
 const ID_PATTERN = /^[a-z][a-z0-9-]{0,39}$/;
 const HOST_PATTERN =
   /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.home\.zakstak\.com$/;
+const FLEET_FALLBACK = Object.freeze({
+  id: "fleet",
+  name: "Fleet",
+  role: "Infrastructure status and current evidence",
+  href: "https://fleet.home.zakstak.com/",
+  order: 0,
+  enabled: true,
+});
 
 function boundedText(value, maximum) {
   return (
@@ -160,6 +168,15 @@ export async function loadServiceSwitcher(
     status.hidden = true;
     return true;
   } catch {
+    if (!list.querySelector('a[href="https://fleet.home.zakstak.com/"]')) {
+      list.append(
+        serviceLink(
+          root.ownerDocument,
+          FLEET_FALLBACK,
+          root.dataset.currentService || "",
+        ),
+      );
+    }
     root.dataset.directoryState = "fallback";
     status.textContent = "Apps unavailable. Open Fleet to browse.";
     return false;
