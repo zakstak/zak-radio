@@ -10,7 +10,7 @@ in this repository are the product source of truth. See
 
 ## Run locally
 
-Install Go 1.26.8+ and Node 24+. Build the browser assets:
+Install Go 1.27.2+ and Node 24+. Build the browser assets:
 
 ```bash
 npm ci
@@ -55,11 +55,12 @@ Local endpoints:
 ```bash
 go build ./cmd/zak-radio
 go test -race ./cmd/... ./internal/...
+npm test
 ```
 
-Pragma provides formatting, lint, secret scanning, and pre-push Go and Python
-checks. Install [Pragma](https://github.com/zakstak/pragma) from its latest main
-branch, then configure this checkout:
+Pragma provides formatting, lint, secret scanning, and pre-push Go, Node, and
+Python checks. Install [Pragma](https://github.com/zakstak/pragma) from its
+latest main branch, then configure this checkout:
 
 ```bash
 ~/.pragma/install.sh --agent "$PWD"
@@ -74,6 +75,14 @@ scripts against isolated fixtures.
 
 `static/styles.tailwind.css` is the editable Tailwind v4 source.
 `static/styles.css` is generated, served by the application, and must match it.
+
+`static/signal-stack.css` is vendored byte-for-byte from Saga Product commit
+[`15d427e`](https://github.com/zakstak/saga-product/commit/15d427e4944d3b209530dfa34a65a15d5b074886).
+Its SHA-256 is
+`93259cde1c74b2bb619d5259ee4aac8de4d70b7809179f9457ca0f8be8800c88`. The service
+switcher preserves Zak Radio's compact names-only launcher while sharing the
+canonical directory validation and reliable Fleet fallback. `npm test` checks
+that adaptation and failed-directory refresh behavior.
 
 For a smoke test, use your development catalog and Reader counts:
 
