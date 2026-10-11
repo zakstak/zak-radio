@@ -63,16 +63,16 @@ func loadCatalog(
 	if timedLyricsRoot != nil {
 		subjectsPath := filepath.Join(cfg.TimedLyricsRoot, timedLyricsSubjects)
 		if safeOptionalFile(subjectsPath, cfg.TimedLyricsRoot) {
-			subjectsData, err := readRootBytes(
+			subjectsData, readRootBytesErr := readRootBytes(
 				timedLyricsRoot, cfg.TimedLyricsRoot,
 				subjectsPath, maxCatalogJSONBytes,
 			)
-			if err != nil {
-				return catalogmodel.Catalog{}, fmt.Errorf("load immutable subjects: %w", err)
+			if readRootBytesErr != nil {
+				return catalogmodel.Catalog{}, fmt.Errorf("load immutable subjects: %w", readRootBytesErr)
 			}
-			subjects, err := decodeCuratedFile(subjectsData)
-			if err != nil {
-				return catalogmodel.Catalog{}, fmt.Errorf("load immutable subjects: %w", err)
+			subjects, readRootBytesErr := decodeCuratedFile(subjectsData)
+			if readRootBytesErr != nil {
+				return catalogmodel.Catalog{}, fmt.Errorf("load immutable subjects: %w", readRootBytesErr)
 			}
 			for id, subject := range subjects.Tracks {
 				current := curated.Tracks[id]
@@ -111,7 +111,7 @@ func loadCatalog(
 		duration := asFloat(item.Duration)
 		audioFile, audioInfo, audioErr := openRootedRegular(archiveRoot, cfg.Archive, audio)
 		if audioErr == nil {
-			audioFile.Close()
+			_ = audioFile.Close() // Preserve the primary result while releasing resources.
 		}
 		if !containedPath(audio, cfg.Archive) || audioErr != nil {
 			return catalogmodel.Catalog{}, errorsForCatalog(item.ID, "audio.mp3 is missing or outside archive")
@@ -163,7 +163,7 @@ func loadCatalog(
 			if coverErr != nil {
 				return catalogmodel.Catalog{}, errorsForCatalog(item.ID, "cover is missing or outside its retained root")
 			}
-			coverFile.Close()
+			_ = coverFile.Close() // Preserve the primary result while releasing resources.
 			coverBytes = coverInfo.Size()
 			if coverBytes <= 0 || coverBytes > maxAudioArtifactBytes {
 				return catalogmodel.Catalog{}, errorsForCatalog(item.ID, "cover is empty or oversized")
@@ -246,7 +246,7 @@ func loadCatalog(
 		return catalogmodel.Catalog{}, errorsForCatalog("", "no playable tracks")
 	}
 	sort.Slice(tracks, func(i, j int) bool {
-		if strings.ToLower(tracks[i].Group) != strings.ToLower(tracks[j].Group) {
+		if !strings.EqualFold(tracks[i].Group, tracks[j].Group) {
 			return strings.ToLower(tracks[i].Group) < strings.ToLower(tracks[j].Group)
 		}
 		if tracks[i].CreatedAt != tracks[j].CreatedAt {
@@ -414,7 +414,7 @@ func readRootBytes(rootHandle *os.Root, root, path string, maximum int64) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	if stat.Size() > maximum {
 		return nil, fmt.Errorf("%s exceeds %d bytes", filepath.Base(path), maximum)
 	}

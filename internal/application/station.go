@@ -45,8 +45,8 @@ type SavedStationInput struct {
 	FilterMode   string
 	FilterQuery  string
 	RandomMode   string
-	SkipDisliked bool
 	TrackIDs     []string
+	SkipDisliked bool
 }
 
 type SavedStationUpdate struct {
@@ -62,16 +62,16 @@ type SavedStationUpdate struct {
 }
 
 type StationService struct {
+	clockSample time.Time
 	db          *sql.DB
-	catalog     catalogmodel.Catalog
 	clock       stationmodel.Clock
 	monotonic   stationmodel.Clock
 	randomIndex stationmodel.RandomIndex
 	events      *appevents.Broadcaster
+	catalog     catalogmodel.Catalog
+	clockHigh   float64
 	mu          sync.Mutex
 	clockMu     sync.Mutex
-	clockHigh   float64
-	clockSample time.Time
 }
 
 func NewStationService(db *sql.DB, catalog catalogmodel.Catalog, events *appevents.Broadcaster) *StationService {
@@ -153,9 +153,9 @@ on conflict(station_id) do nothing`, mainStationID, now, now); err != nil {
 	var invalidAuxiliary []string
 	for rows.Next() {
 		var id, kind, trackID string
-		if err := rows.Scan(&id, &kind, &trackID); err != nil {
-			rows.Close()
-			return err
+		if scanErr := rows.Scan(&id, &kind, &trackID); scanErr != nil {
+			_ = rows.Close() // Preserve the primary result while releasing resources.
+			return scanErr
 		}
 		if s.catalog.ByID[trackID] != nil {
 			continue
@@ -166,32 +166,32 @@ on conflict(station_id) do nothing`, mainStationID, now, now); err != nil {
 			invalidAuxiliary = append(invalidAuxiliary, id)
 		}
 	}
-	if err := rows.Close(); err != nil {
-		return err
+	if closeErr := rows.Close(); closeErr != nil {
+		return closeErr
 	}
 	if invalidMain {
-		result, err := s.db.ExecContext(ctx, `
+		result, execContextErr := s.db.ExecContext(ctx, `
 update stations set track_id=?, position=0, playing=0, updated_at=?,
 	track_changed_at=?, revision=revision+1 where id=? and revision<?`,
 			s.catalog.Tracks[0].ID, now, now, mainStationID, maxRevisionValue-3)
-		if err != nil {
-			return err
+		if execContextErr != nil {
+			return execContextErr
 		}
-		changed, err := result.RowsAffected()
-		if err != nil {
-			return err
+		changed, execContextErr := result.RowsAffected()
+		if execContextErr != nil {
+			return execContextErr
 		}
 		if changed != 1 {
 			return errors.New("main station revision has no safe increment headroom")
 		}
 	}
 	for _, id := range invalidAuxiliary {
-		if _, err := s.db.ExecContext(ctx, "delete from stations where id=?", id); err != nil {
-			return err
+		if _, execContextErr2 := s.db.ExecContext(ctx, "delete from stations where id=?", id); execContextErr2 != nil {
+			return execContextErr2
 		}
 	}
-	if err := s.reconcileCatalogStatistics(ctx); err != nil {
-		return err
+	if reconcileCatalogStatisticsErr := s.reconcileCatalogStatistics(ctx); reconcileCatalogStatisticsErr != nil {
+		return reconcileCatalogStatisticsErr
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -270,8 +270,8 @@ where k.key_hash=?`, keyHash).Scan(&existingID, &existingOwnerHash, &existingExp
 		return "", "", 0, err
 	}
 	var count int
-	if err := s.db.QueryRowContext(ctx, "select count(*) from stations where kind='temporary'").Scan(&count); err != nil {
-		return "", "", 0, err
+	if scanErr2 := s.db.QueryRowContext(ctx, "select count(*) from stations where kind='temporary'").Scan(&count); scanErr2 != nil {
+		return "", "", 0, scanErr2
 	}
 	if count >= maxTempStations {
 		return "", "", 0, stationmodel.ErrCapacity
@@ -279,10 +279,10 @@ where k.key_hash=?`, keyHash).Scan(&existingID, &existingOwnerHash, &existingExp
 	if creatorBucket == "" {
 		return "", "", 0, fmt.Errorf("%w: creator identity is required", stationmodel.ErrInvalidCommand)
 	}
-	if err := s.db.QueryRowContext(ctx, `
+	if scanErr3 := s.db.QueryRowContext(ctx, `
 select count(*) from stations where kind='temporary' and creator_bucket=?`,
-		creatorBucket).Scan(&count); err != nil {
-		return "", "", 0, err
+		creatorBucket).Scan(&count); scanErr3 != nil {
+		return "", "", 0, scanErr3
 	}
 	if count >= maxCreatorStations {
 		return "", "", 0, stationmodel.ErrCapacity
@@ -337,11 +337,11 @@ func (s *StationService) CreateSavedIdempotent(
 			"%w: creator identity is required", stationmodel.ErrInvalidCommand)
 	}
 	now := s.logicalNow()
-	if err := validateStationWriteTime(now, true); err != nil {
-		return stationmodel.Definition{}, "", err
+	if validateStationWriteTimeErr := validateStationWriteTime(now, true); validateStationWriteTimeErr != nil {
+		return stationmodel.Definition{}, "", validateStationWriteTimeErr
 	}
-	if err := s.deleteExpired(ctx, now); err != nil {
-		return stationmodel.Definition{}, "", err
+	if deleteExpiredErr := s.deleteExpired(ctx, now); deleteExpiredErr != nil {
+		return stationmodel.Definition{}, "", deleteExpiredErr
 	}
 	ownerHash := tokenHash(ownerToken)
 	keyHash := tokenHash(idempotencyKey)
@@ -362,17 +362,17 @@ where k.key_hash=?`, keyHash).Scan(&existingID, &existingOwnerHash)
 		return stationmodel.Definition{}, "", err
 	}
 	var count int
-	if err := s.db.QueryRowContext(ctx,
-		"select count(*) from stations where kind='temporary'").Scan(&count); err != nil {
-		return stationmodel.Definition{}, "", err
+	if scanErr4 := s.db.QueryRowContext(ctx,
+		"select count(*) from stations where kind='temporary'").Scan(&count); scanErr4 != nil {
+		return stationmodel.Definition{}, "", scanErr4
 	}
 	if count >= maxTempStations {
 		return stationmodel.Definition{}, "", stationmodel.ErrCapacity
 	}
-	if err := s.db.QueryRowContext(ctx, `
+	if scanErr5 := s.db.QueryRowContext(ctx, `
 select count(*) from stations where kind='temporary' and creator_bucket=?`,
-		creatorBucket).Scan(&count); err != nil {
-		return stationmodel.Definition{}, "", err
+		creatorBucket).Scan(&count); scanErr5 != nil {
+		return stationmodel.Definition{}, "", scanErr5
 	}
 	if count >= maxCreatorStations {
 		return stationmodel.Definition{}, "", stationmodel.ErrCapacity
@@ -405,16 +405,16 @@ values (?, 'temporary', ?, ?, 0, 0, 0, 1, ?, ?, ?, ?, 1, ?)`,
 	if err != nil {
 		return stationmodel.Definition{}, "", err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, execContextErr3 := tx.ExecContext(ctx, `
 insert into station_creation_keys(key_hash, station_id, owner_hash, created_at)
-values (?, ?, ?, ?)`, keyHash, id, ownerHash, now); err != nil {
-		return stationmodel.Definition{}, "", err
+values (?, ?, ?, ?)`, keyHash, id, ownerHash, now); execContextErr3 != nil {
+		return stationmodel.Definition{}, "", execContextErr3
 	}
-	if err := insertStationDefinition(ctx, tx, id, input, now); err != nil {
-		return stationmodel.Definition{}, "", err
+	if insertStationDefinitionErr := insertStationDefinition(ctx, tx, id, input, now); insertStationDefinitionErr != nil {
+		return stationmodel.Definition{}, "", insertStationDefinitionErr
 	}
-	if err := replaceStationTracks(ctx, tx, id, input.TrackIDs); err != nil {
-		return stationmodel.Definition{}, "", err
+	if replaceStationTracksErr := replaceStationTracks(ctx, tx, id, input.TrackIDs); replaceStationTracksErr != nil {
+		return stationmodel.Definition{}, "", replaceStationTracksErr
 	}
 	row, err := readStation(ctx, tx, id, now)
 	if err != nil {
@@ -444,7 +444,7 @@ order by case when station_id='main' then 0 else 1 end, lower(name), station_id`
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return nil, err
 		}
 		ids = append(ids, id)
@@ -459,10 +459,10 @@ order by case when station_id='main' then 0 else 1 end, lower(name), station_id`
 			return nil, err
 		}
 		var remaining int
-		if err := s.db.QueryRowContext(ctx,
+		if scanErr6 := s.db.QueryRowContext(ctx,
 			"select count(*) from station_rotation where station_id=?", id).
-			Scan(&remaining); err != nil {
-			return nil, err
+			Scan(&remaining); scanErr6 != nil {
+			return nil, scanErr6
 		}
 		eligible, err := s.eligibleStationTracks(ctx, s.db, definition)
 		if err != nil {
@@ -551,20 +551,20 @@ func (s *StationService) UpdateSaved(
 	if err != nil {
 		return stationmodel.Definition{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, execContextErr4 := tx.ExecContext(ctx, `
 update station_definitions set
 	name=?, source_type=?, filter_mode=?, filter_query=?, random_mode=?,
 	skip_disliked=?, updated_at=?
 where station_id=?`,
 		input.Name, input.SourceType, input.FilterMode, input.FilterQuery,
-		input.RandomMode, boolInt(input.SkipDisliked), now, stationID); err != nil {
-		return stationmodel.Definition{}, err
+		input.RandomMode, boolInt(input.SkipDisliked), now, stationID); execContextErr4 != nil {
+		return stationmodel.Definition{}, execContextErr4
 	}
-	if err := replaceStationTracks(ctx, tx, stationID, input.TrackIDs); err != nil {
-		return stationmodel.Definition{}, err
+	if replaceStationTracksErr2 := replaceStationTracks(ctx, tx, stationID, input.TrackIDs); replaceStationTracksErr2 != nil {
+		return stationmodel.Definition{}, replaceStationTracksErr2
 	}
-	if err := s.replaceStationRotation(ctx, tx, stationID, nil); err != nil {
-		return stationmodel.Definition{}, err
+	if replaceStationRotationErr := s.replaceStationRotation(ctx, tx, stationID, nil); replaceStationRotationErr != nil {
+		return stationmodel.Definition{}, replaceStationRotationErr
 	}
 	definition, err = readStationDefinition(ctx, tx, stationID)
 	if err != nil {
@@ -575,19 +575,19 @@ where station_id=?`,
 		return stationmodel.Definition{}, err
 	}
 	if len(eligible) > 0 && !containsTrack(eligible, row.TrackID) {
-		if err := s.setTrack(&row, eligible[0], now); err != nil {
-			return stationmodel.Definition{}, err
+		if setTrackErr := s.setTrack(&row, eligible[0], now); setTrackErr != nil {
+			return stationmodel.Definition{}, setTrackErr
 		}
 	}
-	if err := s.ensureStationRotation(ctx, tx, row, definition); err != nil {
-		return stationmodel.Definition{}, err
+	if ensureStationRotationErr := s.ensureStationRotation(ctx, tx, row, definition); ensureStationRotationErr != nil {
+		return stationmodel.Definition{}, ensureStationRotationErr
 	}
-	if err := incrementStationRevision(&row); err != nil {
-		return stationmodel.Definition{}, err
+	if incrementStationRevisionErr := incrementStationRevision(&row); incrementStationRevisionErr != nil {
+		return stationmodel.Definition{}, incrementStationRevisionErr
 	}
 	row.UpdatedAt = now
-	if err := updateStation(ctx, tx, row); err != nil {
-		return stationmodel.Definition{}, err
+	if updateStationErr := updateStation(ctx, tx, row); updateStationErr != nil {
+		return stationmodel.Definition{}, updateStationErr
 	}
 	snapshot, err := s.snapshot(ctx, tx, row, now)
 	if err != nil {
@@ -729,37 +729,37 @@ func (s *StationService) Execute(ctx context.Context, command stationmodel.Comma
 		_ = tx.Rollback()
 		return stationmodel.Snapshot{}, stationmodel.ErrForbidden
 	}
-	if err := validateStationWriteTime(now, row.Kind == "temporary" && !row.Saved); err != nil {
+	if validateStationWriteTimeErr2 := validateStationWriteTime(now, row.Kind == "temporary" && !row.Saved); validateStationWriteTimeErr2 != nil {
 		_ = tx.Rollback()
-		return stationmodel.Snapshot{}, err
+		return stationmodel.Snapshot{}, validateStationWriteTimeErr2
 	}
-	if _, err := s.normalizeElapsedWithQueue(ctx, tx, &row, now); err != nil {
+	if _, normalizeElapsedWithQueueErr := s.normalizeElapsedWithQueue(ctx, tx, &row, now); normalizeElapsedWithQueueErr != nil {
 		_ = tx.Rollback()
-		return stationmodel.Snapshot{}, err
+		return stationmodel.Snapshot{}, normalizeElapsedWithQueueErr
 	}
-	if err := s.applyCommand(ctx, tx, &row, command, now); err != nil {
+	if applyCommandErr := s.applyCommand(ctx, tx, &row, command, now); applyCommandErr != nil {
 		_ = tx.Rollback()
-		return stationmodel.Snapshot{}, err
+		return stationmodel.Snapshot{}, applyCommandErr
 	}
 	row.UpdatedAt = now
 	if row.Playing && row.Position >= s.duration(row.TrackID) {
-		if _, err := s.normalizeElapsedWithQueue(ctx, tx, &row, now); err != nil {
+		if _, normalizeElapsedWithQueueErr2 := s.normalizeElapsedWithQueue(ctx, tx, &row, now); normalizeElapsedWithQueueErr2 != nil {
 			_ = tx.Rollback()
-			return stationmodel.Snapshot{}, err
+			return stationmodel.Snapshot{}, normalizeElapsedWithQueueErr2
 		}
 	}
-	if err := incrementStationRevision(&row); err != nil {
+	if incrementStationRevisionErr2 := incrementStationRevision(&row); incrementStationRevisionErr2 != nil {
 		_ = tx.Rollback()
-		return stationmodel.Snapshot{}, err
+		return stationmodel.Snapshot{}, incrementStationRevisionErr2
 	}
 	row.UpdatedAt = now
 	if row.Kind == "temporary" && !row.Saved {
 		expires := now + tempStationLife.Seconds()
 		row.ExpiresAt = &expires
 	}
-	if err := updateStation(ctx, tx, row); err != nil {
+	if updateStationErr2 := updateStation(ctx, tx, row); updateStationErr2 != nil {
 		_ = tx.Rollback()
-		return stationmodel.Snapshot{}, err
+		return stationmodel.Snapshot{}, updateStationErr2
 	}
 	snapshot, err := s.snapshot(ctx, tx, row, now)
 	if err != nil {
@@ -796,7 +796,7 @@ where playing=1 and (
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return err
 		}
 		ids = append(ids, id)
@@ -881,7 +881,7 @@ func (s *StationService) reconcileCatalogStatistics(ctx context.Context) error {
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
-				rows.Close()
+				_ = rows.Close() // Preserve the primary result while releasing resources.
 				return err
 			}
 			if s.catalog.ByID[id] == nil {
@@ -914,7 +914,7 @@ func (s *StationService) deleteExpired(ctx context.Context, now float64) error {
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return err
 		}
 		ids = append(ids, id)
@@ -958,13 +958,13 @@ func (s *StationService) advanceOne(ctx context.Context, id string, now float64)
 		_ = tx.Rollback()
 		return stationmodel.Snapshot{}, false, nil
 	}
-	if err := incrementStationRevision(&row); err != nil {
+	if incrementStationRevisionErr3 := incrementStationRevision(&row); incrementStationRevisionErr3 != nil {
 		_ = tx.Rollback()
-		return stationmodel.Snapshot{}, false, err
+		return stationmodel.Snapshot{}, false, incrementStationRevisionErr3
 	}
-	if err := updateStation(ctx, tx, row); err != nil {
+	if updateStationErr3 := updateStation(ctx, tx, row); updateStationErr3 != nil {
 		_ = tx.Rollback()
-		return stationmodel.Snapshot{}, false, err
+		return stationmodel.Snapshot{}, false, updateStationErr3
 	}
 	snapshot, err := s.snapshot(ctx, tx, row, now)
 	if err != nil {
@@ -1217,7 +1217,7 @@ select track_id from station_queue where station_id=? order by position`, statio
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	tracks := make([]string, 0)
 	for rows.Next() {
 		var trackID string
@@ -1311,7 +1311,7 @@ select track_id from station_tracks where station_id=? order by position`, stati
 	if err != nil {
 		return stationmodel.Definition{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	definition.TrackIDs = make([]string, 0)
 	for rows.Next() {
 		var trackID string
@@ -1381,7 +1381,7 @@ func (s *StationService) eligibleStationTracks(
 			var trackID string
 			var likeCount, dislikeCount int
 			if err := rows.Scan(&trackID, &likeCount, &dislikeCount); err != nil {
-				rows.Close()
+				_ = rows.Close() // Preserve the primary result while releasing resources.
 				return nil, err
 			}
 			liked[trackID], disliked[trackID] = likeCount > 0, dislikeCount > 0
@@ -1481,7 +1481,7 @@ func (s *StationService) stationRotationTracks(
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	tracks := make([]string, 0, min(remaining, max(0, limit)))
 	for rows.Next() {
 		var trackID string
@@ -1572,13 +1572,13 @@ func (s *StationService) nextStationTrack(
 		return row.TrackID, nil
 	}
 	if definition.RandomMode == "true_random" {
-		if err := s.replaceStationRotation(ctx, tx, row.ID, nil); err != nil {
-			return "", err
+		if replaceStationRotationErr2 := s.replaceStationRotation(ctx, tx, row.ID, nil); replaceStationRotationErr2 != nil {
+			return "", replaceStationRotationErr2
 		}
 		return eligible[s.randomIndex(len(eligible))], nil
 	}
-	if err := s.ensureStationRotation(ctx, tx, row, definition); err != nil {
-		return "", err
+	if ensureStationRotationErr2 := s.ensureStationRotation(ctx, tx, row, definition); ensureStationRotationErr2 != nil {
+		return "", ensureStationRotationErr2
 	}
 	rotation, _, err := s.stationRotationTracks(ctx, tx, row.ID, 0)
 	if err != nil {

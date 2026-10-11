@@ -60,7 +60,7 @@ func serveRootRange(w http.ResponseWriter, r *http.Request, rootHandle *os.Root,
 		http.NotFound(w, r)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	if ranges := r.Header.Get("Range"); httpguard.InvalidRangeRequest(ranges) {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", stat.Size()))
 		http.Error(w, "only one byte range is supported", http.StatusRequestedRangeNotSatisfiable)
@@ -78,7 +78,7 @@ func serveRootContent(w http.ResponseWriter, r *http.Request, rootHandle *os.Roo
 		http.NotFound(w, r)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	w.Header().Set("Cache-Control", cacheControl)
 	w.Header().Set("Content-Type", mediaType)
 	http.ServeContent(w, r, filepath.Base(path), stat.ModTime(), file)
@@ -95,7 +95,7 @@ func openRootedRegular(rootHandle *os.Root, root, path string) (*os.File, os.Fil
 	}
 	stat, err := file.Stat()
 	if err != nil || !stat.Mode().IsRegular() {
-		file.Close()
+		_ = file.Close() // Preserve the primary result while releasing resources.
 		if err == nil {
 			err = fmt.Errorf("path is not a regular file")
 		}

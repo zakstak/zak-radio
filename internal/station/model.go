@@ -7,71 +7,82 @@ import (
 )
 
 type Station struct {
-	ID, Kind, OwnerHash, TrackID         string
-	Position                             float64
-	Playing, RepeatOne, Shuffle          bool
-	Saved                                bool
-	CreatedAt, UpdatedAt, TrackChangedAt float64
-	ExpiresAt                            *float64
-	Revision                             int64
+	ExpiresAt      *float64
+	ID             string
+	Kind           string
+	OwnerHash      string
+	TrackID        string
+	CreatedAt      float64
+	UpdatedAt      float64
+	TrackChangedAt float64
+	Position       float64
+	Revision       int64
+	RepeatOne      bool
+	Shuffle        bool
+	Saved          bool
+	Playing        bool
 }
 
 type Definition struct {
-	StationID      string   `json:"station_id"`
 	Name           string   `json:"name"`
 	SourceType     string   `json:"source_type"`
 	FilterMode     string   `json:"filter_mode,omitempty"`
 	FilterQuery    string   `json:"filter_query,omitempty"`
 	RandomMode     string   `json:"random_mode"`
-	SkipDisliked   bool     `json:"skip_disliked"`
+	StationID      string   `json:"station_id"`
 	TrackIDs       []string `json:"track_ids"`
-	CreatedAt      float64  `json:"created_at"`
 	UpdatedAt      float64  `json:"updated_at"`
-	BuiltIn        bool     `json:"built_in"`
-	CanEdit        bool     `json:"can_edit,omitempty"`
+	CreatedAt      float64  `json:"created_at"`
 	EligibleCount  int      `json:"eligible_count,omitempty"`
 	RemainingCount int      `json:"remaining_count,omitempty"`
+	SkipDisliked   bool     `json:"skip_disliked"`
+	BuiltIn        bool     `json:"built_in"`
+	CanEdit        bool     `json:"can_edit,omitempty"`
 }
 
 type Snapshot struct {
-	StationID       string   `json:"station_id"`
-	CatalogRevision string   `json:"catalog_revision"`
-	Kind            string   `json:"kind"`
-	TrackID         string   `json:"track_id"`
-	Position        float64  `json:"position"`
-	Playing         bool     `json:"playing"`
-	RepeatOne       bool     `json:"repeat_one"`
-	Shuffle         bool     `json:"shuffle"`
-	UpdatedAt       float64  `json:"updated_at"`
-	TrackChangedAt  float64  `json:"track_changed_at"`
-	ServerTime      float64  `json:"server_time"`
-	Liked           bool     `json:"liked"`
-	Disliked        bool     `json:"disliked"`
-	LikeCount       int      `json:"like_count"`
-	DislikeCount    int      `json:"dislike_count"`
-	SkipCount       int      `json:"skip_count"`
-	ExpiresAt       *float64 `json:"expires_at,omitempty"`
-	Revision        int64    `json:"revision"`
 	CanControl      *bool    `json:"can_control,omitempty"`
-	Queue           []string `json:"queue"`
-	Saved           bool     `json:"saved"`
-	StationName     string   `json:"station_name,omitempty"`
-	SourceType      string   `json:"source_type,omitempty"`
-	FilterMode      string   `json:"filter_mode,omitempty"`
+	ExpiresAt       *float64 `json:"expires_at,omitempty"`
 	FilterQuery     string   `json:"filter_query,omitempty"`
+	TrackID         string   `json:"track_id"`
 	RandomMode      string   `json:"random_mode,omitempty"`
-	SkipDisliked    bool     `json:"skip_disliked,omitempty"`
+	StationID       string   `json:"station_id"`
+	FilterMode      string   `json:"filter_mode,omitempty"`
+	SourceType      string   `json:"source_type,omitempty"`
+	StationName     string   `json:"station_name,omitempty"`
+	Kind            string   `json:"kind"`
+	CatalogRevision string   `json:"catalog_revision"`
 	UpNext          []string `json:"up_next,omitempty"`
-	Remaining       int      `json:"remaining,omitempty"`
+	Queue           []string `json:"queue"`
+	DislikeCount    int      `json:"dislike_count"`
+	Position        float64  `json:"position"`
+	SkipCount       int      `json:"skip_count"`
 	Eligible        int      `json:"eligible,omitempty"`
+	Revision        int64    `json:"revision"`
+	LikeCount       int      `json:"like_count"`
+	ServerTime      float64  `json:"server_time"`
+	Remaining       int      `json:"remaining,omitempty"`
+	TrackChangedAt  float64  `json:"track_changed_at"`
+	UpdatedAt       float64  `json:"updated_at"`
+	Liked           bool     `json:"liked"`
+	RepeatOne       bool     `json:"repeat_one"`
+	Playing         bool     `json:"playing"`
+	SkipDisliked    bool     `json:"skip_disliked,omitempty"`
+	Shuffle         bool     `json:"shuffle"`
+	Saved           bool     `json:"saved"`
+	Disliked        bool     `json:"disliked"`
 }
 
 type Command struct {
-	StationID, OwnerToken, Action, TrackID string
-	Position                               *float64
-	RepeatOne, Shuffle                     *bool
-	RandomMode                             string
-	SkipDisliked                           *bool
+	Position     *float64
+	RepeatOne    *bool
+	Shuffle      *bool
+	SkipDisliked *bool
+	StationID    string
+	OwnerToken   string
+	Action       string
+	TrackID      string
+	RandomMode   string
 }
 
 type Clock func() time.Time

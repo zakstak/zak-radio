@@ -9,8 +9,9 @@ import (
 	"strings"
 	"syscall"
 
-	"golang.org/x/sys/unix"
 	appconfig "zak-radio/internal/config"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -35,7 +36,7 @@ func cleanupMigrationTemporaryFiles(databasePath string) error {
 	if err != nil {
 		return err
 	}
-	defer handle.Close()
+	defer func() { _ = handle.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	removed := false
 	seen := 0
 	for {
@@ -91,19 +92,19 @@ func validateDataPaths(cfg appconfig.Config) error {
 		"archive":        cfg.Archive,
 		"Reader library": cfg.ReaderLibrary,
 	} {
-		resolved, err := unsymlinkedPath(path)
-		if err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+		resolved, unsymlinkedPathErr := unsymlinkedPath(path)
+		if unsymlinkedPathErr != nil {
+			return fmt.Errorf("%s: %w", name, unsymlinkedPathErr)
 		}
 		if !lexicallyInside(resolved, metadata) {
 			return fmt.Errorf("%s must remain beneath metadata root", name)
 		}
 	}
 	databasePath := cfg.DBPath
-	if _, err := os.Lstat(databasePath); os.IsNotExist(err) {
+	if _, lstatErr := os.Lstat(databasePath); os.IsNotExist(lstatErr) {
 		databasePath = filepath.Dir(databasePath)
-	} else if err != nil {
-		return fmt.Errorf("database path: %w", err)
+	} else if lstatErr != nil {
+		return fmt.Errorf("database path: %w", lstatErr)
 	}
 	resolvedDB, err := unsymlinkedPath(databasePath)
 	if err != nil {
@@ -167,13 +168,13 @@ func inspectRetainedTree(root string) (retainedUsage, error) {
 	if err != nil {
 		return retainedUsage{}, err
 	}
-	defer rootHandle.Close()
+	defer func() { _ = rootHandle.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	rootDirectory, err := rootHandle.Open(".")
 	if err != nil {
 		return retainedUsage{}, err
 	}
 	rootMount, err := mountIdentity(int(rootDirectory.Fd()), ".")
-	rootDirectory.Close()
+	_ = rootDirectory.Close() // Preserve the primary result while releasing resources.
 	if err != nil {
 		return retainedUsage{}, fmt.Errorf("inspect retained root mount identity: %w", err)
 	}
@@ -191,30 +192,30 @@ func inspectRetainedTree(root string) (retainedUsage, error) {
 			for _, entry := range entries {
 				usage.entries++
 				if usage.entries > maxRetainedVolumeEntries {
-					directory.Close()
+					_ = directory.Close() // Preserve the primary result while releasing resources.
 					return retainedUsage{}, fmt.Errorf(
 						"retained volume exceeds %d entries", maxRetainedVolumeEntries)
 				}
 				relative := filepath.Join(relativeDir, entry.Name())
 				info, err := rootHandle.Lstat(relative)
 				if err != nil {
-					directory.Close()
+					_ = directory.Close() // Preserve the primary result while releasing resources.
 					return retainedUsage{}, err
 				}
 				stat, ok := info.Sys().(*syscall.Stat_t)
 				if !ok || stat.Dev != rootStat.Dev {
-					directory.Close()
+					_ = directory.Close() // Preserve the primary result while releasing resources.
 					return retainedUsage{}, fmt.Errorf(
 						"retained volume crosses a filesystem device boundary")
 				}
 				entryMount, err := mountIdentity(int(directory.Fd()), entry.Name())
 				if err != nil {
-					directory.Close()
+					_ = directory.Close() // Preserve the primary result while releasing resources.
 					return retainedUsage{}, fmt.Errorf(
 						"inspect retained mount identity for %s: %w", relative, err)
 				}
 				if entryMount != rootMount {
-					directory.Close()
+					_ = directory.Close() // Preserve the primary result while releasing resources.
 					return retainedUsage{}, fmt.Errorf(
 						"retained volume contains a nested mountpoint at %s", relative)
 				}
@@ -223,19 +224,19 @@ func inspectRetainedTree(root string) (retainedUsage, error) {
 					continue
 				}
 				if !info.Mode().IsRegular() {
-					directory.Close()
+					_ = directory.Close() // Preserve the primary result while releasing resources.
 					return retainedUsage{}, fmt.Errorf(
 						"retained volume contains unsupported file type at %s", relative)
 				}
 				if stat.Nlink != 1 {
-					directory.Close()
+					_ = directory.Close() // Preserve the primary result while releasing resources.
 					return retainedUsage{}, fmt.Errorf(
 						"retained volume contains hard-linked file %s", relative)
 				}
 				if migrationBackupName.MatchString(filepath.Base(relative)) ||
 					migrationReceiptName.MatchString(filepath.Base(relative)) {
 					if info.Size() > maxRetainedBackupBytes-usage.backupBytes {
-						directory.Close()
+						_ = directory.Close() // Preserve the primary result while releasing resources.
 						return retainedUsage{}, fmt.Errorf(
 							"retained migration backups exceed %d apparent bytes",
 							maxRetainedBackupBytes)
@@ -243,7 +244,7 @@ func inspectRetainedTree(root string) (retainedUsage, error) {
 					usage.backupBytes += info.Size()
 				} else {
 					if info.Size() > maxRetainedProductBytes-usage.productBytes {
-						directory.Close()
+						_ = directory.Close() // Preserve the primary result while releasing resources.
 						return retainedUsage{}, fmt.Errorf(
 							"retained product data exceeds %d apparent bytes",
 							maxRetainedProductBytes)
@@ -255,7 +256,7 @@ func inspectRetainedTree(root string) (retainedUsage, error) {
 				break
 			}
 			if readErr != nil {
-				directory.Close()
+				_ = directory.Close() // Preserve the primary result while releasing resources.
 				return retainedUsage{}, readErr
 			}
 		}

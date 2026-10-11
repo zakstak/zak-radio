@@ -30,11 +30,11 @@ func acquireVolumeLock(root string, mode int, busyMessage string) (*os.File, err
 	var stat unix.Stat_t
 	if err := unix.Fstat(fd, &stat); err != nil ||
 		stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Nlink != 1 {
-		file.Close()
+		_ = file.Close() // Preserve the primary result while releasing resources.
 		return nil, fmt.Errorf("retained-volume lifecycle lock is unsafe")
 	}
 	if err := unix.Flock(fd, mode|unix.LOCK_NB); err != nil {
-		file.Close()
+		_ = file.Close() // Preserve the primary result while releasing resources.
 		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
 			return nil, fmt.Errorf("%s", busyMessage)
 		}

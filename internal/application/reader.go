@@ -24,7 +24,7 @@ func (a *App) readerItem(ctx context.Context, id string) (readermodel.Item, erro
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	if !rows.Next() {
 		return nil, sql.ErrNoRows
 	}
@@ -41,7 +41,7 @@ func (a *App) readerSegmentsPage(ctx context.Context, id string, limit, offset i
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	result := []readermodel.Segment{}
 	for rows.Next() {
 		segment, err := scanMap(rows)

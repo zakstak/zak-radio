@@ -39,19 +39,19 @@ const (
 )
 
 type readerImageCache struct {
+	usedAt    time.Time
 	signature string
 	images    []map[string]any
-	usedAt    time.Time
 	bytes     int64
 }
 
 type readerParseCall struct {
+	err    error
 	done   chan struct{}
 	images []map[string]any
-	err    error
 }
 
-var errReaderParseBusy = errors.New("Reader image parser is busy")
+var errReaderParseBusy = errors.New("reader image parser is busy")
 
 func (a *App) readerItems(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := readerPage(w, r, maxReaderItemsPage)
@@ -80,7 +80,7 @@ func (a *App) readerItems(w http.ResponseWriter, r *http.Request) {
 		internalError(w)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	items := []map[string]any{}
 	for rows.Next() {
 		item, err := scanMap(rows)
@@ -142,8 +142,8 @@ func (a *App) readerItemSubroute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 2 && parts[1] == "segments" {
-		if _, err := a.readerItem(r.Context(), id); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+		if _, readerItemErr := a.readerItem(r.Context(), id); readerItemErr != nil {
+			if errors.Is(readerItemErr, sql.ErrNoRows) {
 				http.NotFound(w, r)
 			} else {
 				http.Error(w, "reader storage unavailable", http.StatusInternalServerError)
@@ -154,8 +154,8 @@ func (a *App) readerItemSubroute(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		segments, err := a.readerSegmentsPage(r.Context(), id, limit, offset)
-		if err != nil {
+		segments, readerSegmentsPageErr := a.readerSegmentsPage(r.Context(), id, limit, offset)
+		if readerSegmentsPageErr != nil {
 			internalError(w)
 			return
 		}
@@ -171,12 +171,12 @@ func (a *App) readerItemSubroute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 2 && parts[1] == "images" {
-		images, err := a.getImages(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, errReaderParseBusy) {
+		images, getImagesErr := a.getImages(r.Context(), id)
+		if getImagesErr != nil {
+			if errors.Is(getImagesErr, errReaderParseBusy) {
 				w.Header().Set("Retry-After", "2")
-				http.Error(w, "Reader image parser is busy", http.StatusTooManyRequests)
-			} else if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "reader image parser is busy", http.StatusTooManyRequests)
+			} else if errors.Is(getImagesErr, sql.ErrNoRows) {
 				http.NotFound(w, r)
 			} else {
 				http.Error(w, "reader storage unavailable", http.StatusInternalServerError)
@@ -230,15 +230,15 @@ func (a *App) getImages(ctx context.Context, id string) (images []map[string]any
 	}
 	sourcePath, _ := item["source_path"].(string)
 	if !containedPath(sourcePath, a.cfg.ReaderLibrary) ||
-		!(strings.HasSuffix(strings.ToLower(sourcePath), ".html") || strings.HasSuffix(strings.ToLower(sourcePath), ".htm")) {
+		(!strings.HasSuffix(strings.ToLower(sourcePath), ".html") && !strings.HasSuffix(strings.ToLower(sourcePath), ".htm")) {
 		return []map[string]any{}, nil
 	}
 	sourceInfo, err := rootedRegularInfo(a.readerRoot, a.cfg.ReaderLibrary, sourcePath)
 	if err != nil {
-		return nil, fmt.Errorf("Reader source is not a regular file")
+		return nil, fmt.Errorf("reader source is not a regular file")
 	}
 	if sourceInfo.Size() > maxReaderSourceBytes {
-		return nil, fmt.Errorf("Reader source exceeds %d bytes", maxReaderSourceBytes)
+		return nil, fmt.Errorf("reader source exceeds %d bytes", maxReaderSourceBytes)
 	}
 	imageDirectory := filepath.Join(fmt.Sprint(item["storage_dir"]), "images")
 	signature := fmt.Sprintf("%s:%d:%d:%s", sourcePath, sourceInfo.Size(),
@@ -279,11 +279,11 @@ func (a *App) getImages(ctx context.Context, id string) (images []map[string]any
 	}
 	sourceFile, sourceInfo, err := openRootedRegular(a.readerRoot, a.cfg.ReaderLibrary, sourcePath)
 	if err != nil {
-		return nil, fmt.Errorf("Reader source is not a regular file")
+		return nil, fmt.Errorf("reader source is not a regular file")
 	}
-	defer sourceFile.Close()
+	defer func() { _ = sourceFile.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	if sourceInfo.Size() > maxReaderSourceBytes {
-		return nil, fmt.Errorf("Reader source exceeds %d bytes", maxReaderSourceBytes)
+		return nil, fmt.Errorf("reader source exceeds %d bytes", maxReaderSourceBytes)
 	}
 	signature = fmt.Sprintf("%s:%d:%d:%s", sourcePath, sourceInfo.Size(),
 		sourceInfo.ModTime().UnixNano(), a.readerImageDirectorySignature(imageDirectory))
@@ -300,7 +300,7 @@ func (a *App) getImages(ctx context.Context, id string) (images []map[string]any
 		return nil, err
 	}
 	if len(sourceData) > maxReaderSourceBytes {
-		return nil, fmt.Errorf("Reader source exceeds %d bytes", maxReaderSourceBytes)
+		return nil, fmt.Errorf("reader source exceeds %d bytes", maxReaderSourceBytes)
 	}
 	raw, base := string(sourceData), fmt.Sprint(item["source_url"])
 	storage := fmt.Sprint(item["storage_dir"])
@@ -329,8 +329,8 @@ func (a *App) getImages(ctx context.Context, id string) (images []map[string]any
 		}
 		display := "/reader-image/" + url.PathEscape(id) + "/" + name
 		alt := ""
-		if match := altRE.FindStringSubmatch(match[1]); match != nil {
-			alt = strings.Clone(strings.TrimSpace(html.UnescapeString(match[1])))
+		if altMatch := altRE.FindStringSubmatch(match[1]); altMatch != nil {
+			alt = strings.Clone(strings.TrimSpace(html.UnescapeString(altMatch[1])))
 			if len(alt) > maxReaderAltBytes {
 				alt = strings.Clone(alt[:maxReaderAltBytes])
 			}
@@ -481,12 +481,12 @@ order by segment_index limit 1`, id).Scan(&segmentIndex)
 func (a *App) setReaderPlayback(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		ItemID         string  `json:"item_id"`
+		WriterID       string  `json:"writer_id"`
 		SegmentIndex   int     `json:"segment_index"`
 		Position       float64 `json:"position"`
-		Playing        bool    `json:"playing"`
 		BaseRevision   int64   `json:"base_revision"`
-		WriterID       string  `json:"writer_id"`
 		WriterSequence int64   `json:"writer_sequence"`
+		Playing        bool    `json:"playing"`
 	}
 	if !httpguard.DecodeJSON(w, r, &request, false) {
 		return
@@ -505,13 +505,13 @@ func (a *App) setReaderPlayback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "reader storage unavailable", http.StatusInternalServerError)
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // Best-effort cleanup; operation errors are checked separately.
 	var duration float64
-	if err := tx.QueryRowContext(r.Context(), `
+	if scanErr := tx.QueryRowContext(r.Context(), `
 select duration from reader_segments
 where item_id=? and segment_index=? and status='ready' and duration>0`,
-		request.ItemID, request.SegmentIndex).Scan(&duration); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		request.ItemID, request.SegmentIndex).Scan(&duration); scanErr != nil {
+		if errors.Is(scanErr, sql.ErrNoRows) {
 			http.Error(w, "Reader segment is not playable at that position", http.StatusBadRequest)
 		} else {
 			http.Error(w, "reader storage unavailable", http.StatusInternalServerError)
@@ -524,15 +524,15 @@ where item_id=? and segment_index=? and status='ready' and duration>0`,
 	}
 	if request.Position >= duration {
 		var nextIndex int
-		err := tx.QueryRowContext(r.Context(), `
+		scanErr2 := tx.QueryRowContext(r.Context(), `
 select segment_index from reader_segments
 where item_id=? and segment_index>? and status='ready' and duration>0
 order by segment_index limit 1`, request.ItemID, request.SegmentIndex).Scan(&nextIndex)
 		switch {
-		case err == nil:
+		case scanErr2 == nil:
 			request.SegmentIndex = nextIndex
 			request.Position = 0
-		case errors.Is(err, sql.ErrNoRows):
+		case errors.Is(scanErr2, sql.ErrNoRows):
 			request.Position = duration
 			request.Playing = false
 		default:
@@ -700,7 +700,7 @@ func (a *App) readerSource(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	if stat.Size() <= 0 || stat.Size() > maxReaderSourceBytes {
 		http.Error(w, "Reader source is outside the retained size limit", http.StatusUnprocessableEntity)
 		return

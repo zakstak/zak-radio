@@ -46,8 +46,8 @@ func TestRepeatOneKeepsCurrentTrackAtEnd(t *testing.T) {
 	if before.Position != 10 || before.Revision != 2 {
 		t.Fatalf("read-only snapshot = %#v", before)
 	}
-	if err := app.station.Advance(context.Background()); err != nil {
-		t.Fatal(err)
+	if advanceErr := app.station.Advance(context.Background()); advanceErr != nil {
+		t.Fatal(advanceErr)
 	}
 
 	after, err := app.station.Snapshot(context.Background(), mainStationID)
@@ -140,10 +140,10 @@ func TestStationQueueIsOrderedAndConsumedByNext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.station.Execute(context.Background(), stationmodel.Command{
+	if _, executeErr := app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: id, OwnerToken: token, Action: "add_to_queue", TrackID: "one",
-	}); err != nil {
-		t.Fatal(err)
+	}); executeErr != nil {
+		t.Fatal(executeErr)
 	}
 	station, err := app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: id, OwnerToken: token, Action: "play_next", TrackID: "two",
@@ -185,20 +185,20 @@ func TestStationQueueIsConsumedAtNaturalTrackEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.station.Execute(context.Background(), stationmodel.Command{
+	if _, executeErr2 := app.station.Execute(context.Background(), stationmodel.Command{
 		StationID: id, OwnerToken: token, Action: "add_to_queue", TrackID: "two",
-	}); err != nil {
-		t.Fatal(err)
+	}); executeErr2 != nil {
+		t.Fatal(executeErr2)
 	}
-	if _, err := app.db.Exec(`
+	if _, execErr := app.db.Exec(`
 update stations set track_id='one', position=0, playing=1, repeat_one=0,
 	shuffle=0, updated_at=?, track_changed_at=? where id=?`,
-		unixTime(fixed)-11, unixTime(fixed)-11, id); err != nil {
-		t.Fatal(err)
+		unixTime(fixed)-11, unixTime(fixed)-11, id); execErr != nil {
+		t.Fatal(execErr)
 	}
 
-	if err := app.station.Advance(context.Background()); err != nil {
-		t.Fatal(err)
+	if advanceErr2 := app.station.Advance(context.Background()); advanceErr2 != nil {
+		t.Fatal(advanceErr2)
 	}
 	snapshot, err := app.station.Snapshot(context.Background(), id)
 	if err != nil {
@@ -261,8 +261,8 @@ func TestTemporaryStationIsIndependentAndOwnerControlled(t *testing.T) {
 		StationID  string `json:"station_id"`
 		OwnerToken string `json:"owner_token"`
 	}
-	if err := json.NewDecoder(createRes.Body).Decode(&created); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.NewDecoder(createRes.Body).Decode(&created); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	if created.StationID == "" || created.OwnerToken == "" {
 		t.Fatalf("create response omitted credentials: %+v", created)
@@ -288,8 +288,8 @@ func TestTemporaryStationIsIndependentAndOwnerControlled(t *testing.T) {
 		t.Fatalf("owner control status = %d, body = %s", ownerRes.Code, ownerRes.Body.String())
 	}
 	var temporary map[string]any
-	if err := json.NewDecoder(ownerRes.Body).Decode(&temporary); err != nil {
-		t.Fatal(err)
+	if decodeErr2 := json.NewDecoder(ownerRes.Body).Decode(&temporary); decodeErr2 != nil {
+		t.Fatal(decodeErr2)
 	}
 	if temporary["track_id"] != "two" || temporary["playing"] != true {
 		t.Fatalf("temporary station state = %#v", temporary)
@@ -351,15 +351,15 @@ insert into temporary_stations values
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := legacy.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := legacy.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 
 	app, err := NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer app.Close()
+	defer func() { _ = app.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var count int
 	if err := app.db.QueryRow("select count(*) from stations").Scan(&count); err != nil {
 		t.Fatal(err)
@@ -404,14 +404,14 @@ func TestStationPersistsAcrossRestart(t *testing.T) {
 	}
 	postControlForTest(t, app, `{"action":"select","track_id":"two"}`)
 	postControlForTest(t, app, `{"action":"set_shuffle","shuffle":true}`)
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr2 := app.Close(); closeErr2 != nil {
+		t.Fatal(closeErr2)
 	}
 	app, err = NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer app.Close()
+	defer func() { _ = app.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	state, err := app.station.Snapshot(context.Background(), mainStationID)
 	if err != nil {
 		t.Fatal(err)
@@ -490,7 +490,7 @@ func TestHTTPRoutesPreserveStationAndMediaContracts(t *testing.T) {
 			t.Fatal(err)
 		}
 		body, err := io.ReadAll(response.Body)
-		response.Body.Close()
+		_ = response.Body.Close() // Preserve the primary result while releasing resources.
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -507,11 +507,11 @@ func TestHTTPRoutesPreserveStationAndMediaContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	var station map[string]any
-	if err := json.NewDecoder(response.Body).Decode(&station); err != nil {
-		response.Body.Close()
-		t.Fatal(err)
+	if decodeErr3 := json.NewDecoder(response.Body).Decode(&station); decodeErr3 != nil {
+		_ = response.Body.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(decodeErr3)
 	}
-	response.Body.Close()
+	_ = response.Body.Close() // Preserve the primary result while releasing resources.
 	if response.StatusCode != http.StatusOK || station["station_id"] != mainStationID ||
 		station["revision"] == nil || station["shuffle"] == nil || station["can_control"] != true {
 		t.Fatalf("station response status=%d body=%#v", response.StatusCode, station)
@@ -529,7 +529,7 @@ func TestHTTPRoutesPreserveStationAndMediaContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	if response.StatusCode != http.StatusPartialContent {
 		t.Fatalf("range status = %d, want %d", response.StatusCode, http.StatusPartialContent)
 	}
@@ -1003,4 +1003,18 @@ func postControlForTest(t *testing.T, app *App, body string) map[string]any {
 		t.Fatal(err)
 	}
 	return station
+}
+
+type disconnectedStreamWriter struct{}
+
+func (disconnectedStreamWriter) Header() http.Header { return http.Header{} }
+func (disconnectedStreamWriter) WriteHeader(int)     {}
+func (disconnectedStreamWriter) Write([]byte) (int, error) {
+	return 0, io.ErrClosedPipe
+}
+
+func TestStationStreamReportsDisconnectedClient(t *testing.T) {
+	if err := writeSSE(disconnectedStreamWriter{}, stationmodel.Snapshot{}); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("stream write error = %v, want closed pipe", err)
+	}
 }

@@ -39,30 +39,30 @@ func Run() error {
 		"validate a supported stopped migration source read-only, then exit")
 	flag.Parse()
 	if *validateRoot != "" {
-		if err := validateVolume(context.Background(), *validateRoot); err != nil {
-			return err
+		if validateVolumeErr := validateVolume(context.Background(), *validateRoot); validateVolumeErr != nil {
+			return validateVolumeErr
 		}
 		fmt.Printf("validated retained volume %s\n", *validateRoot)
 		return nil
 	}
 	if *validateMigrationRoot != "" {
-		if err := validateMigrationSourceVolume(context.Background(), *validateMigrationRoot); err != nil {
-			return err
+		if validateMigrationSourceVolumeErr := validateMigrationSourceVolume(context.Background(), *validateMigrationRoot); validateMigrationSourceVolumeErr != nil {
+			return validateMigrationSourceVolumeErr
 		}
 		fmt.Printf("validated migration source volume %s\n", *validateMigrationRoot)
 		return nil
 	}
-	if err := appconfig.ValidateListener(cfg); err != nil {
-		return err
+	if validateListenerErr := appconfig.ValidateListener(cfg); validateListenerErr != nil {
+		return validateListenerErr
 	}
-	if err := prepareRuntimeIdentity(cfg); err != nil {
-		return err
+	if prepareRuntimeIdentityErr := prepareRuntimeIdentity(cfg); prepareRuntimeIdentityErr != nil {
+		return prepareRuntimeIdentityErr
 	}
 	volumeLock, err := lifecycle.AcquireRuntimeVolumeLock(cfg.MetadataRoot)
 	if err != nil {
 		return err
 	}
-	defer volumeLock.Close()
+	defer func() { _ = volumeLock.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	address := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

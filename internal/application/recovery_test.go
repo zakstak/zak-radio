@@ -57,14 +57,14 @@ func TestKilnPackagePreparationIsMinimalRepeatableAndPrivate(t *testing.T) {
 		t.Fatal("release does not bind the packaged source identity")
 	}
 	for _, unnecessary := range []string{"cmd", "internal", "vendor", "go.mod", "go.sum"} {
-		if _, err := os.Stat(filepath.Join(output, unnecessary)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("minimal Kiln package contains %s: %v", unnecessary, err)
+		if _, statErr2 := os.Stat(filepath.Join(output, unnecessary)); !errors.Is(statErr2, os.ErrNotExist) {
+			t.Fatalf("minimal Kiln package contains %s: %v", unnecessary, statErr2)
 		}
 	}
-	if result, err := exec.Command(
+	if result, combinedOutputErr := exec.Command(
 		"scripts/verify-release-package.sh", output,
-	).CombinedOutput(); err != nil {
-		t.Fatalf("minimal package verification failed: %v\n%s", err, result)
+	).CombinedOutput(); combinedOutputErr != nil {
+		t.Fatalf("minimal package verification failed: %v\n%s", combinedOutputErr, result)
 	}
 
 	external := filepath.Join(t.TempDir(), "external-package")
@@ -103,28 +103,28 @@ func TestKilnPackagePreparationIsMinimalRepeatableAndPrivate(t *testing.T) {
 	if bytes.Contains(dockerfile, []byte("RUN ")) {
 		t.Fatal("Kiln package compiles or downloads dependencies inside the container build")
 	}
-	if info, err := os.Stat(filepath.Join(external, "zak-radio.tar.gz")); err != nil {
-		t.Fatal(err)
+	if info, statErr3 := os.Stat(filepath.Join(external, "zak-radio.tar.gz")); statErr3 != nil {
+		t.Fatal(statErr3)
 	} else if info.Size() > 8<<20 {
 		t.Fatalf("compressed executable exceeds Kiln's per-file limit: %d", info.Size())
 	}
 
 	nestedControl := filepath.Join(external, "static", "RELEASE")
-	if err := os.WriteFile(nestedControl, []byte("runtime asset\n"), 0o644); err != nil {
-		t.Fatal(err)
+	if writeFileErr := os.WriteFile(nestedControl, []byte("runtime asset\n"), 0o644); writeFileErr != nil {
+		t.Fatal(writeFileErr)
 	}
 	writeTestPackageManifest(t, external)
-	if result, err := exec.Command(
+	if result, combinedOutputErr2 := exec.Command(
 		"scripts/verify-release-package.sh", external,
-	).CombinedOutput(); err != nil {
-		t.Fatalf("package with hashed nested reserved name failed: %v\n%s", err, result)
+	).CombinedOutput(); combinedOutputErr2 != nil {
+		t.Fatalf("package with hashed nested reserved name failed: %v\n%s", combinedOutputErr2, result)
 	}
-	if err := os.WriteFile(nestedControl, []byte("mutated asset\n"), 0o644); err != nil {
-		t.Fatal(err)
+	if writeFileErr2 := os.WriteFile(nestedControl, []byte("mutated asset\n"), 0o644); writeFileErr2 != nil {
+		t.Fatal(writeFileErr2)
 	}
-	if result, err := exec.Command(
+	if result, combinedOutputErr3 := exec.Command(
 		"scripts/verify-release-package.sh", external,
-	).CombinedOutput(); err == nil {
+	).CombinedOutput(); combinedOutputErr3 == nil {
 		t.Fatalf("mutated nested reserved-name file passed verification: %s", result)
 	}
 
@@ -136,9 +136,9 @@ func TestKilnPackagePreparationIsMinimalRepeatableAndPrivate(t *testing.T) {
 		"--trusted-proxies", "10.0.0.2",
 		"--trusted-ingress", "10.0.0.2",
 	)
-	if result, err := replace.CombinedOutput(); err == nil ||
+	if result, combinedOutputErr4 := replace.CombinedOutput(); combinedOutputErr4 == nil ||
 		!strings.Contains(string(result), "immutable Kiln package") {
-		t.Fatalf("different release replaced an existing package: err=%v output=%s", err, result)
+		t.Fatalf("different release replaced an existing package: err=%v output=%s", combinedOutputErr4, result)
 	}
 	preservedRelease, err := os.ReadFile(filepath.Join(output, "RELEASE"))
 	if err != nil || !bytes.Equal(preservedRelease, localRelease) {
@@ -293,8 +293,8 @@ func TestStartupRejectsForeignKeyDamageBeforeReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := app.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	db, err := sql.Open("sqlite", cfg.DBPath)
 	if err != nil {
@@ -305,14 +305,14 @@ pragma foreign_keys=off;
 insert into reader_playback(
 	item_id, segment_index, position, playing, updated_at, revision, writer_id, writer_sequence
 ) values('orphan', 0, 0, 0, 1, 0, '', 0)`); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if damaged, err := NewApp(cfg); err == nil {
-		damaged.Close()
+		_ = damaged.Close() // Preserve the primary result while releasing resources.
 		t.Fatal("startup accepted a retained database with a foreign-key failure")
 	}
 }
@@ -324,8 +324,8 @@ func TestStartupRejectsOversizedHiddenReaderFieldsBeforeReconciliation(t *testin
 		t.Fatal(err)
 	}
 	seedReaderItem(t, app, "oversized-hidden")
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr2 := app.Close(); closeErr2 != nil {
+		t.Fatal(closeErr2)
 	}
 	db, err := sql.Open("sqlite", cfg.DBPath)
 	if err != nil {
@@ -334,14 +334,14 @@ func TestStartupRejectsOversizedHiddenReaderFieldsBeforeReconciliation(t *testin
 	if _, err := db.Exec(`
 update reader_items set notes=printf('%*s', ? + 1, 'x') where id='oversized-hidden'
 `, maxReaderTextBytes); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if damaged, err := NewApp(cfg); err == nil {
-		damaged.Close()
+		_ = damaged.Close() // Preserve the primary result while releasing resources.
 		t.Fatal("startup accepted an oversized hidden Reader field")
 	}
 }
@@ -369,7 +369,7 @@ func TestStartupRejectsReaderTextOverByteBudgetOrContainingNUL(t *testing.T) {
 				t.Fatal(err)
 			}
 			if reopened, err := NewApp(cfg); err == nil {
-				reopened.Close()
+				_ = reopened.Close() // Preserve the primary result while releasing resources.
 				t.Fatal("startup accepted Reader text outside its byte/NUL budget")
 			}
 		})
@@ -383,13 +383,13 @@ func TestLegacyPreflightRejectsNULPrefixedText(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedReaderItem(t, app, "legacy-nul")
-	if _, err := app.db.Exec(`
+	if _, execErr := app.db.Exec(`
 update reader_segments set text=char(0)||printf('%*s', ?, 'x') where item_id='legacy-nul';
-pragma user_version=12`, maxReaderTextBytes+1); err != nil {
-		t.Fatal(err)
+pragma user_version=12`, maxReaderTextBytes+1); execErr != nil {
+		t.Fatal(execErr)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr3 := app.Close(); closeErr3 != nil {
+		t.Fatal(closeErr3)
 	}
 	info, err := os.Stat(cfg.DBPath)
 	if err != nil {
@@ -425,8 +425,8 @@ func TestMigrationHeadroomRejectsImpossibleAvailableSpace(t *testing.T) {
 
 func TestRevisionHeadroomIntegrityRejectsPenultimateCounters(t *testing.T) {
 	tests := []struct {
-		name   string
 		mutate func(*testing.T, *App)
+		name   string
 	}{
 		{
 			name: "station",
@@ -631,8 +631,8 @@ func TestQuiescedVolumeBackupRestoreDrill(t *testing.T) {
 		filepath.Join(source, "music-library", "tracks", "one"),
 		filepath.Join(source, "reader-library"),
 	} {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			t.Fatal(err)
+		if mkdirAllErr := os.MkdirAll(dir, 0o750); mkdirAllErr != nil {
+			t.Fatal(mkdirAllErr)
 		}
 	}
 	media := "trusted-media"
@@ -644,13 +644,13 @@ func TestQuiescedVolumeBackupRestoreDrill(t *testing.T) {
 			mediaSum),
 		filepath.Join(source, "music-library", "tracks", "one", "audio.mp3"): media,
 	} {
-		if err := os.WriteFile(path, []byte(data), 0o640); err != nil {
-			t.Fatal(err)
+		if writeFileErr3 := os.WriteFile(path, []byte(data), 0o640); writeFileErr3 != nil {
+			t.Fatal(writeFileErr3)
 		}
 	}
 	staticDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(staticDir, "index.html"), []byte("test"), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr4 := os.WriteFile(filepath.Join(staticDir, "index.html"), []byte("test"), 0o640); writeFileErr4 != nil {
+		t.Fatal(writeFileErr4)
 	}
 	cfg := appconfig.Config{
 		MetadataRoot:   source,
@@ -666,22 +666,22 @@ func TestQuiescedVolumeBackupRestoreDrill(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedReaderItem(t, app, "backup-reader")
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr4 := app.Close(); closeErr4 != nil {
+		t.Fatal(closeErr4)
 	}
 	database, err := sql.Open("sqlite", cfg.DBPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.Exec(`
+	if _, execErr2 := database.Exec(`
 pragma journal_mode=wal;
 insert into app_metadata(key, value) values ('proof', 'committed-in-wal')
-on conflict(key) do update set value=excluded.value;`); err != nil {
-		database.Close()
-		t.Fatal(err)
+on conflict(key) do update set value=excluded.value;`); execErr2 != nil {
+		_ = database.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(execErr2)
 	}
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr5 := database.Close(); closeErr5 != nil {
+		t.Fatal(closeErr5)
 	}
 	mismatchedBackup := exec.Command("scripts/backup-volume.sh",
 		"--source", source, "--output", output,
@@ -689,23 +689,23 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 		"--expected-runtime-release", strings.Repeat("f", 64),
 		"--identity-receipt", filepath.Join(root, "mismatched-release-receipt"))
 	mismatchedBackup.Env = append(os.Environ(), "ZAK_RADIO_SERVICE_QUIESCED=1")
-	if result, err := mismatchedBackup.CombinedOutput(); err == nil {
+	if result, combinedOutputErr5 := mismatchedBackup.CombinedOutput(); combinedOutputErr5 == nil {
 		t.Fatalf("backup accepted a package that did not match runtime identity: %s", result)
 	}
 	externalHardlink := filepath.Join(root, "external-hardlink")
-	if err := os.WriteFile(externalHardlink, []byte("outside"), 0o600); err != nil {
-		t.Fatal(err)
+	if writeFileErr5 := os.WriteFile(externalHardlink, []byte("outside"), 0o600); writeFileErr5 != nil {
+		t.Fatal(writeFileErr5)
 	}
 	insideHardlink := filepath.Join(source, "outward-hardlink")
-	if err := os.Link(externalHardlink, insideHardlink); err != nil {
-		t.Fatal(err)
+	if linkErr := os.Link(externalHardlink, insideHardlink); linkErr != nil {
+		t.Fatal(linkErr)
 	}
 	hardlinkBackup := exec.Command("scripts/backup-volume.sh",
 		"--source", source, "--output", output,
 		"--source-package", releasePackage, "--expected-runtime-release", releaseID,
 		"--identity-receipt", filepath.Join(root, "hardlink-receipt"))
 	hardlinkBackup.Env = append(os.Environ(), "ZAK_RADIO_SERVICE_QUIESCED=1")
-	if result, err := hardlinkBackup.CombinedOutput(); err == nil {
+	if result, combinedOutputErr6 := hardlinkBackup.CombinedOutput(); combinedOutputErr6 == nil {
 		t.Fatalf("backup accepted an outward hard link: %s", result)
 	}
 	info, err := os.Stat(externalHardlink)
@@ -715,28 +715,28 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("external hard link mode was mutated to %v", info.Mode())
 	}
-	if err := os.Remove(insideHardlink); err != nil {
-		t.Fatal(err)
+	if removeErr := os.Remove(insideHardlink); removeErr != nil {
+		t.Fatal(removeErr)
 	}
 	oversized := filepath.Join(source, "oversized-sparse")
-	if err := os.WriteFile(oversized, nil, 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr6 := os.WriteFile(oversized, nil, 0o640); writeFileErr6 != nil {
+		t.Fatal(writeFileErr6)
 	}
-	if err := os.Truncate(oversized, maxRetainedVolumeBytes+1); err != nil {
-		t.Fatal(err)
+	if truncateErr := os.Truncate(oversized, maxRetainedVolumeBytes+1); truncateErr != nil {
+		t.Fatal(truncateErr)
 	}
 	oversizedTarget := filepath.Join(root, "oversized-bootstrap-target")
 	oversizedBootstrap := exec.Command("scripts/bootstrap-volume.sh",
 		"--source", source, "--target", oversizedTarget)
 	oversizedBootstrap.Env = append(os.Environ(), "ZAK_RADIO_SOURCE_QUIESCED=1")
-	if result, err := oversizedBootstrap.CombinedOutput(); err == nil {
+	if result, combinedOutputErr7 := oversizedBootstrap.CombinedOutput(); combinedOutputErr7 == nil {
 		t.Fatalf("bootstrap accepted an oversized retained tree: %s", result)
 	}
-	if _, err := os.Stat(oversizedTarget); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("oversized bootstrap created its target: %v", err)
+	if _, statErr4 := os.Stat(oversizedTarget); !errors.Is(statErr4, os.ErrNotExist) {
+		t.Fatalf("oversized bootstrap created its target: %v", statErr4)
 	}
-	if err := os.Remove(oversized); err != nil {
-		t.Fatal(err)
+	if removeErr2 := os.Remove(oversized); removeErr2 != nil {
+		t.Fatal(removeErr2)
 	}
 	backup := exec.Command("scripts/backup-volume.sh", "--source", source, "--output", output,
 		"--source-package", releasePackage, "--expected-runtime-release", releaseID,
@@ -765,18 +765,18 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 		"--ownership", "preserve",
 		"--receipt", filepath.Join(releasePackage, "operator-receipt"),
 		"--release-package", releasePackage, "--identity-receipt", identityReceipt)
-	if result, err := packageReceiptRestore.CombinedOutput(); err == nil {
+	if result, combinedOutputErr8 := packageReceiptRestore.CombinedOutput(); combinedOutputErr8 == nil {
 		t.Fatalf("restore accepted a receipt inside its release package: %s", result)
 	}
-	if _, err := os.Stat(packageReceiptTarget); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("package-receipt restore created its target: %v", err)
+	if _, statErr5 := os.Stat(packageReceiptTarget); !errors.Is(statErr5, os.ErrNotExist) {
+		t.Fatalf("package-receipt restore created its target: %v", statErr5)
 	}
 	standaloneTarget := filepath.Join(root, "standalone-release-target")
 	standaloneRestore := exec.Command("scripts/restore-volume.sh",
 		"--backup", snapshot, "--target", standaloneTarget,
 		"--ownership", "preserve", "--receipt", standaloneTarget+".receipt",
 		"--release-file", releaseFile, "--identity-receipt", identityReceipt)
-	if output, err := standaloneRestore.CombinedOutput(); err == nil {
+	if output, combinedOutputErr9 := standaloneRestore.CombinedOutput(); combinedOutputErr9 == nil {
 		t.Fatalf("restore accepted a standalone release file: %s", output)
 	}
 	insideStoreReceipt := filepath.Join(output, "forged-identity-receipt")
@@ -784,87 +784,87 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(insideStoreReceipt, receiptBytes, 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr7 := os.WriteFile(insideStoreReceipt, receiptBytes, 0o640); writeFileErr7 != nil {
+		t.Fatal(writeFileErr7)
 	}
 	insideStoreTarget := filepath.Join(root, "inside-store-receipt-target")
 	insideStoreRestore := exec.Command("scripts/restore-volume.sh",
 		"--backup", snapshot, "--target", insideStoreTarget,
 		"--ownership", "preserve", "--receipt", insideStoreTarget+".receipt",
 		"--release-package", releasePackage, "--identity-receipt", insideStoreReceipt)
-	if result, err := insideStoreRestore.CombinedOutput(); err == nil {
+	if result, combinedOutputErr10 := insideStoreRestore.CombinedOutput(); combinedOutputErr10 == nil {
 		t.Fatalf("restore accepted a backup-store identity receipt: %s", result)
 	}
 	padding := filepath.Join(snapshot, "PADDING")
-	if err := os.WriteFile(padding, []byte("unbound"), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr8 := os.WriteFile(padding, []byte("unbound"), 0o640); writeFileErr8 != nil {
+		t.Fatal(writeFileErr8)
 	}
 	paddingTarget := filepath.Join(root, "padding-target")
 	paddingRestore := exec.Command("scripts/restore-volume.sh",
 		"--backup", snapshot, "--target", paddingTarget,
 		"--ownership", "preserve", "--receipt", paddingTarget+".receipt",
 		"--release-package", releasePackage, "--identity-receipt", identityReceipt)
-	if result, err := paddingRestore.CombinedOutput(); err == nil {
+	if result, combinedOutputErr11 := paddingRestore.CombinedOutput(); combinedOutputErr11 == nil {
 		t.Fatalf("restore accepted unbound top-level padding: %s", result)
 	}
-	if err := os.Remove(padding); err != nil {
-		t.Fatal(err)
+	if removeErr3 := os.Remove(padding); removeErr3 != nil {
+		t.Fatal(removeErr3)
 	}
 	unsupported := filepath.Join(source, "unsupported-link")
-	if err := os.Symlink("curated-tracks.json", unsupported); err != nil {
-		t.Fatal(err)
+	if symlinkErr := os.Symlink("curated-tracks.json", unsupported); symlinkErr != nil {
+		t.Fatal(symlinkErr)
 	}
 	rejectedBackup := exec.Command("scripts/backup-volume.sh", "--source", source, "--output", output,
 		"--source-package", releasePackage, "--expected-runtime-release", releaseID,
 		"--identity-receipt", filepath.Join(root, "rejected-link-receipt"))
 	rejectedBackup.Env = append(os.Environ(), "ZAK_RADIO_SERVICE_QUIESCED=1")
-	if result, err := rejectedBackup.CombinedOutput(); err == nil {
+	if result, combinedOutputErr12 := rejectedBackup.CombinedOutput(); combinedOutputErr12 == nil {
 		t.Fatalf("backup accepted a symlink: %s", result)
 	}
-	if err := os.Remove(unsupported); err != nil {
-		t.Fatal(err)
+	if removeErr4 := os.Remove(unsupported); removeErr4 != nil {
+		t.Fatal(removeErr4)
 	}
 	fifo := filepath.Join(source, "unsupported-fifo")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
-		t.Fatal(err)
+	if mkfifoErr := syscall.Mkfifo(fifo, 0o600); mkfifoErr != nil {
+		t.Fatal(mkfifoErr)
 	}
 	rejectedBackup = exec.Command("scripts/backup-volume.sh", "--source", source, "--output", output,
 		"--source-package", releasePackage, "--expected-runtime-release", releaseID,
 		"--identity-receipt", filepath.Join(root, "rejected-fifo-receipt"))
 	rejectedBackup.Env = append(os.Environ(), "ZAK_RADIO_SERVICE_QUIESCED=1")
-	if result, err := rejectedBackup.CombinedOutput(); err == nil {
+	if result, combinedOutputErr13 := rejectedBackup.CombinedOutput(); combinedOutputErr13 == nil {
 		t.Fatalf("backup accepted a FIFO: %s", result)
 	}
-	if err := os.Remove(fifo); err != nil {
-		t.Fatal(err)
+	if removeErr5 := os.Remove(fifo); removeErr5 != nil {
+		t.Fatal(removeErr5)
 	}
 	unsupportedName := filepath.Join(source, `name\with-backslash`)
-	if err := os.WriteFile(unsupportedName, []byte("unsupported"), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr9 := os.WriteFile(unsupportedName, []byte("unsupported"), 0o640); writeFileErr9 != nil {
+		t.Fatal(writeFileErr9)
 	}
 	rejectedBackup = exec.Command("scripts/backup-volume.sh", "--source", source, "--output", output,
 		"--source-package", releasePackage, "--expected-runtime-release", releaseID,
 		"--identity-receipt", filepath.Join(root, "rejected-name-receipt"))
 	rejectedBackup.Env = append(os.Environ(), "ZAK_RADIO_SERVICE_QUIESCED=1")
-	if result, err := rejectedBackup.CombinedOutput(); err == nil {
+	if result, combinedOutputErr14 := rejectedBackup.CombinedOutput(); combinedOutputErr14 == nil {
 		t.Fatalf("backup accepted an unsupported filename: %s", result)
 	}
-	if err := os.Remove(unsupportedName); err != nil {
-		t.Fatal(err)
+	if removeErr6 := os.Remove(unsupportedName); removeErr6 != nil {
+		t.Fatal(removeErr6)
 	}
 	audioPath := filepath.Join(source, "music-library", "tracks", "one", "audio.mp3")
-	if err := os.Remove(audioPath); err != nil {
-		t.Fatal(err)
+	if removeErr7 := os.Remove(audioPath); removeErr7 != nil {
+		t.Fatal(removeErr7)
 	}
 	rejectedBackup = exec.Command("scripts/backup-volume.sh", "--source", source, "--output", output,
 		"--source-package", releasePackage, "--expected-runtime-release", releaseID,
 		"--identity-receipt", filepath.Join(root, "rejected-media-receipt"))
 	rejectedBackup.Env = append(os.Environ(), "ZAK_RADIO_SERVICE_QUIESCED=1")
-	if result, err := rejectedBackup.CombinedOutput(); err == nil {
+	if result, combinedOutputErr15 := rejectedBackup.CombinedOutput(); combinedOutputErr15 == nil {
 		t.Fatalf("backup accepted missing indexed media: %s", result)
 	}
-	if err := os.WriteFile(audioPath, []byte(media), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr10 := os.WriteFile(audioPath, []byte(media), 0o640); writeFileErr10 != nil {
+		t.Fatal(writeFileErr10)
 	}
 	for _, overlap := range []struct {
 		name    string
@@ -890,90 +890,90 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 		},
 	} {
 		t.Run(overlap.name, func(t *testing.T) {
-			if output, err := overlap.command.CombinedOutput(); err == nil {
+			if output, combinedOutputErr16 := overlap.command.CombinedOutput(); combinedOutputErr16 == nil {
 				t.Fatalf("overlap accepted: %s", output)
 			}
-			if _, err := os.Stat(overlap.target); !os.IsNotExist(err) {
-				t.Fatalf("overlap created target %q: %v", overlap.target, err)
+			if _, statErr6 := os.Stat(overlap.target); !os.IsNotExist(statErr6) {
+				t.Fatalf("overlap created target %q: %v", overlap.target, statErr6)
 			}
 		})
 	}
 	malformed := filepath.Join(root, "malformed-snapshot")
-	if err := os.MkdirAll(filepath.Join(malformed, "volume"), 0o750); err != nil {
-		t.Fatal(err)
+	if mkdirAllErr2 := os.MkdirAll(filepath.Join(malformed, "volume"), 0o750); mkdirAllErr2 != nil {
+		t.Fatal(mkdirAllErr2)
 	}
-	if err := os.WriteFile(filepath.Join(malformed, "volume", "marker"), []byte("marker"), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr11 := os.WriteFile(filepath.Join(malformed, "volume", "marker"), []byte("marker"), 0o640); writeFileErr11 != nil {
+		t.Fatal(writeFileErr11)
 	}
 	sum := sha256.Sum256([]byte("marker"))
-	if err := os.WriteFile(filepath.Join(malformed, "SHA256SUMS"),
-		[]byte(fmt.Sprintf("%x  ./marker\n", sum)), 0o640); err != nil {
-		t.Fatal(err)
+	if writeFileErr12 := os.WriteFile(filepath.Join(malformed, "SHA256SUMS"),
+		[]byte(fmt.Sprintf("%x  ./marker\n", sum)), 0o640); writeFileErr12 != nil {
+		t.Fatal(writeFileErr12)
 	}
 	malformedTarget := filepath.Join(root, "malformed-target")
 	malformedRestore := exec.Command("scripts/restore-volume.sh",
 		"--backup", malformed, "--target", malformedTarget,
 		"--ownership", "preserve", "--receipt", malformedTarget+".receipt",
 		"--release-package", releasePackage, "--identity-receipt", identityReceipt)
-	if output, err := malformedRestore.CombinedOutput(); err == nil {
+	if output, combinedOutputErr17 := malformedRestore.CombinedOutput(); combinedOutputErr17 == nil {
 		t.Fatalf("malformed restore accepted: %s", output)
 	}
-	if _, err := os.Stat(malformedTarget); !os.IsNotExist(err) {
-		t.Fatalf("malformed restore created target: %v", err)
+	if _, statErr7 := os.Stat(malformedTarget); !os.IsNotExist(statErr7) {
+		t.Fatalf("malformed restore created target: %v", statErr7)
 	}
 	restore := exec.Command("scripts/restore-volume.sh",
 		"--backup", snapshot, "--target", target,
 		"--ownership", "preserve", "--receipt", target+".restore-receipt",
 		"--release-package", releasePackage, "--identity-receipt", identityReceipt)
-	if restoreOutput, err := restore.CombinedOutput(); err != nil {
-		t.Fatalf("restore failed: %v\n%s", err, restoreOutput)
+	if restoreOutput, combinedOutputErr18 := restore.CombinedOutput(); combinedOutputErr18 != nil {
+		t.Fatalf("restore failed: %v\n%s", combinedOutputErr18, restoreOutput)
 	}
 	restored, err := sql.Open("sqlite", filepath.Join(target, "station.sqlite3"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer restored.Close()
+	defer func() { _ = restored.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var proof, check string
-	if err := restored.QueryRow(
-		"select value from app_metadata where key='proof'").Scan(&proof); err != nil {
-		t.Fatal(err)
+	if scanErr := restored.QueryRow(
+		"select value from app_metadata where key='proof'").Scan(&proof); scanErr != nil {
+		t.Fatal(scanErr)
 	}
-	if err := restored.QueryRow("pragma quick_check").Scan(&check); err != nil {
-		t.Fatal(err)
+	if scanErr2 := restored.QueryRow("pragma quick_check").Scan(&check); scanErr2 != nil {
+		t.Fatal(scanErr2)
 	}
 	if proof != "committed-in-wal" || check != "ok" {
 		t.Fatalf("restored proof=%q quick_check=%q", proof, check)
 	}
-	if data, err := os.ReadFile(filepath.Join(target, "music-library", "tracks", "one", "audio.mp3")); err != nil || string(data) != media {
-		t.Fatalf("restored media=%q err=%v", data, err)
+	if data, readFileErr := os.ReadFile(filepath.Join(target, "music-library", "tracks", "one", "audio.mp3")); readFileErr != nil || string(data) != media {
+		t.Fatalf("restored media=%q err=%v", data, readFileErr)
 	}
 	secondTarget := filepath.Join(root, "restored-again")
 	repeatRestore := exec.Command("scripts/restore-volume.sh",
 		"--backup", snapshot, "--target", secondTarget,
 		"--ownership", "preserve", "--receipt", secondTarget+".restore-receipt",
 		"--release-package", releasePackage, "--identity-receipt", identityReceipt)
-	if output, err := repeatRestore.CombinedOutput(); err != nil {
-		t.Fatalf("repeat restore mutated its snapshot: %v\n%s", err, output)
+	if output, combinedOutputErr19 := repeatRestore.CombinedOutput(); combinedOutputErr19 != nil {
+		t.Fatalf("repeat restore mutated its snapshot: %v\n%s", combinedOutputErr19, output)
 	}
 	if os.Geteuid() == 0 {
-		rootfulRoot, err := os.MkdirTemp("", "zak-radio-rootful-")
-		if err != nil {
-			t.Fatal(err)
+		rootfulRoot, mkdirTempErr := os.MkdirTemp("", "zak-radio-rootful-")
+		if mkdirTempErr != nil {
+			t.Fatal(mkdirTempErr)
 		}
 		t.Cleanup(func() { _ = os.RemoveAll(rootfulRoot) })
-		if err := os.Chmod(rootfulRoot, 0o755); err != nil {
-			t.Fatal(err)
+		if chmodErr := os.Chmod(rootfulRoot, 0o755); chmodErr != nil {
+			t.Fatal(chmodErr)
 		}
 		bootstrapTarget := filepath.Join(rootfulRoot, "bootstrapped-current")
 		bootstrap := exec.Command("scripts/bootstrap-volume.sh",
 			"--source", source, "--target", bootstrapTarget)
 		bootstrap.Env = append(os.Environ(), "ZAK_RADIO_SOURCE_QUIESCED=1")
-		if output, err := bootstrap.CombinedOutput(); err != nil {
-			t.Fatalf("rootful bootstrap failed: %v\n%s", err, output)
+		if output, combinedOutputErr20 := bootstrap.CombinedOutput(); combinedOutputErr20 != nil {
+			t.Fatalf("rootful bootstrap failed: %v\n%s", combinedOutputErr20, output)
 		}
-		if output, err := exec.Command(
-			"scripts/validate-volume.sh", bootstrapTarget).CombinedOutput(); err != nil {
-			t.Fatalf("bootstrapped volume validation failed: %v\n%s", err, output)
+		if output, combinedOutputErr21 := exec.Command(
+			"scripts/validate-volume.sh", bootstrapTarget).CombinedOutput(); combinedOutputErr21 != nil {
+			t.Fatalf("bootstrapped volume validation failed: %v\n%s", combinedOutputErr21, output)
 		}
 		currentTarget := filepath.Join(rootfulRoot, "restored-current")
 		currentReceipt := filepath.Join(root, "current-rootful-restore-receipt")
@@ -981,16 +981,16 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 			"--backup", snapshot, "--target", currentTarget,
 			"--ownership", "current", "--receipt", currentReceipt,
 			"--release-package", releasePackage, "--identity-receipt", identityReceipt)
-		if output, err := currentRestore.CombinedOutput(); err != nil {
-			t.Fatalf("rootful current-ownership restore failed: %v\n%s", err, output)
+		if output, combinedOutputErr22 := currentRestore.CombinedOutput(); combinedOutputErr22 != nil {
+			t.Fatalf("rootful current-ownership restore failed: %v\n%s", combinedOutputErr22, output)
 		}
-		if err := filepath.WalkDir(currentTarget, func(path string, _ os.DirEntry, walkErr error) error {
+		if walkDirErr := filepath.WalkDir(currentTarget, func(path string, _ os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
-			info, err := os.Lstat(path)
-			if err != nil {
-				return err
+			info, lstatErr := os.Lstat(path)
+			if lstatErr != nil {
+				return lstatErr
 			}
 			stat, ok := info.Sys().(*syscall.Stat_t)
 			if !ok {
@@ -1000,8 +1000,8 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 				return fmt.Errorf("%s owner=%d:%d", path, stat.Uid, stat.Gid)
 			}
 			return nil
-		}); err != nil {
-			t.Fatal(err)
+		}); walkDirErr != nil {
+			t.Fatal(walkDirErr)
 		}
 
 		migrationTarget := filepath.Join(rootfulRoot, "migration-candidate")
@@ -1009,8 +1009,8 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 			"--backup", snapshot, "--target", migrationTarget,
 			"--ownership", "preserve", "--receipt", filepath.Join(root, "migration-restore-receipt"),
 			"--release-package", releasePackage, "--identity-receipt", identityReceipt)
-		if output, err := migrationRestore.CombinedOutput(); err != nil {
-			t.Fatalf("migration candidate restore failed: %v\n%s", err, output)
+		if output, combinedOutputErr23 := migrationRestore.CombinedOutput(); combinedOutputErr23 != nil {
+			t.Fatalf("migration candidate restore failed: %v\n%s", combinedOutputErr23, output)
 		}
 		ownershipReceipt := filepath.Join(root, "ownership-receipt")
 		migrate := exec.Command("scripts/migrate-volume-ownership.sh",
@@ -1018,25 +1018,25 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 			"--source-package", releasePackage,
 			"--receipt", ownershipReceipt, "--identity-receipt", identityReceipt)
 		migrate.Env = append(os.Environ(), "ZAK_RADIO_SERVICE_QUIESCED=1")
-		if output, err := migrate.CombinedOutput(); err != nil {
-			t.Fatalf("rootful ownership migration failed: %v\n%s", err, output)
+		if output, combinedOutputErr24 := migrate.CombinedOutput(); combinedOutputErr24 != nil {
+			t.Fatalf("rootful ownership migration failed: %v\n%s", combinedOutputErr24, output)
 		}
 		verify := exec.Command("scripts/verify-ownership-receipt.sh",
 			"--volume", migrationTarget, "--receipt", ownershipReceipt)
-		if output, err := verify.CombinedOutput(); err != nil {
-			t.Fatalf("ownership receipt verification failed: %v\n%s", err, output)
+		if output, combinedOutputErr25 := verify.CombinedOutput(); combinedOutputErr25 != nil {
+			t.Fatalf("ownership receipt verification failed: %v\n%s", combinedOutputErr25, output)
 		}
 		modeProbe := filepath.Join(migrationTarget, "curated-tracks.json")
-		if err := os.Chmod(modeProbe, 0o600); err != nil {
-			t.Fatal(err)
+		if chmodErr2 := os.Chmod(modeProbe, 0o600); chmodErr2 != nil {
+			t.Fatal(chmodErr2)
 		}
 		verifyDrift := exec.Command("scripts/verify-ownership-receipt.sh",
 			"--volume", migrationTarget, "--receipt", ownershipReceipt)
-		if output, err := verifyDrift.CombinedOutput(); err == nil {
+		if output, combinedOutputErr26 := verifyDrift.CombinedOutput(); combinedOutputErr26 == nil {
 			t.Fatalf("ownership receipt accepted mode-only drift: %s", output)
 		}
-		if err := os.Chmod(modeProbe, 0o640); err != nil {
-			t.Fatal(err)
+		if chmodErr3 := os.Chmod(modeProbe, 0o640); chmodErr3 != nil {
+			t.Fatal(chmodErr3)
 		}
 		t.Log("rootful bootstrap, current restore, ownership migration, and receipt verification passed")
 	}
@@ -1045,7 +1045,7 @@ on conflict(key) do update set value=excluded.value;`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := newerDB.Exec("pragma user_version=999"); err != nil {
-		newerDB.Close()
+		_ = newerDB.Close() // Preserve the primary result while releasing resources.
 		t.Fatal(err)
 	}
 	if err := newerDB.Close(); err != nil {

@@ -46,30 +46,30 @@ func TestMigrationNormalizesCanonicalStationIdentity(t *testing.T) {
 		`drop table stations`,
 		`alter table stations_v4 rename to stations`,
 	} {
-		if _, err := app.db.Exec(statement); err != nil {
-			t.Fatal(err)
+		if _, execErr := app.db.Exec(statement); execErr != nil {
+			t.Fatal(execErr)
 		}
 	}
-	if _, err := app.db.Exec(`
-update stations set kind='temporary', owner_hash='owner', expires_at=? where id='main'`, now+100); err != nil {
-		t.Fatal(err)
+	if _, execErr2 := app.db.Exec(`
+update stations set kind='temporary', owner_hash='owner', expires_at=? where id='main'`, now+100); execErr2 != nil {
+		t.Fatal(execErr2)
 	}
-	if _, err := app.db.Exec(`
+	if _, execErr3 := app.db.Exec(`
 insert into stations(id, kind, owner_hash, track_id, created_at, updated_at, track_changed_at)
-values ('aux-shared', 'shared', '', 'one', ?, ?, ?)`, now, now, now); err != nil {
-		t.Fatal(err)
+values ('aux-shared', 'shared', '', 'one', ?, ?, ?)`, now, now, now); execErr3 != nil {
+		t.Fatal(execErr3)
 	}
-	if _, err := app.db.Exec("pragma user_version=4"); err != nil {
-		t.Fatal(err)
+	if _, execErr4 := app.db.Exec("pragma user_version=4"); execErr4 != nil {
+		t.Fatal(execErr4)
 	}
-	if err := app.db.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := app.db.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	reopened, err := NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var kind, owner string
 	var expires any
 	if err := reopened.db.QueryRow("select kind, owner_hash, expires_at from stations where id='main'").
@@ -115,20 +115,20 @@ func TestMigrationDropsUnroutableTemporaryStations(t *testing.T) {
 		`drop table stations`,
 		`alter table stations_v5 rename to stations`,
 	} {
-		if _, err := app.db.Exec(statement); err != nil {
-			t.Fatal(err)
+		if _, execErr5 := app.db.Exec(statement); execErr5 != nil {
+			t.Fatal(execErr5)
 		}
 	}
-	if _, err := app.db.Exec(`
+	if _, execErr6 := app.db.Exec(`
 insert into stations(id, kind, owner_hash, track_id, created_at, updated_at, track_changed_at, expires_at)
-values ('guest', 'temporary', 'owner', 'one', ?, ?, ?, ?)`, now, now, now, now+3600); err != nil {
-		t.Fatal(err)
+values ('guest', 'temporary', 'owner', 'one', ?, ?, ?, ?)`, now, now, now, now+3600); execErr6 != nil {
+		t.Fatal(execErr6)
 	}
-	if _, err := app.db.Exec("pragma user_version=5"); err != nil {
-		t.Fatal(err)
+	if _, execErr7 := app.db.Exec("pragma user_version=5"); execErr7 != nil {
+		t.Fatal(execErr7)
 	}
-	if err := app.db.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr2 := app.db.Close(); closeErr2 != nil {
+		t.Fatal(closeErr2)
 	}
 	for _, root := range []*os.Root{app.archiveRoot, app.metadataRoot, app.readerRoot, app.staticRoot} {
 		_ = root.Close()
@@ -137,7 +137,7 @@ values ('guest', 'temporary', 'owner', 'one', ?, ?, ?, ?)`, now, now, now, now+3
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var invalid int
 	if err := reopened.db.QueryRow("select count(*) from stations where id='guest'").Scan(&invalid); err != nil {
 		t.Fatal(err)
@@ -278,7 +278,7 @@ insert into stations(
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer secondDB.Close()
+	defer func() { _ = secondDB.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	other := NewStationService(secondDB, app.catalog, appevents.NewBroadcaster())
 	services := []*StationService{app.station, other}
 	errorsSeen := make(chan error, 2)
@@ -361,7 +361,7 @@ insert into stations(
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer secondDB.Close()
+	defer func() { _ = secondDB.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	services := []*StationService{
 		app.station,
 		NewStationService(secondDB, app.catalog, appevents.NewBroadcaster()),
@@ -536,20 +536,20 @@ func TestMigrationReservesRevisionHeadroomAndLogicalClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedReaderItem(t, app, "migration-headroom")
-	if _, err := app.db.Exec(`
+	if _, execErr8 := app.db.Exec(`
 insert into reader_playback(
 	item_id, segment_index, position, playing, updated_at, revision, writer_id, writer_sequence
-) values ('migration-headroom', 0, 0, 0, ?, 0, '', 0)`, unixTime(time.Now())); err != nil {
-		t.Fatal(err)
+) values ('migration-headroom', 0, 0, 0, ?, 0, '', 0)`, unixTime(time.Now())); execErr8 != nil {
+		t.Fatal(execErr8)
 	}
-	if err := app.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr3 := app.Close(); closeErr3 != nil {
+		t.Fatal(closeErr3)
 	}
 	db, err := sql.Open("sqlite", cfg.DBPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`
+	if _, execErr9 := db.Exec(`
 update stations set revision=? where id='main';
 update reader_playback set revision=? where item_id='migration-headroom';
 update app_metadata set value=? where key='track_stats_revision';
@@ -558,27 +558,27 @@ on conflict(track_id) do update set skip_count=excluded.skip_count;
 delete from app_metadata where key='logical_clock_high';
 pragma user_version=12;`,
 		maxRevisionValue, maxRevisionValue,
-		strconv.FormatInt(maxRevisionValue, 10), maxRevisionValue); err != nil {
-		db.Close()
-		t.Fatal(err)
+		strconv.FormatInt(maxRevisionValue, 10), maxRevisionValue); execErr9 != nil {
+		_ = db.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(execErr9)
 	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr4 := db.Close(); closeErr4 != nil {
+		t.Fatal(closeErr4)
 	}
 	info, err := os.Stat(cfg.DBPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := preflightImmutableDatabase(
+	if preflightImmutableDatabaseErr := preflightImmutableDatabase(
 		context.Background(), cfg.DBPath, info.Size(),
-	); err != nil {
-		t.Fatalf("supported legacy database was rejected before candidate migration: %v", err)
+	); preflightImmutableDatabaseErr != nil {
+		t.Fatalf("supported legacy database was rejected before candidate migration: %v", preflightImmutableDatabaseErr)
 	}
 	reopened, err := NewApp(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopened.Close()
+	defer func() { _ = reopened.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var stationRevision, readerRevision, trackRevision, skipCount int64
 	var logicalRaw string
 	if err := reopened.db.QueryRow(`
@@ -637,33 +637,33 @@ func TestCatalogTurnoverReconcilesAuxiliaryStatisticsBeforeServing(t *testing.T)
 	likes, err := tx.Prepare(
 		`insert into likes(track_id, liked, updated_at) values (?, 1, 1)`)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback() // Preserve the primary result while releasing resources.
 		t.Fatal(err)
 	}
 	skips, err := tx.Prepare(
 		`insert into skip_counts(track_id, skip_count) values (?, 1)`)
 	if err != nil {
-		likes.Close()
-		tx.Rollback()
+		_ = likes.Close() // Preserve the primary result while releasing resources.
+		_ = tx.Rollback() // Preserve the primary result while releasing resources.
 		t.Fatal(err)
 	}
 	for index := 0; index < maxCatalogTracks; index++ {
 		id := fmt.Sprintf("removed-%04d", index)
 		if _, err := likes.Exec(id); err != nil {
-			likes.Close()
-			skips.Close()
-			tx.Rollback()
+			_ = likes.Close() // Preserve the primary result while releasing resources.
+			_ = skips.Close() // Preserve the primary result while releasing resources.
+			_ = tx.Rollback() // Preserve the primary result while releasing resources.
 			t.Fatal(err)
 		}
 		if _, err := skips.Exec(id); err != nil {
-			likes.Close()
-			skips.Close()
-			tx.Rollback()
+			_ = likes.Close() // Preserve the primary result while releasing resources.
+			_ = skips.Close() // Preserve the primary result while releasing resources.
+			_ = tx.Rollback() // Preserve the primary result while releasing resources.
 			t.Fatal(err)
 		}
 	}
-	likes.Close()
-	skips.Close()
+	_ = likes.Close() // Preserve the primary result while releasing resources.
+	_ = skips.Close() // Preserve the primary result while releasing resources.
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
@@ -705,31 +705,31 @@ func TestLegacyPreflightRejectsUnexpectedTriggerBeforeMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`
+	if _, execErr10 := db.Exec(`
 pragma user_version=2;
 create table stations(id text primary key, revision integer);
 create trigger unexpected_marker after update on stations
-begin select 1; end;`); err != nil {
-		db.Close()
-		t.Fatal(err)
+begin select 1; end;`); execErr10 != nil {
+		_ = db.Close() // Preserve the primary result while releasing resources.
+		t.Fatal(execErr10)
 	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr5 := db.Close(); closeErr5 != nil {
+		t.Fatal(closeErr5)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := preflightImmutableDatabase(
+	if preflightImmutableDatabaseErr2 := preflightImmutableDatabase(
 		context.Background(), path, info.Size(),
-	); err == nil || !strings.Contains(err.Error(), `unexpected trigger "unexpected_marker"`) {
-		t.Fatalf("unexpected legacy trigger passed read-only preflight: %v", err)
+	); preflightImmutableDatabaseErr2 == nil || !strings.Contains(preflightImmutableDatabaseErr2.Error(), `unexpected trigger "unexpected_marker"`) {
+		t.Fatalf("unexpected legacy trigger passed read-only preflight: %v", preflightImmutableDatabaseErr2)
 	}
 	check, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer check.Close()
+	defer func() { _ = check.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	var version int
 	if err := check.QueryRow(`pragma user_version`).Scan(&version); err != nil {
 		t.Fatal(err)

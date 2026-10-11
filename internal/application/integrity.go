@@ -14,8 +14,8 @@ import (
 
 type integrityArtifact struct {
 	path   string
-	bytes  int64
 	digest string
+	bytes  int64
 }
 
 type retainedDigest struct {
@@ -132,7 +132,9 @@ select source_path, normalized_text_path, manifest_path from reader_items`)
 			if rows.Err() != nil {
 				readerOK = false
 			}
-			rows.Close()
+			if closeErr := rows.Close(); closeErr != nil {
+				readerOK = false
+			}
 		}
 	}
 
@@ -156,7 +158,9 @@ select audio_path, audio_bytes, audio_sha256 from reader_segments where status='
 			if rows.Err() != nil {
 				readerOK = false
 			}
-			rows.Close()
+			if closeErr := rows.Close(); closeErr != nil {
+				readerOK = false
+			}
 		}
 	}
 	if readerOK {
@@ -220,7 +224,7 @@ func databaseStructuralIntegrity(ctx context.Context, q queryer) error {
 	if err != nil {
 		return fmt.Errorf("SQLite foreign_key_check: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	if rows.Next() {
 		var table, parent string
 		var rowID any
@@ -280,7 +284,7 @@ select
 		return err
 	}
 	if items > maxReaderItems || segments > maxReaderSegments || textBytes > maxReaderTotalText {
-		return fmt.Errorf("Reader retained-data budget exceeded: items=%d segments=%d text=%d",
+		return fmt.Errorf("reader retained-data budget exceeded: items=%d segments=%d text=%d",
 			items, segments, textBytes)
 	}
 	var invalid int
@@ -513,7 +517,7 @@ func validateReaderJSONShapes(ctx context.Context, q queryer) error {
 		for rows.Next() {
 			var id, raw string
 			if err := rows.Scan(&id, &raw); err != nil {
-				rows.Close()
+				_ = rows.Close() // Preserve the primary result while releasing resources.
 				return err
 			}
 			trimmed := strings.TrimSpace(raw)
@@ -521,13 +525,13 @@ func validateReaderJSONShapes(ctx context.Context, q queryer) error {
 			if !strings.HasPrefix(trimmed, "[") ||
 				json.Unmarshal([]byte(trimmed), &values) != nil ||
 				len(values) > maxReaderItemSegments {
-				rows.Close()
-				return fmt.Errorf("Reader %s %q is not a bounded string array", check.name, id)
+				_ = rows.Close() // Preserve the primary result while releasing resources.
+				return fmt.Errorf("reader %s %q is not a bounded string array", check.name, id)
 			}
 			for _, value := range values {
 				if len(value) > maxReaderFieldBytes || strings.ContainsRune(value, '\x00') {
-					rows.Close()
-					return fmt.Errorf("Reader %s %q contains an invalid value", check.name, id)
+					_ = rows.Close() // Preserve the primary result while releasing resources.
+					return fmt.Errorf("reader %s %q contains an invalid value", check.name, id)
 				}
 			}
 		}
@@ -549,7 +553,7 @@ select
 		return err
 	}
 	if items > maxReaderItems || segments > maxReaderSegments || textBytes > maxReaderTotalText {
-		return fmt.Errorf("Reader retained-data budget exceeded: items=%d segments=%d text=%d",
+		return fmt.Errorf("reader retained-data budget exceeded: items=%d segments=%d text=%d",
 			items, segments, textBytes)
 	}
 	var oversizedItems int
@@ -634,7 +638,7 @@ select audio_path, audio_bytes, audio_sha256 from reader_segments where status='
 	if err != nil {
 		return result, false
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	for rows.Next() {
 		var artifact integrityArtifact
 		if rows.Scan(&artifact.path, &artifact.bytes, &artifact.digest) == nil {

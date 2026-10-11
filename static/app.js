@@ -1627,7 +1627,7 @@ async function togglePlayback() {
 }
 
 function toggleRepeatOne() {
-  const enabled = !Boolean(state.station?.repeat_one);
+  const enabled = !state.station?.repeat_one;
   if (state.station) {
     state.station.repeat_one = enabled;
     renderStation();
@@ -1637,7 +1637,7 @@ function toggleRepeatOne() {
 }
 
 function toggleShuffle() {
-  const enabled = !Boolean(state.station?.shuffle);
+  const enabled = !state.station?.shuffle;
   if (state.station) {
     state.station.shuffle = enabled;
     renderStation();

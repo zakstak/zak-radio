@@ -6,9 +6,9 @@ import (
 )
 
 type Broadcaster struct {
-	mu          sync.Mutex
 	subscribers map[string]map[chan []byte]struct{}
 	revisions   map[string]int64
+	mu          sync.Mutex
 }
 
 func NewBroadcaster() *Broadcaster {

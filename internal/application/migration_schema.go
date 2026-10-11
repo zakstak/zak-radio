@@ -19,14 +19,14 @@ import (
 const currentSchemaVersion = 18
 
 type migration struct {
-	version int
 	run     func(context.Context, *sql.Tx) error
+	version int
 }
 
 func openDatabase(ctx context.Context, path, retainedRoot string) (*sql.DB, error) {
 	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
-		if err := preflightDatabase(ctx, path, info.Size()); err != nil {
-			return nil, err
+		if preflightDatabaseErr := preflightDatabase(ctx, path, info.Size()); preflightDatabaseErr != nil {
+			return nil, preflightDatabaseErr
 		}
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -44,25 +44,25 @@ func openDatabase(ctx context.Context, path, retainedRoot string) (*sql.DB, erro
 		"PRAGMA busy_timeout = 5000",
 	} {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
-			db.Close()
+			_ = db.Close() // Preserve the primary result while releasing resources.
 			return nil, fmt.Errorf("%s: %w", statement, err)
 		}
 	}
 	var journalMode string
 	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode = WAL").Scan(&journalMode); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		return nil, fmt.Errorf("enable WAL journal mode: %w", err)
 	}
 	if !strings.EqualFold(journalMode, "wal") {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		return nil, fmt.Errorf("enable WAL journal mode: SQLite selected %q", journalMode)
 	}
 	if err := migrate(ctx, db, path, retainedRoot); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		return nil, err
 	}
 	if err := validateCanonicalSchema(ctx, db); err != nil {
-		db.Close()
+		_ = db.Close() // Preserve the primary result while releasing resources.
 		return nil, err
 	}
 	return db, nil
@@ -107,23 +107,23 @@ func preflightDatabaseMode(
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }() // Best-effort cleanup; operation errors are checked separately.
 	db.SetMaxOpenConns(1)
 	var quick string
-	if err := db.QueryRowContext(ctx, "pragma quick_check").Scan(&quick); err != nil || quick != "ok" {
-		return fmt.Errorf("pre-migration SQLite quick_check=%q: %w", quick, err)
+	if scanErr := db.QueryRowContext(ctx, "pragma quick_check").Scan(&quick); scanErr != nil || quick != "ok" {
+		return fmt.Errorf("pre-migration SQLite quick_check=%q: %w", quick, scanErr)
 	}
 	var version int
-	if err := db.QueryRowContext(ctx, "pragma user_version").Scan(&version); err != nil {
-		return err
+	if scanErr2 := db.QueryRowContext(ctx, "pragma user_version").Scan(&version); scanErr2 != nil {
+		return scanErr2
 	}
 	if version > currentSchemaVersion {
 		return fmt.Errorf("database schema version %d is newer than supported version %d",
 			version, currentSchemaVersion)
 	}
 	if version == currentSchemaVersion {
-		if err := validateCanonicalSchema(ctx, db); err != nil {
-			return fmt.Errorf("pre-migration canonical schema: %w", err)
+		if validateCanonicalSchemaErr := validateCanonicalSchema(ctx, db); validateCanonicalSchemaErr != nil {
+			return fmt.Errorf("pre-migration canonical schema: %w", validateCanonicalSchemaErr)
 		}
 		return nil
 	}
@@ -152,19 +152,19 @@ order by type, name`)
 	for rows.Next() {
 		var kind, name, table, statement string
 		if err := rows.Scan(&kind, &name, &table, &statement); err != nil {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return err
 		}
 		if kind != "table" {
 			if !allowedLegacySchemaObject(version, kind, name, table, statement) {
-				rows.Close()
+				_ = rows.Close() // Preserve the primary result while releasing resources.
 				return fmt.Errorf(
 					"pre-migration database contains unexpected %s %q", kind, name)
 			}
 			continue
 		}
 		if _, ok := allowed[name]; !ok {
-			rows.Close()
+			_ = rows.Close() // Preserve the primary result while releasing resources.
 			return fmt.Errorf("pre-migration database contains unexpected table %q", name)
 		}
 		tables = append(tables, name)
@@ -193,11 +193,11 @@ order by type, name`)
 			var defaultValue any
 			if err := columns.Scan(&cid, &name, &columnType, &notNull,
 				&defaultValue, &primaryKey, &hidden); err != nil {
-				columns.Close()
+				_ = columns.Close() // Preserve the primary result while releasing resources.
 				return err
 			}
 			if hidden != 0 {
-				columns.Close()
+				_ = columns.Close() // Preserve the primary result while releasing resources.
 				return fmt.Errorf(
 					"pre-migration table %q contains generated or hidden column %q",
 					table, name)
@@ -328,24 +328,24 @@ select count(*) from sqlite_master where type='table' and name not like 'sqlite_
 		}
 	}
 	migrations := []migration{
-		{1, createAuxiliaryTables},
-		{2, consolidateStations},
-		{3, aggregateSkipCounts},
-		{4, strengthenReaderAndStationData},
-		{5, enforceStationIdentityAndTrackStats},
-		{6, enforceRoutableTemporaryStations},
-		{7, addReaderPlaybackRevision},
-		{8, addReaderPlaybackWriterSequence},
-		{9, addStationCreatorBuckets},
-		{10, enforceStationCreatorCapacity},
-		{11, enforceAttributedTemporaryStations},
-		{12, enforceRevisionHeadroom},
-		{13, reserveRevisionHeadroomAndClock},
-		{14, addStationCreationIdempotency},
-		{15, addStationQueue},
-		{16, addDislikeCounts},
-		{17, addRadioProgramming},
-		{18, addPersistentStations},
+		{version: 1, run: createAuxiliaryTables},
+		{version: 2, run: consolidateStations},
+		{version: 3, run: aggregateSkipCounts},
+		{version: 4, run: strengthenReaderAndStationData},
+		{version: 5, run: enforceStationIdentityAndTrackStats},
+		{version: 6, run: enforceRoutableTemporaryStations},
+		{version: 7, run: addReaderPlaybackRevision},
+		{version: 8, run: addReaderPlaybackWriterSequence},
+		{version: 9, run: addStationCreatorBuckets},
+		{version: 10, run: enforceStationCreatorCapacity},
+		{version: 11, run: enforceAttributedTemporaryStations},
+		{version: 12, run: enforceRevisionHeadroom},
+		{version: 13, run: reserveRevisionHeadroomAndClock},
+		{version: 14, run: addStationCreationIdempotency},
+		{version: 15, run: addStationQueue},
+		{version: 16, run: addDislikeCounts},
+		{version: 17, run: addRadioProgramming},
+		{version: 18, run: addPersistentStations},
 	}
 	for _, item := range migrations {
 		if item.version <= version {
@@ -441,15 +441,15 @@ func addDislikeCounts(ctx context.Context, tx *sql.Tx) error {
 		var cid, notNull, primaryKey, hidden int
 		var name, columnType string
 		var defaultValue any
-		if err := rows.Scan(&cid, &name, &columnType, &notNull,
-			&defaultValue, &primaryKey, &hidden); err != nil {
-			rows.Close()
-			return err
+		if scanErr3 := rows.Scan(&cid, &name, &columnType, &notNull,
+			&defaultValue, &primaryKey, &hidden); scanErr3 != nil {
+			_ = rows.Close() // Preserve the primary result while releasing resources.
+			return scanErr3
 		}
 		found = found || name == "disliked"
 	}
-	if err := rows.Close(); err != nil {
-		return err
+	if closeErr := rows.Close(); closeErr != nil {
+		return closeErr
 	}
 	if found {
 		return nil
@@ -486,14 +486,14 @@ update skip_counts set skip_count=0 where skip_count>=?;`,
 	}
 	trackRevision, err := strconv.ParseInt(trackRaw, 10, 64)
 	if err != nil || trackRevision < 0 || trackRevision >= maxRevisionValue-2 {
-		if _, err := tx.ExecContext(ctx,
-			`update app_metadata set value='0' where key='track_stats_revision'`); err != nil {
-			return err
+		if _, execContextErr := tx.ExecContext(ctx,
+			`update app_metadata set value='0' where key='track_stats_revision'`); execContextErr != nil {
+			return execContextErr
 		}
 	}
 	var retainedHigh sql.NullFloat64
-	if err := tx.QueryRowContext(ctx, "select max(updated_at) from stations").Scan(&retainedHigh); err != nil {
-		return err
+	if scanErr4 := tx.QueryRowContext(ctx, "select max(updated_at) from stations").Scan(&retainedHigh); scanErr4 != nil {
+		return scanErr4
 	}
 	high := retainedHigh.Float64
 	var raw string
@@ -534,9 +534,9 @@ func enforceRevisionHeadroom(ctx context.Context, tx *sql.Tx) error {
 		`select value from app_metadata where key='track_stats_revision'`).Scan(&value)
 	revision, parseErr := strconv.ParseInt(value, 10, 64)
 	if errors.Is(err, sql.ErrNoRows) {
-		if _, err := tx.ExecContext(ctx,
-			`insert into app_metadata(key, value) values ('track_stats_revision', '0')`); err != nil {
-			return err
+		if _, execContextErr2 := tx.ExecContext(ctx,
+			`insert into app_metadata(key, value) values ('track_stats_revision', '0')`); execContextErr2 != nil {
+			return execContextErr2
 		}
 	} else if err != nil {
 		return err

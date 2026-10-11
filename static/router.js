@@ -245,7 +245,7 @@ export function createRouter({
     const routeScroll = routeScrollPosition();
     window.history.replaceState(
       {
-        ...(window.history.state || {}),
+        ...window.history.state,
         scroll: routeScroll,
       },
       "",
@@ -255,7 +255,7 @@ export function createRouter({
     const routeScroll = routeScrollPosition();
     window.history.replaceState(
       {
-        ...(window.history.state || {}),
+        ...window.history.state,
         scroll: routeScroll,
       },
       "",

@@ -57,6 +57,21 @@ go build ./cmd/zak-radio
 go test -race ./cmd/... ./internal/...
 ```
 
+Pragma provides formatting, lint, secret scanning, and pre-push Go and Python
+checks. Install [Pragma](https://github.com/zakstak/pragma) from its latest main
+branch, then configure this checkout:
+
+```bash
+~/.pragma/install.sh --agent "$PWD"
+prek run --all-files
+prek run --all-files --stage pre-push
+```
+
+The checked-in wrappers use the local `pragma.home` Git setting or
+`PRAGMA_HOME`. Python helper regression checks use Pragma's pinned pytest tool
+bundle. The Go recovery tests also exercise the retained-volume maintenance
+scripts against isolated fixtures.
+
 `static/styles.tailwind.css` is the editable Tailwind v4 source.
 `static/styles.css` is generated, served by the application, and must match it.
 
