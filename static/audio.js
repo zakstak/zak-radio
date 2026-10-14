@@ -137,10 +137,15 @@ export function createAudioController({
         return false;
       this.reloadIfFailed();
       const operation = ++this.playOperation;
+      const isCurrent = () =>
+        this.playOperation === operation &&
+        this.generation === generation &&
+        valid();
       let timeout;
-      // A failed start ends a pending resume, unless a newer claim owns it.
+      // Only the current start may change playback or native protection state.
       const failed = () => {
-        if (this.generation === generation) this.resuming = false;
+        if (!isCurrent()) return;
+        this.resuming = false;
         onPlaybackChange();
       };
       try {
@@ -151,12 +156,7 @@ export function createAudioController({
             subtitle: "Zak Radio",
           });
           if (this.preparing === operation) this.preparing = 0;
-          if (
-            this.playOperation !== operation ||
-            this.generation !== generation ||
-            !valid() ||
-            (this.is("radio") && !shouldPlayRadio())
-          ) {
+          if (!isCurrent() || (this.is("radio") && !shouldPlayRadio())) {
             // The host prepared for a play that is no longer wanted. Unless a
             // newer preparation is pending, restate what the page is doing.
             if (!this.preparing) onPlaybackChange();
@@ -177,15 +177,15 @@ export function createAudioController({
             timeout = window.setTimeout(() => resolve(false), 4000);
           }),
         ]);
+        if (!isCurrent()) return false;
         // A prepared host otherwise keeps foreground protection without audio.
         if (!played) failed();
         return played;
       } catch (error) {
-        if (
-          error?.name !== "AbortError" &&
-          this.generation === generation &&
-          valid()
-        ) {
+        // Source changes and Pause can settle an earlier element.play() after
+        // another owner or start has taken over. Its error belongs to that start.
+        if (!isCurrent()) return false;
+        if (error?.name !== "AbortError") {
           onError(error);
         }
         // Radio can't start here without a tap, so stop treating it as active.
