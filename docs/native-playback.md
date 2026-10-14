@@ -39,6 +39,9 @@ load.
   the reply arrives. A rejected or timed-out preparation leaves Radio paused.
 - **Explicit Pause wins.** `ZakAudio.pause()` cancels an in-flight play. It also
   cancels a start that Reader deferred until the next segment's metadata loads.
+- **Old starts cannot change a new start.** After Pause, an owner or source
+  change, or another Play, a late result from the old `play()` cannot suspend
+  Radio, clear Reader's pending resume, or report the old start as successful.
 - **Interruptions stick.** A pause the app didn't request, such as an
   audio-focus loss, suspends Radio, and station updates don't resume it. If
   Chromium resumes the element itself when a transient focus loss ends, Radio
