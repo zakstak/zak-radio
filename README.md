@@ -10,7 +10,7 @@ in this repository are the product source of truth. See
 
 ## Run locally
 
-Install Go 1.27.2+ and Node 24+. Build the browser assets:
+Install Go 1.27.3+ and Node 24+. Build the browser assets:
 
 ```bash
 npm ci
@@ -58,9 +58,10 @@ go test -race ./cmd/... ./internal/...
 npm test
 ```
 
-Pragma provides formatting, lint, secret scanning, and pre-push Go, Node, and
-Python checks. Install [Pragma](https://github.com/zakstak/pragma) from its
-latest main branch, then configure this checkout:
+Pragma provides formatting, lint, generated-artifact checks, secret scanning,
+and pre-push Go, Node, and Python checks. Install
+[Pragma](https://github.com/zakstak/pragma) from its latest main branch, then
+configure this checkout:
 
 ```bash
 ~/.pragma/install.sh --agent "$PWD"
