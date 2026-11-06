@@ -1,7 +1,8 @@
 /*
  * Zakstak Service Switcher 1.0.0
  * Canonical source: zakstak/saga-product/design-system/service-switcher.js
- * Product adaptation: compact names-only launcher; directory validation unchanged.
+ * Product adaptation: compact launcher tiles (name and monogram); directory
+ * validation unchanged.
  */
 
 export const SERVICE_DIRECTORY_SCHEMA = "zakstak.service-directory.v1";
@@ -110,6 +111,8 @@ function serviceLink(documentRef, service, currentService) {
   const node = documentRef.createElement(service.enabled ? "a" : "span");
   node.className = "zs-service-switcher__link";
   node.dataset.serviceId = service.id;
+  // Tiles show the first letter as a monogram (CSS generated content).
+  node.dataset.initial = Array.from(service.name)[0].toLocaleUpperCase();
   if (service.enabled) node.href = service.href;
   else node.setAttribute("aria-disabled", "true");
   if (current) {
@@ -178,7 +181,8 @@ export async function loadServiceSwitcher(
       );
     }
     root.dataset.directoryState = "fallback";
-    status.textContent = "Apps unavailable. Open Fleet to browse.";
+    status.textContent =
+      "Apps didn’t load. Open the apps page to see them all.";
     return false;
   } finally {
     globalThis.clearTimeout(timeout);
@@ -199,6 +203,9 @@ export function installServiceSwitchers(
     documentRef.addEventListener("pointerdown", (event) => {
       if (root.open && !root.contains(event.target))
         root.removeAttribute("open");
+    });
+    root.addEventListener("focusout", (event) => {
+      if (!root.contains(event.relatedTarget)) root.removeAttribute("open");
     });
     root.addEventListener("keydown", (event) => {
       if (event.key !== "Escape" || !root.open) return;
