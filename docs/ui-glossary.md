@@ -67,7 +67,7 @@ messages, and announcements.
   deletes in a row stay undoable together.
 - **Play from this paragraph**: the Reader control beside each paragraph.
 - **You stopped here**: marks where an opened Reader item resumes. The item
-  opens at its header; **Show where you stopped** goes to the mark.
+  opens at its header; **Resume** goes to the mark and plays from there.
 - **Text settings** ("Text"): Reader's text size, line spacing, and page (Dark,
   Sepia, Light), saved on this device.
 - **Download original**: the source file of a Reader item.

@@ -312,8 +312,6 @@ export function initReader({ router }) {
     text: document.getElementById("readerText"),
     audio: window.ZakAudio.element,
     libraryBack: document.getElementById("readerLibraryBack"),
-    jump: document.getElementById("readerJump"),
-    jumpLabel: document.getElementById("readerJumpLabel"),
   };
 
   const listening = document.getElementById("readerListening");
@@ -1559,7 +1557,7 @@ export function initReader({ router }) {
 
   // Opening an item you were partway through marks where you stopped with a
   // quiet rail, until narration plays again. The page opens at its header,
-  // with Resume and "Jump to where you stopped" in view.
+  // with Resume in view.
   function markResumePoint() {
     if (state.detached) return null;
     els.text.querySelector(".reader-resume-mark")?.remove();
@@ -1570,9 +1568,7 @@ export function initReader({ router }) {
       state.item && state.resumeMark
         ? currentSegmentElement()?.closest(".reader-block")
         : null;
-    els.jump.hidden = true;
     if (!block) return null;
-    setReaderText(els.jumpLabel, "Show where you stopped");
     block.classList.add("is-resume-point");
     block.prepend(
       h(
@@ -1590,32 +1586,6 @@ export function initReader({ router }) {
     state.resumeMark = false;
     markResumePoint();
   }
-
-  function scrollToResumePoint() {
-    const block = markResumePoint();
-    if (!block) return false;
-    const { top, bottom } = visibleBand();
-    const rect = block.getBoundingClientRect();
-    const lead = Math.min(140, Math.max(48, (bottom - top) * 0.22));
-    router.scrollTo({
-      top: Math.max(0, window.scrollY + rect.top - top - lead),
-      behavior: "instant",
-    });
-    return true;
-  }
-
-  // Focus goes with the jump, to the marked paragraph's own play control,
-  // so the next Tab continues from there.
-  els.jump.addEventListener("click", () => {
-    const block = els.text.querySelector(".reader-block.is-resume-point");
-    if (!scrollToResumePoint()) return;
-    focusSegment(
-      els.text
-        .querySelector(".reader-block.is-resume-point")
-        ?.querySelector("[data-segment]") ||
-        block?.querySelector("[data-segment]"),
-    );
-  });
 
   function segmentPosition(el) {
     const index = Number(el?.dataset.index);
@@ -2442,9 +2412,8 @@ export function initReader({ router }) {
     els.main.classList.add("is-loading");
     router.setSkipTarget("readerLoadingTitle");
     els.head.classList.remove("is-error", "is-quiet");
-    // Nothing from the previous item stays: its place, its jump, its notes.
+    // Nothing from the previous item stays: its place, its notes.
     state.resumeMark = false;
-    els.jump.hidden = true;
     const source = known ? sourceLabel(known) : "";
     setReaderText(els.meta, source);
     els.meta.hidden = !source;
@@ -3103,7 +3072,14 @@ export function initReader({ router }) {
           state.resumeReady[body.item_id] = false;
           state.resumeError = true;
           state.resumeConflict = true;
-          if (window.ZakAudio.is("reader")) {
+          // Narration parked from another item keeps playing: the conflict
+          // is about this item only.
+          const playingThis =
+            window.ZakAudio.is("reader") &&
+            (state.activePlayback
+              ? state.activePlayback.itemID === body.item_id
+              : !state.parked);
+          if (playingThis) {
             window.ZakAudio.pause();
             state.activePlayback = null;
             window.ZakAudio.clear("reader");
@@ -3112,10 +3088,15 @@ export function initReader({ router }) {
           renderTextPreservingFocus();
           highlight(false);
           notifyPlayer();
-          notify("Paused: your place changed in another tab or device.", {
-            tone: "error",
-            action: { label: "Load latest place", run: retryInBackground },
-          });
+          notify(
+            playingThis
+              ? "Paused: your place changed in another tab or device."
+              : "Your place changed in another tab or device.",
+            {
+              tone: "error",
+              action: { label: "Load latest place", run: retryInBackground },
+            },
+          );
         } else if (
           state.parked?.item?.id === body.item_id &&
           window.ZakAudio.is("reader")

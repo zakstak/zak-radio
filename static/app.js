@@ -65,6 +65,9 @@ const state = {
   trackStatsRevision: 0,
   catalogRevision: "",
   reactionQueues: new Map(),
+  // The reaction the server has accepted from this browser, per song, while
+  // toggles are in flight. Local storage holds the latest intent instead.
+  confirmedReactions: new Map(),
   invalidStationLink: false,
   stationCapacityRetryAt: 0,
   stationCreatePending: false,
@@ -3577,27 +3580,36 @@ async function toggleReaction(reaction, track = currentTrack()) {
   const trackId = track.id;
   const previous = storedReaction(trackId);
   const next = previous === reaction ? "" : reaction;
+  if (!state.confirmedReactions.has(trackId))
+    state.confirmedReactions.set(trackId, previous);
   writeReaction(trackId, next);
   adjustReactionCounts(track, previous, next);
   renderReactions();
   player?.update();
   const queued = state.reactionQueues.get(trackId) || Promise.resolve();
+  // Each toggle moves the server from what it last accepted to this toggle's
+  // choice, so an earlier failure can't make a later one undo a reaction
+  // this browser never added.
   const mutation = queued
     .catch(() => {})
     .then(async () => {
-      let saved = previous;
       try {
-        if (previous && previous !== next) {
-          applyTrackStats(await postReaction(trackId, previous, true));
-          saved = "";
+        const confirmed = state.confirmedReactions.get(trackId) || "";
+        if (confirmed && confirmed !== next) {
+          applyTrackStats(await postReaction(trackId, confirmed, true));
+          state.confirmedReactions.set(trackId, "");
         }
-        if (next) {
+        if (next && confirmed !== next) {
           applyTrackStats(await postReaction(trackId, next));
-          saved = next;
+          state.confirmedReactions.set(trackId, next);
         }
       } catch (error) {
+        // A newer toggle is queued: it reconciles from the confirmed
+        // reaction, so leave its selection on screen.
+        if (state.reactionQueues.get(trackId) !== mutation) return;
+        const saved = state.confirmedReactions.get(trackId) || "";
+        adjustReactionCounts(track, storedReaction(trackId), saved);
         writeReaction(trackId, saved);
-        adjustReactionCounts(track, next, saved);
         renderReactions();
         window.ZakCatalog.notify();
         player?.update();
@@ -3608,8 +3620,10 @@ async function toggleReaction(reaction, track = currentTrack()) {
     });
   state.reactionQueues.set(trackId, mutation);
   await mutation;
-  if (state.reactionQueues.get(trackId) === mutation)
+  if (state.reactionQueues.get(trackId) === mutation) {
     state.reactionQueues.delete(trackId);
+    state.confirmedReactions.delete(trackId);
+  }
 }
 
 // The full player shows reactions for whatever song it plays.

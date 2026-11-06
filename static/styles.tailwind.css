@@ -5791,13 +5791,6 @@ html[data-zs-theme="radio"] {
     inset: auto;
     margin: 0;
   }
-  /* An item opened partway through: go to where you stopped. */
-  .reader-jump {
-    @apply justify-self-start;
-  }
-  .reader-jump svg {
-    @apply size-[18px];
-  }
   .reader-text-open {
     @apply gap-1.5 px-2.5;
   }
@@ -6211,10 +6204,6 @@ html[data-zs-theme="radio"] {
     border-color: var(--reader-ink);
   }
   .reader-item:is([data-text-theme="sepia"], [data-text-theme="light"])
-    .reader-jump {
-    border-color: var(--reader-muted);
-  }
-  .reader-item:is([data-text-theme="sepia"], [data-text-theme="light"])
     .reader-toc-link[aria-current="true"] {
     background: var(--reader-mark);
     color: var(--reader-accent);
@@ -6465,7 +6454,6 @@ html[data-zs-theme="radio"] {
       .reader-back,
       .reader-details,
       .reader-eyebrow,
-      .reader-jump,
       .reader-link,
       .reader-toc-link,
       .reader-toc-play,
@@ -6539,19 +6527,6 @@ html
 
 .reader-listening {
   grid-template-columns: minmax(0, 1fr);
-}
-
-.reader-jump {
-  border: 0;
-  background: transparent;
-  padding-inline: 0;
-  color: var(--reader-muted);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.reader-jump svg {
-  display: none;
 }
 
 .reader-card {
