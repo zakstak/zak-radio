@@ -26,9 +26,18 @@ application package.
 The browser uses ES modules. `platform.js` owns shared storage, HTTP behavior,
 and the Vessel native playback bridge described in
 [docs/native-playback.md](docs/native-playback.md). `audio.js` owns the shared
-audio element, `router.js` owns navigation, `lyrics.js` owns lyric display, and
-`format.js` provides shared display formatting. `app.js` initializes the shell
-and radio. `library.js` and `reader.js` initialize their views explicitly.
+audio element, `router.js` owns navigation (including a history entry for each
+open sheet or dialog, so Back closes it first), and `lyrics.js` owns lyric
+display. `format.js` provides shared display formatting, `problem.js` the one
+failure diagnosis and error component every view uses, and `artwork.js` the
+seeded placeholder for songs without cover art. `player.js` owns the player that
+Radio, Library previews, and Reader share (the dock, the full player sheet, and
+notifications); each view registers an adapter that describes its audio, and the
+player always shows the adapter of the source that owns the audio element.
+`app.js` initializes the shell and radio. `library.js` and `reader.js`
+initialize their views explicitly.
+
+Self-hosted font subsets and their licenses live in `static/fonts/`.
 
 The release may also carry an immutable timed-lyrics directory. Its sidecars are
 audio-digest-bound, schema-validated during startup, and digest-verified again

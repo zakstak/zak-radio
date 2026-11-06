@@ -10,6 +10,8 @@ func PublicItem(item Item) map[string]any {
 		"uploaded_at", "generated_at", "status", "voice", "tts_backend",
 		"tts_speed", "total_duration", "segment_count", "audio_bytes",
 		"quality_score", "quality_warnings", "cleanup_after",
+		// Listing-only progress fields; absent from single-item reads.
+		"ready_segment_count", "listened_seconds", "listened_at",
 	} {
 		if value, ok := item[key]; ok {
 			result[key] = value

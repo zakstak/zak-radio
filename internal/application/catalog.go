@@ -236,6 +236,7 @@ func loadCatalog(
 			CoverBytes: coverBytes, LyricsPath: lyrics,
 			TimedLyricsPath: timedLyrics, TimedLyricsSHA256: timedLyricsSHA256,
 			TimedLyricsBundled: timedLyricsBundled,
+			HasLyrics:          strings.TrimSpace(searchLyrics) != "" || len(timedLyricsPayload.Cues) > 0,
 			HasSyncedLyrics:    len(timedLyricsPayload.Cues) > 0,
 			LyricsQuality:      timedLyricsPayload.Quality.Status,
 			CleanLyrics:        cleanLyrics,

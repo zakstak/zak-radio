@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -303,6 +305,11 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	allowed := routeAllowedMethods(path)
 	if len(allowed) == 0 {
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			shellNotFoundPath(path) {
+			a.serveShellNotFound(w, r)
+			return
+		}
 		http.NotFound(w, r)
 		return
 	}
@@ -386,6 +393,48 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+// maxShellBytes bounds the page read for an unknown address.
+const maxShellBytes = 1 << 20
+
+// shellNotFoundPath reports whether an unknown address is a page a person
+// typed or followed, rather than an API, media, or asset request. Pages get
+// the app shell, which says the page wasn't found and links to every view.
+func shellNotFoundPath(path string) bool {
+	for _, prefix := range []string{
+		"/api", "/media/", "/reader-media/", "/reader-image/",
+		"/reader-source/", "/static/",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
+// serveShellNotFound answers an unknown page with the app shell and a 404
+// status, so the navigation and player stay available.
+func (a *App) serveShellNotFound(w http.ResponseWriter, r *http.Request) {
+	file, _, err := openRootedRegular(a.staticRoot, a.cfg.StaticDir,
+		filepath.Join(a.cfg.StaticDir, "index.html"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer func() { _ = file.Close() }() // Best-effort cleanup; the read is checked.
+	body, err := io.ReadAll(io.LimitReader(file, maxShellBytes))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(http.StatusNotFound)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(body) // The status is already sent; a failed write ends the response.
+	}
 }
 
 func routeAllowedMethods(path string) []string {

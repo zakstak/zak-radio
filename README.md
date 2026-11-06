@@ -42,6 +42,10 @@ the exact audio digest. Sidecars can also carry display-ready text and an
 explicit verified or warning status. Warning lyrics remain readable, but the UI
 labels them instead of presenting uncertain transcription or timing as exact.
 
+Unknown page addresses answer 404 with the app shell, which shows "Page not
+found" with links to Radio, Library, and Reader. API, media, and asset paths
+keep plain 404 responses.
+
 Local endpoints:
 
 - Radio: <http://127.0.0.1:8793/>
@@ -81,9 +85,11 @@ scripts against isolated fixtures.
 [`15d427e`](https://github.com/zakstak/saga-product/commit/15d427e4944d3b209530dfa34a65a15d5b074886).
 Its SHA-256 is
 `93259cde1c74b2bb619d5259ee4aac8de4d70b7809179f9457ca0f8be8800c88`. The service
-switcher preserves Zak Radio's compact names-only launcher while sharing the
-canonical directory validation and reliable Fleet fallback. `npm test` checks
-that adaptation and failed-directory refresh behavior.
+switcher keeps Zak Radio's compact launcher tiles (name and monogram) while
+sharing the canonical directory validation and reliable Fleet fallback.
+`npm test` checks that adaptation and failed-directory refresh behavior.
+
+Interface wording follows [docs/ui-glossary.md](docs/ui-glossary.md).
 
 For a smoke test, use your development catalog and Reader counts:
 
@@ -163,17 +169,35 @@ private service may control it, while cross-origin browser writes, oversized
 bodies, and abusive request rates are rejected.
 
 Temporary stations are capability-controlled, listen-only when shared, limited
-in number, and deleted after 24 hours of inactivity. The controller token stays
-in the creator's browser and is sent only in mutation bodies. Retrying creation
-with the same browser-generated idempotency key returns the original station
-instead of consuming another slot.
+in number, and deleted after 24 hours of inactivity. Their owner can also end
+them early with `DELETE /api/stations/{id}`. When the limit is reached, creation
+answers 429 with `Retry-After` set to when the next slot frees up by expiry;
+without it, saved stations hold every slot. `X-Station-Limit` gives the number
+of stations the limit allows and `X-Station-Limit-Scope` says whether it is the
+creator's own limit (`creator`) or the service-wide one (`service`), so the
+browser can state the limit plainly. The controller token stays in the creator's
+browser and is sent only in mutation bodies. Retrying creation with the same
+browser-generated idempotency key returns the original station instead of
+consuming another slot.
 
 Saved stations persist across restarts and do not expire. They contain either an
-explicit song list or a live library filter. Library supports creating,
-renaming, editing membership, and deleting them. Add to station carries the
-selected song into the editor when creating your first list station.
+explicit song list or a live library filter. A filter station matches its words
+the way Library search does (case and accents folded, British spellings, and
+close spellings when nothing matches exactly), so a saved search keeps playing
+the songs it showed. Library supports creating, renaming, editing membership,
+and deleting them. Add to station carries the selected song into the editor when
+creating your first list station.
+
+Like and Dislike are per-browser toggles. The browser remembers its own reaction
+for each song, and `POST /api/reaction` with `"remove": true` withdraws it;
+counts never go below zero.
 
 Ownership is a capability token stored in the creator's browser, not an account
 profile. Shared links are listen-only; clearing browser storage loses that
-browser's controls. Radio state stays server-authoritative, Library preview is
-local, and Reader keeps its own progress while sharing the same audio element.
+browser's controls. The station editor can copy a private edit link
+(`/library#edit=<station>.<token>`) that moves editing of a saved station to
+another browser. The token stays in the URL fragment, so it never reaches the
+server's request log; the receiving browser checks it with an empty `PATCH` and
+removes it from the address at once. Radio state stays server-authoritative,
+Library preview is local, and Reader keeps its own progress while sharing the
+same audio element.

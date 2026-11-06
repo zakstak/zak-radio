@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -513,8 +514,24 @@ func TestStationCreationIsRateLimited(t *testing.T) {
 		if i <= maxCreatorStations && res.Code != http.StatusCreated {
 			t.Fatalf("creation %d status = %d, body=%s", i, res.Code, res.Body.String())
 		}
-		if i == maxCreatorStations+1 && res.Code != http.StatusTooManyRequests {
-			t.Fatalf("creation %d status = %d, want 429", i, res.Code)
+		if i == maxCreatorStations+1 {
+			if res.Code != http.StatusTooManyRequests {
+				t.Fatalf("creation %d status = %d, want 429", i, res.Code)
+			}
+			retryAfter, err := strconv.Atoi(res.Header().Get("Retry-After"))
+			if err != nil || retryAfter < 1 || retryAfter > int(tempStationLife/time.Second) {
+				t.Fatalf("capacity Retry-After = %q, want seconds until a slot frees",
+					res.Header().Get("Retry-After"))
+			}
+			if strings.Contains(res.Body.String(), "saved stations") {
+				t.Fatalf("temporary-held capacity blamed saved stations: %s", res.Body.String())
+			}
+			if res.Header().Get("X-Station-Limit") != strconv.Itoa(maxCreatorStations) ||
+				res.Header().Get("X-Station-Limit-Scope") != "creator" {
+				t.Fatalf("capacity limit headers = %q %q, want %d creator",
+					res.Header().Get("X-Station-Limit"),
+					res.Header().Get("X-Station-Limit-Scope"), maxCreatorStations)
+			}
 		}
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/stations", strings.NewReader(
@@ -525,6 +542,108 @@ func TestStationCreationIsRateLimited(t *testing.T) {
 	handler.ServeHTTP(res, req)
 	if res.Code != http.StatusCreated {
 		t.Fatalf("distinct creator status=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestSavedStationsHoldingCapacityHaveNoRetryAfter(t *testing.T) {
+	app := newTestApp(t)
+	handler := app.routes()
+	post := func(i int) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/stations", strings.NewReader(fmt.Sprintf(
+			`{"name":"Saved %d","source_type":"list","random_mode":"deck","track_ids":["one"],`+
+				`"idempotency_key":"%064x","owner_token":"%048x"}`, i, i, i)))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "192.0.2.30:4000"
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, req)
+		return res
+	}
+	for i := 1; i <= maxCreatorStations; i++ {
+		if res := post(i); res.Code != http.StatusCreated {
+			t.Fatalf("saved creation %d status = %d, body=%s", i, res.Code, res.Body.String())
+		}
+	}
+	res := post(maxCreatorStations + 1)
+	if res.Code != http.StatusTooManyRequests {
+		t.Fatalf("over-limit status = %d, want 429", res.Code)
+	}
+	if res.Header().Get("Retry-After") != "" {
+		t.Fatalf("saved stations never expire, but Retry-After = %q", res.Header().Get("Retry-After"))
+	}
+	if !strings.Contains(res.Body.String(), "capacity reached by saved stations") {
+		t.Fatalf("capacity body = %q, want saved-station explanation", res.Body.String())
+	}
+	if res.Header().Get("X-Station-Limit") != strconv.Itoa(maxCreatorStations) ||
+		res.Header().Get("X-Station-Limit-Scope") != "creator" {
+		t.Fatalf("saved capacity limit headers = %q %q",
+			res.Header().Get("X-Station-Limit"), res.Header().Get("X-Station-Limit-Scope"))
+	}
+}
+
+func TestUnknownPagesGetTheShellWithNotFoundStatus(t *testing.T) {
+	app := newTestApp(t)
+	handler := app.routes()
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		req := httptest.NewRequest(method, "/nope", nil)
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, req)
+		if res.Code != http.StatusNotFound ||
+			!strings.HasPrefix(res.Header().Get("Content-Type"), "text/html") ||
+			res.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s /nope status=%d headers=%#v", method, res.Code, res.Header())
+		}
+		want := ""
+		if method == http.MethodGet {
+			want = "<main>shared shell</main>"
+		}
+		if res.Body.String() != want {
+			t.Fatalf("%s /nope body = %q, want %q", method, res.Body.String(), want)
+		}
+	}
+	for _, path := range []string{"/api/nope", "/apix", "/static/nope.js", "/media/nope"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, req)
+		if res.Code != http.StatusNotFound || strings.Contains(res.Body.String(), "shared shell") {
+			t.Fatalf("%s status=%d body=%q, want a plain 404", path, res.Code, res.Body.String())
+		}
+	}
+	post := httptest.NewRequest(http.MethodPost, "/nope", strings.NewReader("{}"))
+	post.Header.Set("Content-Type", "application/json")
+	postRes := httptest.NewRecorder()
+	handler.ServeHTTP(postRes, post)
+	if postRes.Code != http.StatusNotFound || strings.Contains(postRes.Body.String(), "shared shell") {
+		t.Fatalf("POST /nope status=%d body=%q", postRes.Code, postRes.Body.String())
+	}
+}
+
+func TestOwnerCanEndTemporaryStation(t *testing.T) {
+	app := newTestApp(t)
+	handler := app.routes()
+	id, token, _, err := createTemporaryStationForTest(
+		t, app.station, context.Background(), "one", tokenHash("ending-creator"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	remove := func(ownerToken string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodDelete, "/api/stations/"+id, strings.NewReader(
+			fmt.Sprintf(`{"owner_token":%q}`, ownerToken)))
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, req)
+		return res
+	}
+	if res := remove(strings.Repeat("d", 48)); res.Code != http.StatusForbidden {
+		t.Fatalf("listener delete status = %d, want 403", res.Code)
+	}
+	if res := remove(token); res.Code != http.StatusOK {
+		t.Fatalf("owner delete status = %d, body=%s", res.Code, res.Body.String())
+	}
+	if _, err := app.station.Snapshot(context.Background(), id); err == nil {
+		t.Fatal("ended temporary station remained readable")
+	}
+	if res := remove(token); res.Code != http.StatusNotFound {
+		t.Fatalf("second delete status = %d, want 404", res.Code)
 	}
 }
 

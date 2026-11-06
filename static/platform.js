@@ -132,6 +132,64 @@ window.ZakStorage = {
   },
 };
 
+// Bound cover concurrency before assigning src. Lazy covers join the queue only
+// near the viewport, leaving the shared content budget free for audio and APIs.
+const coverJobs = new WeakMap();
+const coverQueue = [];
+let activeCovers = 0;
+const coverObserver = new IntersectionObserver(
+  (entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      coverObserver.unobserve(entry.target);
+      const job = coverJobs.get(entry.target);
+      if (job) enqueueCover(job);
+    }
+  },
+  { rootMargin: "160px" },
+);
+
+function enqueueCover(job) {
+  coverQueue.push(job);
+  pumpCovers();
+}
+
+function pumpCovers() {
+  while (activeCovers < 3 && coverQueue.length) {
+    const job = coverQueue.shift();
+    if (coverJobs.get(job.image) !== job || !job.image.isConnected) continue;
+    activeCovers += 1;
+    const finish = (failed) => {
+      job.image.removeEventListener("load", loaded);
+      job.image.removeEventListener("error", errored);
+      activeCovers -= 1;
+      if (coverJobs.get(job.image) === job) {
+        if (failed && job.attempts++ < 2) {
+          window.setTimeout(() => enqueueCover(job), 700 * job.attempts);
+        } else {
+          coverJobs.delete(job.image);
+          if (failed) job.onFail?.();
+        }
+      }
+      pumpCovers();
+    };
+    const loaded = () => finish(false);
+    const errored = () => finish(true);
+    job.image.addEventListener("load", loaded);
+    job.image.addEventListener("error", errored);
+    job.image.loading = "eager";
+    job.image.src = job.src;
+  }
+}
+
+window.ZakImage = function loadImage(image, src, onFail) {
+  const job = { image, src, onFail, attempts: 0 };
+  coverJobs.set(image, job);
+  coverObserver.unobserve(image);
+  if (image.loading === "lazy") coverObserver.observe(image);
+  else window.setTimeout(() => enqueueCover(job));
+};
+
 window.ZakAPI = async function api(path, options = {}) {
   const init = { ...options };
   if (init.body && typeof init.body !== "string") {
@@ -159,6 +217,14 @@ window.ZakAPI = async function api(path, options = {}) {
     if (!response.ok) {
       const error = new Error(`${response.status} ${response.statusText}`);
       error.status = response.status;
+      // Seconds until a retry can succeed, when the server knows (capacity).
+      const retryAfter = Number(response.headers.get("Retry-After"));
+      error.retryAfter =
+        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 0;
+      // A full house of stations says how many fit and whose limit it is.
+      const limit = Number(response.headers.get("X-Station-Limit"));
+      error.limit = Number.isFinite(limit) && limit > 0 ? limit : 0;
+      error.limitScope = response.headers.get("X-Station-Limit-Scope") || "";
       error.detail = (await response.text().catch(() => ""))
         .trim()
         .slice(0, 256);
@@ -169,4 +235,12 @@ window.ZakAPI = async function api(path, options = {}) {
     window.clearTimeout(timeout);
     externalSignal?.removeEventListener("abort", relayAbort);
   }
+};
+
+window.ZakRandomBrowserHex = function randomBrowserHex(bytes) {
+  const values = new Uint8Array(bytes);
+  crypto.getRandomValues(values);
+  return Array.from(values, (value) =>
+    value.toString(16).padStart(2, "0"),
+  ).join("");
 };

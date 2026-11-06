@@ -63,7 +63,7 @@ func TestSavedStationCRUDPersistsPastPrivateExpiry(t *testing.T) {
 	); !errors.Is(err, stationmodel.ErrForbidden) {
 		t.Fatalf("listener update error = %v, want forbidden", err)
 	}
-	if err := reopened.station.DeleteSaved(
+	if err := reopened.station.DeleteOwned(
 		context.Background(), definition.StationID, token); err != nil {
 		t.Fatal(err)
 	}

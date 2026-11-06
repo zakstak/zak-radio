@@ -570,7 +570,7 @@ func TestTimedLyricsAreValidatedVersionedAndServed(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = app.Close() })
-	if !app.catalog.ByID["one"].HasSyncedLyrics ||
+	if !app.catalog.ByID["one"].HasLyrics || !app.catalog.ByID["one"].HasSyncedLyrics ||
 		len(app.catalog.ByID["one"].TimedLyricsSHA256) != 64 {
 		t.Fatalf("timed lyric catalog state = %#v", app.catalog.ByID["one"])
 	}
@@ -919,6 +919,53 @@ func TestSingleShellUsesSemanticTailwindAndLocalPreview(t *testing.T) {
 	}
 	if strings.Contains(js, "/api/control") {
 		t.Fatal("local library preview must not mutate radio playback state")
+	}
+}
+
+// Layout can choose the queue's home before the separate lyrics fetch.
+func TestCatalogReportsLyricsPresence(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		lyrics string
+		want   bool
+	}{
+		{name: "plain", lyrics: "Keep the windows down tonight", want: true},
+		{name: "empty", lyrics: " \n\t"},
+		{name: "missing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newTestConfig(t)
+			if tc.name != "missing" {
+				if err := os.WriteFile(filepath.Join(cfg.Archive, "tracks", "one", "lyrics.md"), []byte(tc.lyrics), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			app, err := NewApp(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = app.Close() })
+			response := httptest.NewRecorder()
+			app.apiTracks(response, httptest.NewRequest(http.MethodGet, "/api/tracks", nil))
+			var payload struct {
+				Tracks []struct {
+					ID        string `json:"id"`
+					HasLyrics bool   `json:"has_lyrics"`
+				} `json:"tracks"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if len(payload.Tracks) != 2 {
+				t.Fatalf("tracks = %s", response.Body.String())
+			}
+			for _, track := range payload.Tracks {
+				want := track.ID == "one" && tc.want
+				if track.HasLyrics != want {
+					t.Errorf("%s has_lyrics = %t, want %t", track.ID, track.HasLyrics, want)
+				}
+			}
+		})
 	}
 }
 

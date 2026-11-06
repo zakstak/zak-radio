@@ -323,7 +323,7 @@ func (a *App) savedStation(w http.ResponseWriter, r *http.Request) {
 		if !httpguard.DecodeJSON(w, r, &request, false) {
 			return
 		}
-		if err := a.station.DeleteSaved(r.Context(), id, request.OwnerToken); err != nil {
+		if err := a.station.DeleteOwned(r.Context(), id, request.OwnerToken); err != nil {
 			stationError(w, err)
 			return
 		}
@@ -373,6 +373,23 @@ func stationError(w http.ResponseWriter, err error) {
 	case errors.Is(err, stationmodel.ErrForbidden):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, stationmodel.ErrCapacity):
+		var capacity *CapacityError
+		if errors.As(err, &capacity) {
+			if capacity.RetryAfter > 0 {
+				w.Header().Set("Retry-After",
+					strconv.FormatInt(int64(capacity.RetryAfter/time.Second), 10))
+			}
+			// The browser states the limit in plain words: how many stations
+			// fit and whose limit it is.
+			if capacity.Limit > 0 {
+				w.Header().Set("X-Station-Limit", strconv.Itoa(capacity.Limit))
+				scope := "service"
+				if capacity.PerCreator {
+					scope = "creator"
+				}
+				w.Header().Set("X-Station-Limit-Scope", scope)
+			}
+		}
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
 	case errors.Is(err, stationmodel.ErrQueueFull):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -418,6 +435,14 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 		if _, writeErr := fmt.Fprintf(w, "event: track\ndata: %s\n\n", payload); writeErr != nil {
 			return
 		}
+	}
+	writePresence := func() error {
+		refreshStreamDeadline(w)
+		_, err := fmt.Fprintf(w, "event: presence\ndata: {\"connected\":%d}\n\n", a.events.TopicSubscriberCount(id))
+		return err
+	}
+	if err := writePresence(); err != nil {
+		return
 	}
 	flusher.Flush()
 	heartbeat := time.NewTicker(15 * time.Second)
@@ -478,6 +503,9 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 				flusher.Flush()
 			}
 			refreshStreamDeadline(w)
+			if err := writePresence(); err != nil {
+				return
+			}
 			if _, writeErr := fmt.Fprint(w, ": keep-alive\n\n"); writeErr != nil {
 				return
 			}
@@ -549,6 +577,9 @@ func (a *App) apiReaction(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		TrackID  string `json:"track_id"`
 		Reaction string `json:"reaction"`
+		// Remove withdraws one earlier reaction, so a listener can toggle it
+		// off. Counters never go below zero.
+		Remove bool `json:"remove"`
 	}
 	if !httpguard.DecodeJSON(w, r, &request, false) {
 		return
@@ -574,25 +605,38 @@ func (a *App) apiReaction(w http.ResponseWriter, r *http.Request) {
 	if request.Reaction == "dislike" {
 		column = "disliked"
 	}
-	query := fmt.Sprintf(`
+	if request.Remove {
+		query := fmt.Sprintf(`
+update likes set %s=max(%s-1, 0), updated_at=?
+where track_id=?
+returning liked, disliked`, column, column)
+		scanErr := tx.QueryRowContext(r.Context(), query, now, request.TrackID).
+			Scan(&liked, &disliked)
+		if scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+			internalError(w)
+			return
+		}
+	} else {
+		query := fmt.Sprintf(`
 insert into likes(track_id, liked, updated_at, disliked) values (?, ?, ?, ?)
 on conflict(track_id) do update set
 	%s=%s+1, updated_at=excluded.updated_at
 where %s<?
 returning liked, disliked`, column, column, column)
-	likeIncrement, dislikeIncrement := 0, 0
-	if request.Reaction == "like" {
-		likeIncrement = 1
-	} else {
-		dislikeIncrement = 1
+		likeIncrement, dislikeIncrement := 0, 0
+		if request.Reaction == "like" {
+			likeIncrement = 1
+		} else {
+			dislikeIncrement = 1
+		}
+		if scanErr3 := tx.QueryRowContext(r.Context(), query,
+			request.TrackID, likeIncrement, now, dislikeIncrement,
+			maxRevisionValue-3).Scan(&liked, &disliked); scanErr3 != nil {
+			internalError(w)
+			return
+		}
 	}
-	if scanErr3 := tx.QueryRowContext(r.Context(), query,
-		request.TrackID, likeIncrement, now, dislikeIncrement,
-		maxRevisionValue-3).Scan(&liked, &disliked); scanErr3 != nil {
-		internalError(w)
-		return
-	}
-	if request.Reaction == "dislike" {
+	if request.Reaction == "dislike" && !request.Remove {
 		if _, execContextErr := tx.ExecContext(r.Context(), `
 delete from station_rotation
 where track_id=? and station_id in (

@@ -2,7 +2,10 @@
 <html lang="en" data-zs-theme="radio">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <meta name="theme-color" content="#080a0c" />
     <meta
       name="description"
@@ -10,7 +13,28 @@
     />
     <title>Zak Radio</title>
     <link rel="icon" type="image/svg+xml" href="/static/radio-braille.svg" />
-    <link rel="stylesheet" href="/static/styles.css?v=22" />
+    <link
+      rel="preload"
+      href="/static/fonts/noto-sans-400.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/static/fonts/noto-sans-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/static/fonts/noto-serif-400.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/static/styles.css?v=28" />
     <link rel="stylesheet" href="/static/signal-stack.css?v=2" />
     <script type="module" src="/static/service-switcher.js"></script>
   </head>
@@ -18,350 +42,578 @@
     <a id="skipToContent" class="skip-link zs-skip-link" href="#title"
       >Skip to content</a
     >
-    <main class="app-shell">
-      <header
-        class="app-rail zs-product-bar"
-        aria-label="Application navigation"
-      >
-        <div class="app-rail-inner zs-product-bar__inner">
-          <div class="brand zs-brand">
-            <details
-              class="zs-service-switcher"
-              data-zs-service-switcher
-              data-current-service="zak-radio"
-            >
-              <summary aria-label="Open apps">
-                <img
-                  class="zs-service-switcher__icon"
-                  src="/static/radio-braille.svg"
-                  alt=""
-                />
-              </summary>
-              <div class="zs-service-switcher__panel">
-                <nav
-                  class="zs-service-switcher__list"
-                  data-zs-service-list
-                  aria-label="Apps"
-                >
-                  <a
-                    class="zs-service-switcher__link"
-                    href="https://fleet.home.zakstak.com/"
-                  >
-                    <span class="zs-service-switcher__identity"
-                      ><strong>Saga Fleet</strong></span
-                    >
-                  </a>
-                </nav>
-                <p
-                  class="zs-service-switcher__status"
-                  data-zs-service-status
-                  aria-live="polite"
-                >
-                  Loading apps…
-                </p>
-              </div>
-            </details>
-            <div class="brand-copy zs-brand__copy">
-              <span class="brand-family zs-brand__family">Zakstak</span>
-              <div class="brand-product zs-brand__line">
-                <h1 class="brand-title zs-brand__name">Zak Radio</h1>
-                <span class="brand-separator" aria-hidden="true">·</span>
-                <p id="shellContext" class="brand-subtitle zs-brand__role">
-                  Shared listening
-                </p>
-              </div>
-            </div>
-          </div>
-          <nav class="primary-nav zs-nav" aria-label="Zak Radio destinations">
-            <a class="primary-nav-link zs-nav__item" data-route="/" href="/"
-              >Radio</a
-            >
-            <a
-              class="primary-nav-link zs-nav__item"
-              data-route="/library"
-              href="/library"
-              >Library</a
-            >
-            <a
-              class="primary-nav-link zs-nav__item"
-              data-route="/reader"
-              href="/reader"
-              >Reader</a
-            >
-          </nav>
-          <div class="product-context zs-context">
-            <div
-              id="connection"
-              class="connection"
-              title="Station connection"
-              role="status"
-              aria-live="polite"
-            >
-              <span id="connectionDot" class="connection-dot"></span>
-              <span id="connectionText">Station updates connecting</span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <section id="radioView" class="radio-stage view-panel" data-view="/">
-        <section id="stationCard" class="station-card" aria-label="Station">
-          <div class="station-card-head">
-            <span class="section-label">Listening to</span>
-            <strong id="stationMode" tabindex="-1">Shared station</strong>
-          </div>
-          <label class="station-picker-label" for="stationSelect"
-            >Radio station</label
+    <header class="app-rail zs-product-bar" aria-label="Application navigation">
+      <div class="app-rail-inner zs-product-bar__inner">
+        <div class="brand zs-brand">
+          <details
+            class="zs-service-switcher"
+            data-zs-service-switcher
+            data-current-service="zak-radio"
           >
-          <select id="stationSelect" class="select-control station-picker">
-            <option value="main">All songs</option>
-          </select>
-          <div class="station-actions">
-            <button
-              id="mainStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Go shared
-            </button>
-            <button
-              id="shareStation"
-              class="station-action"
-              type="button"
-              hidden
-            >
-              Share
-            </button>
-            <button
-              id="createStation"
-              class="station-action"
-              type="button"
-              disabled
-            >
-              New station
-            </button>
-          </div>
-          <p id="stationAccess" class="station-note">
-            Everyone here can turn the dial.
-          </p>
-          <div id="stationShareFallback" class="station-share-fallback" hidden>
-            <label for="stationShareLink">Listen-only station link</label>
-            <div>
-              <input id="stationShareLink" type="text" readonly />
-              <button
-                id="stationShareClose"
-                class="station-action"
-                type="button"
+            <summary aria-label="Open apps">
+              <img
+                class="zs-service-switcher__icon"
+                src="/static/radio-braille.svg"
+                alt=""
+              />
+            </summary>
+            <div class="zs-service-switcher__panel">
+              <nav
+                class="zs-service-switcher__list"
+                data-zs-service-list
+                aria-label="Apps"
               >
-                Close
-              </button>
-            </div>
-          </div>
-        </section>
-        <div class="now-playing">
-          <div class="cover-frame">
-            <img id="cover" class="cover-image hidden" alt="" />
-            <div
-              id="emptyCover"
-              class="cover-fallback hidden"
-              aria-hidden="true"
-            >
-              <svg class="no-artwork-icon" viewBox="0 0 96 96">
-                <rect x="18" y="39" width="10" height="18" rx="5"></rect>
-                <rect x="34" y="25" width="10" height="46" rx="5"></rect>
-                <rect x="50" y="16" width="10" height="64" rx="5"></rect>
-                <rect x="66" y="31" width="10" height="34" rx="5"></rect>
-              </svg>
-              <span>No artwork</span>
-            </div>
-          </div>
-          <div class="now-playing-copy">
-            <div class="live-status">
-              <span id="livePulse" class="live-dot"></span
-              ><span id="stationStatus">Station paused</span>
-            </div>
-            <div
-              id="nowPlayingAnnouncement"
-              class="sr-only"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-            ></div>
-            <div class="track-source" id="source">Personal broadcast</div>
-            <h2 id="title" class="track-title" tabindex="-1">Select a track</h2>
-            <p id="details" class="track-details">
-              Original music, live from the archive.
-            </p>
-            <section
-              id="stationCapability"
-              class="station-capability"
-              aria-labelledby="stationCapabilityLabel"
-              aria-live="polite"
-            >
-              <span id="stationCapabilityLabel" class="station-capability-label"
-                >Shared control</span
-              >
-              <p id="stationCapabilityDetail">
-                You can hear and control this station from this browser.
-              </p>
-            </section>
-          </div>
-          <div class="player-controls">
-            <button id="radioRetry" class="button" type="button" hidden>
-              Retry station
-            </button>
-            <div id="stationProgress" class="range-row station-progress">
-              <span id="currentTime">0:00</span>
-              <div class="range-track">
-                <div id="progressFill" class="range-fill"></div>
-                <div id="progressThumb" class="range-thumb"></div>
-                <input
-                  id="progress"
-                  class="range-input"
-                  type="range"
-                  min="0"
-                  max="0"
-                  value="0"
-                  step="0.1"
-                  aria-label="Song position"
-                  disabled
-                />
-              </div>
-              <span id="duration" class="range-end">0:00</span>
-            </div>
-            <div id="transport" class="transport" aria-label="Station controls">
-              <button
-                id="random"
-                class="icon-button"
-                title="Shuffle: off"
-                aria-label="Shuffle: off"
-                aria-pressed="false"
-                disabled
-              >
-                <svg viewBox="0 0 24 24">
-                  <path
-                    d="M4 7h3c4.5 0 5.5 10 10 10h3M17 4l3 3-3 3M4 17h3c1.4 0 2.5-1 3.5-2.4M17 14l3 3-3 3M13.5 9.4C14.5 8 15.5 7 17 7h3"
-                  ></path>
-                </svg>
-              </button>
-              <button
-                id="prev"
-                class="icon-button"
-                title="Previous track"
-                aria-label="Previous track"
-                disabled
-              >
-                <svg viewBox="0 0 24 24">
-                  <path d="M6 5v14M19 6l-9 6 9 6z"></path>
-                </svg>
-              </button>
-              <button
-                id="back10"
-                class="icon-button"
-                title="Skip 10 seconds back"
-                aria-label="Skip 10 seconds back"
-                disabled
-              >
-                <span class="transport-seek-label">−10</span>
-              </button>
-              <button
-                id="playPause"
-                class="play-button"
-                aria-label="Play"
-                disabled
-              >
-                <svg id="playIcon" class="playback-icon" viewBox="0 0 24 24">
-                  <path d="m9 7 8 5-8 5z"></path></svg
-                ><svg
-                  id="pauseIcon"
-                  class="pause-icon hidden"
-                  viewBox="0 0 24 24"
+                <a
+                  class="zs-service-switcher__link"
+                  href="https://fleet.home.zakstak.com/"
+                  data-initial="F"
                 >
-                  <path d="M8 6v12M16 6v12"></path></svg
-                ><span class="sr-only">Play</span>
-              </button>
-              <button
-                id="forward10"
-                class="icon-button"
-                title="Skip 10 seconds forward"
-                aria-label="Skip 10 seconds forward"
-                disabled
+                  <span class="zs-service-switcher__identity"
+                    ><strong>Fleet</strong></span
+                  >
+                </a>
+              </nav>
+              <p
+                class="zs-service-switcher__status"
+                data-zs-service-status
+                aria-live="polite"
               >
-                <span class="transport-seek-label">+10</span>
-              </button>
-              <button
-                id="next"
-                class="icon-button"
-                title="Next track; shared stations require confirmation"
-                aria-label="Next track"
-                disabled
-              >
-                <svg viewBox="0 0 24 24">
-                  <path d="M18 5v14M5 6l9 6-9 6z"></path>
-                </svg>
-              </button>
-              <button
-                id="repeatOne"
-                class="icon-button"
-                aria-pressed="false"
-                title="Repeat this track"
-                aria-label="Repeat this track"
-                disabled
-              >
-                <svg viewBox="0 0 24 24">
-                  <path
-                    d="m17 2 3 3-3 3M20 5H8a4 4 0 0 0-4 4v1M7 22l-3-3 3-3M4 19h12a4 4 0 0 0 4-4v-1"
-                  ></path>
-                  <text class="repeat-glyph" x="10" y="15">1</text>
-                </svg>
-              </button>
+                Loading apps…
+              </p>
             </div>
-            <div class="track-actions">
-              <button id="like" class="button" aria-pressed="false" disabled>
-                Like
-              </button>
-              <button id="dislike" class="button" aria-pressed="false" disabled>
-                Dislike
-              </button>
-              <a id="download" class="button" aria-disabled="true"
-                ><span aria-hidden="true">↓</span> Download</a
-              >
-              <button id="addCurrentToStation" class="button" type="button">
-                Add to station
-              </button>
-              <span id="skipCount" class="skip-count">0 early skips</span>
+          </details>
+          <div class="brand-copy zs-brand__copy">
+            <span class="brand-family zs-brand__family">Zakstak</span>
+            <div class="brand-product zs-brand__line">
+              <h1 class="brand-title zs-brand__name">Zak Radio</h1>
+              <span class="brand-separator" aria-hidden="true">·</span>
+              <p id="shellContext" class="brand-subtitle zs-brand__role">
+                Shared listening
+              </p>
             </div>
           </div>
         </div>
-        <div id="detailsPanels" class="details-panels">
-          <section class="transcript">
-            <div class="transcript-head">
-              <div>
-                <h3>Lyrics / transcript</h3>
-                <span id="lyricsSyncStatus" class="lyrics-sync-status"></span>
+        <!-- Phones move this navigation to a tab bar at the bottom, within
+             reach of the thumb and the player. -->
+        <nav class="primary-nav zs-nav" aria-label="Zak Radio destinations">
+          <a class="primary-nav-link zs-nav__item" data-route="/" href="/"
+            ><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="2.2"></circle>
+              <path
+                d="M8.2 8.2a5.4 5.4 0 0 0 0 7.6M15.8 8.2a5.4 5.4 0 0 1 0 7.6M5.4 5.4a9.3 9.3 0 0 0 0 13.2M18.6 5.4a9.3 9.3 0 0 1 0 13.2"
+              ></path></svg
+            ><span>Radio</span></a
+          >
+          <a
+            class="primary-nav-link zs-nav__item"
+            data-route="/library"
+            href="/library"
+            ><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 4.5v15M9.5 4.5v15M14 5l4.5 14"></path></svg
+            ><span>Library</span></a
+          >
+          <a
+            class="primary-nav-link zs-nav__item"
+            data-route="/reader"
+            href="/reader"
+            ><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 6.5c-2-1.6-4.6-2-7.5-1.5v13c2.9-.5 5.5-.1 7.5 1.5 2-1.6 4.6-2 7.5-1.5V5c-2.9-.5-5.5-.1-7.5 1.5zM12 6.5v13"
+              ></path></svg
+            ><span>Reader</span></a
+          >
+        </nav>
+        <div class="product-context zs-context">
+          <p id="connection" class="connection" data-state="connecting">
+            <span
+              id="connectionDot"
+              class="connection-dot"
+              aria-hidden="true"
+            ></span>
+            <span class="sr-only">Radio connection:</span>
+            <span id="connectionText">Connecting…</span>
+          </p>
+        </div>
+      </div>
+    </header>
+    <main id="main" class="app-shell">
+      <section
+        id="radioView"
+        class="radio-stage view-panel"
+        data-view="/"
+        aria-labelledby="title"
+        hidden
+      >
+        <div class="radio-primary">
+          <div class="station-bar">
+            <button
+              id="stationSwitch"
+              class="station-switch"
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="stationSheet"
+            >
+              <!-- Spaces between the words keep the name, set from app.js,
+                   matching the visible text. -->
+              <span id="livePulse" class="live-dot" aria-hidden="true"></span>
+              <span class="station-switch-copy">
+                <span id="stationStatus" class="station-switch-status"
+                  >Connecting…</span
+                >
+                <span id="liveStation" class="station-switch-name"></span>
+              </span>
+              <span class="station-switch-action"
+                >Change<svg
+                  class="station-switch-chevron"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="m7 10 5 5 5-5"></path></svg
+              ></span>
+            </button>
+          </div>
+          <div id="nowPlaying" class="now-playing">
+            <div id="coverFrame" class="cover-frame">
+              <div id="coverSurface" class="cover-surface">
+                <img id="cover" class="cover-image hidden" alt="" />
+                <div
+                  id="emptyCover"
+                  class="cover-fallback hidden"
+                  aria-hidden="true"
+                ></div>
               </div>
-              <div class="transcript-head-actions">
+            </div>
+            <div class="now-playing-copy">
+              <h2 id="title" class="track-title" tabindex="-1">
+                <span class="skeleton skeleton-title">Loading station</span>
+              </h2>
+              <button
+                id="titleToggle"
+                class="button-quiet title-toggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="title"
+                hidden
+              >
+                Show full title
+              </button>
+              <p id="source" class="track-source">
+                <span class="skeleton skeleton-line" aria-hidden="true"
+                  >Artist</span
+                >
+              </p>
+              <p id="details" class="track-details tabular"></p>
+              <button
+                id="toggleDetails"
+                class="button-quiet details-toggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="promptPanel"
+                hidden
+              >
+                <span id="toggleDetailsLabel">Song details</span
+                ><svg
+                  class="disclosure-chevron"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="m7 10 5 5 5-5"></path>
+                </svg>
+              </button>
+              <div id="radioErrorActions" class="state-actions" hidden>
+                <button id="radioRetry" class="button is-primary" type="button">
+                  Try again
+                </button>
                 <button
-                  id="lyricsFollow"
-                  class="button-quiet"
+                  id="radioMainStation"
+                  class="button"
                   type="button"
                   hidden
                 >
-                  Follow song</button
-                ><button
-                  id="toggleDetails"
-                  class="button-quiet"
-                  type="button"
-                  aria-expanded="false"
-                >
-                  View details
+                  Listen to All songs
                 </button>
               </div>
             </div>
-            <div id="lyricsViewport" class="transcript-viewport is-collapsed">
-              <div id="lyrics" class="transcript-copy"></div>
-              <div id="lyricsFade" class="transcript-fade"></div>
+          </div>
+          <div
+            id="nowPlayingAnnouncement"
+            class="sr-only"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          ></div>
+
+          <div id="stationProgress" class="range-row station-progress">
+            <span id="currentTime" class="tabular">—:——</span>
+            <div
+              id="progressTrack"
+              class="range-track"
+              role="progressbar"
+              aria-label="Song progress"
+              aria-valuemin="0"
+              aria-valuemax="0"
+              aria-valuenow="0"
+              aria-valuetext="0:00 of 0:00"
+            >
+              <div id="progressFill" class="range-fill"></div>
+              <div id="progressThumb" class="range-thumb" hidden></div>
+              <input
+                id="progress"
+                class="range-input"
+                type="range"
+                min="0"
+                max="0"
+                value="0"
+                step="any"
+                aria-label="Song position"
+                hidden
+              />
+            </div>
+            <span id="duration" class="range-end tabular">—:——</span>
+          </div>
+
+          <p id="radioNext" class="radio-next" hidden></p>
+          <div class="listener-controls">
+            <div class="listen-control">
+              <button
+                id="playPause"
+                class="listen-button"
+                type="button"
+                aria-describedby="listenNote"
+                disabled
+              >
+                <span class="listen-button-icon" aria-hidden="true"
+                  ><svg id="playIcon" class="playback-icon" viewBox="0 0 24 24">
+                    <path
+                      d="M8.5 6.2v11.6a.8.8 0 0 0 1.2.7l9.3-5.8a.8.8 0 0 0 0-1.4L9.7 5.5a.8.8 0 0 0-1.2.7z"
+                    ></path></svg
+                  ><svg
+                    id="pauseIcon"
+                    class="playback-icon hidden"
+                    viewBox="0 0 24 24"
+                  >
+                    <rect
+                      x="6.5"
+                      y="6.5"
+                      width="11"
+                      height="11"
+                      rx="2"
+                    ></rect></svg></span
+                ><span class="listen-button-label"
+                  ><span id="playPauseLabel">Listen live</span
+                  ><span class="listen-button-sizer" aria-hidden="true"
+                    >Stop listening</span
+                  ><span class="listen-button-sizer" aria-hidden="true"
+                    >Listen when it starts</span
+                  ></span
+                >
+              </button>
+              <p id="listenNote" class="listen-note">On this device only</p>
+              <div id="listenAlternatives" class="listen-alternatives" hidden>
+                <button
+                  id="listenMainMeanwhile"
+                  class="button-quiet listen-alternative"
+                  type="button"
+                >
+                  Listen to All songs meanwhile
+                </button>
+              </div>
+            </div>
+            <!-- Desktop: this device's volume, beside Listen. -->
+            <div id="radioVolume" class="radio-volume"></div>
+            <div class="track-actions" role="group" aria-label="This song">
+              <button
+                id="like"
+                class="track-action reaction-button"
+                type="button"
+                aria-pressed="false"
+                disabled
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"
+                  ></path></svg
+                ><span>Like</span>
+                <span id="likeCount" class="reaction-count tabular">0</span>
+              </button>
+              <button
+                id="dislike"
+                class="track-action reaction-button"
+                type="button"
+                aria-pressed="false"
+                disabled
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M7 4h9l3 8-3 1h-4l1 5a2 2 0 0 1-3 1L7 12z"
+                  ></path></svg
+                ><span>Dislike</span>
+                <span id="dislikeCount" class="reaction-count tabular">0</span>
+              </button>
+              <button
+                id="addCurrentToStation"
+                class="track-action"
+                type="button"
+                disabled
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 6.5h11M4 12h11M4 17.5h7M18 14v7M14.5 17.5h7"
+                  ></path></svg
+                ><span class="song-add-label">Add</span>
+              </button>
+              <a id="download" class="track-action" aria-disabled="true"
+                ><svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg
+                ><span>Download</span></a
+              >
+              <button
+                id="lyricsQuickOpen"
+                class="track-action lyrics-quick-open"
+                type="button"
+                aria-haspopup="dialog"
+                aria-controls="lyricsSheet"
+                hidden
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 6.5h10M4 11h12M4 15.5h7"></path>
+                  <circle cx="17.5" cy="17" r="2.5"></circle>
+                  <path d="M20 17V8.5l-2-.5"></path></svg
+                ><span>Lyrics</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Station-wide steering comes after this device's own
+               controls: clearly scoped, secondary, and within thumb reach. -->
+          <div
+            id="stationControls"
+            class="station-controls"
+            role="group"
+            aria-labelledby="stationControlsTitle"
+            aria-describedby="stationControlsNote"
+          >
+            <p class="station-controls-head">
+              <svg
+                class="station-controls-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <circle cx="9" cy="8.5" r="3"></circle>
+                <path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"></path>
+                <circle cx="16.5" cy="9.5" r="2.5"></circle>
+                <path d="M15.5 14.2c2.6-.4 4.5 1.3 5 4.8"></path>
+              </svg>
+              <span id="stationControlsTitle" class="station-controls-title"
+                >Shared controls</span
+              ><span id="stationControlsNote" class="station-controls-note"
+                >Affects everyone listening</span
+              ><span id="stationPresence" class="station-presence" hidden
+                ><span id="presenceCount"></span
+                ><span id="presenceNote" class="sr-only">
+                  Includes listeners with audio paused.</span
+                ></span
+              >
+              <button
+                id="stationShareNearby"
+                class="button station-share-nearby"
+                type="button"
+                hidden
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="m10 13 4-4M8 15l-1 1a3 3 0 0 1-4-4l4-4a3 3 0 0 1 4 0m2 1 1-1a3 3 0 0 1 4 4l-4 4a3 3 0 0 1-4 0"
+                  ></path>
+                </svg>
+                Copy listen-only link
+              </button>
+            </p>
+            <div class="station-controls-buttons">
+              <button
+                id="stationPause"
+                class="button station-button"
+                type="button"
+                disabled
+              >
+                <svg
+                  id="stationPauseIcon"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M9 6v12M15 6v12"></path></svg
+                ><span id="stationPauseLabel">Pause for everyone</span>
+              </button>
+              <!-- A temporary station's transport: back a song, back and
+                   forward 10 seconds, then Skip. Play order is a separate
+                   group of on/off toggles. -->
+              <div
+                id="temporaryTransport"
+                class="temporary-transport"
+                role="group"
+                aria-label="Queue playback"
+                hidden
+              >
+                <button
+                  id="prev"
+                  class="icon-button transport-button"
+                  type="button"
+                  aria-label="Previous song"
+                  title="Previous song"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 5v14M19 6l-9 6 9 6z"></path>
+                  </svg>
+                </button>
+                <button
+                  id="back10"
+                  class="icon-button transport-button"
+                  type="button"
+                  aria-label="Back 10 seconds"
+                  title="Back 10 seconds"
+                >
+                  <span class="transport-seek-label tabular" aria-hidden="true"
+                    >−10</span
+                  >
+                </button>
+                <button
+                  id="forward10"
+                  class="icon-button transport-button"
+                  type="button"
+                  aria-label="Forward 10 seconds"
+                  title="Forward 10 seconds"
+                >
+                  <span class="transport-seek-label tabular" aria-hidden="true"
+                    >+10</span
+                  >
+                </button>
+              </div>
+              <button
+                id="next"
+                class="button station-button"
+                type="button"
+                disabled
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 6l8 6-8 6zM18 5v14"></path></svg
+                ><span id="stationSkipLabel">Skip for everyone</span>
+              </button>
+            </div>
+            <div
+              id="temporaryModes"
+              class="transport-modes"
+              role="group"
+              aria-label="Play order"
+              hidden
+            >
+              <button
+                id="random"
+                class="button transport-toggle"
+                type="button"
+                aria-pressed="false"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 7h3c4.5 0 5.5 10 10 10h3M17 4l3 3-3 3M4 17h3c1.4 0 2.5-1 3.5-2.4M17 14l3 3-3 3M13.5 9.4C14.5 8 15.5 7 17 7h3"
+                  ></path></svg
+                ><span>Shuffle</span>
+              </button>
+              <button
+                id="repeatOne"
+                class="button transport-toggle"
+                type="button"
+                aria-pressed="false"
+                aria-label="Repeat this song"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="m17 2 3 3-3 3M20 5H8a4 4 0 0 0-4 4v1M7 22l-3-3 3-3M4 19h12a4 4 0 0 0 4-4v-1"
+                  ></path>
+                  <path d="M11 10.5 12.5 9.5v5.5"></path></svg
+                ><span aria-hidden="true">Repeat</span>
+              </button>
+            </div>
+          </div>
+          <p id="stationListenOnly" class="station-listen-only" hidden>
+            <svg
+              class="station-controls-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path d="M4.5 14a7.5 7.5 0 0 1 15 0"></path>
+              <rect x="3.5" y="13.5" width="4" height="6.5" rx="1.5"></rect>
+              <rect x="16.5" y="13.5" width="4" height="6.5" rx="1.5"></rect>
+            </svg>
+            <span
+              ><strong>Listen-only</strong>&nbsp;·
+              <span id="stationListenOnlyNote">shared by its owner</span></span
+            >
+          </p>
+        </div>
+
+        <!-- Desktop: one side column beside the player. It holds the lyrics,
+             Song details while they're open. Up next stays below the player. -->
+        <div id="radioSide" class="radio-side">
+          <section id="transcript" class="transcript">
+            <div class="transcript-head">
+              <div class="transcript-head-copy">
+                <h3 id="lyricsTitle" class="section-heading">Lyrics</h3>
+                <!-- How far to trust these lyrics. It moves into the
+                     full-screen lyrics with them, so the warning, its notes,
+                     and the legend are never left behind. -->
+              </div>
+              <!-- Phones and tablets: the lyrics, full screen, following
+                   the song. The inline lyrics below are the same words. -->
+              <button
+                id="lyricsOpen"
+                class="button-quiet lyrics-open"
+                type="button"
+                aria-haspopup="dialog"
+                aria-controls="lyricsSheet"
+                hidden
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15"
+                  ></path></svg
+                ><span>Full screen<span class="sr-only"> lyrics</span></span>
+              </button>
+            </div>
+            <div id="lyricsContext" class="lyrics-context">
+              <p id="lyricsSyncStatus" class="lyrics-sync-status"></p>
+              <button
+                id="lyricsQuality"
+                class="lyrics-quality"
+                type="button"
+                aria-expanded="false"
+                aria-controls="lyricsQualityNotes"
+                hidden
+              >
+                <span id="lyricsQualityLabel"></span
+                ><svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="8.5"></circle>
+                  <path d="M12 11v5.5M12 7.6v.4"></path>
+                </svg>
+              </button>
+              <ul
+                id="lyricsQualityNotes"
+                class="lyrics-quality-notes"
+                aria-label="About these lyrics"
+                hidden
+              ></ul>
+              <p id="lyricsLegend" class="lyrics-legend" hidden></p>
+            </div>
+            <div
+              id="lyricsFrame"
+              class="lyrics-viewport-frame"
+              role="group"
+              aria-label="Lyrics"
+              tabindex="-1"
+            >
+              <div id="lyricsViewport" class="transcript-viewport is-collapsed">
+                <div id="lyrics" class="transcript-copy"></div>
+                <div id="lyricsFade" class="transcript-fade"></div>
+              </div>
             </div>
             <div id="lyricsMoreRow" class="transcript-more">
               <button
@@ -369,27 +621,82 @@
                 class="button-quiet"
                 type="button"
                 aria-expanded="false"
+                aria-controls="lyricsViewport"
               >
                 Show full lyrics
               </button>
             </div>
+            <button
+              id="lyricsFollow"
+              class="button lyrics-follow"
+              type="button"
+              hidden
+            >
+              Follow the song
+            </button>
           </section>
-          <section id="promptPanel" class="prompt-panel" hidden>
-            <div class="rule-heading"><h3>Prompt / production notes</h3></div>
-            <pre id="prompt" class="prompt-copy"></pre>
+          <section
+            id="promptPanel"
+            class="prompt-panel"
+            aria-labelledby="promptTitle"
+            hidden
+          >
+            <div class="prompt-panel-head">
+              <h3 id="promptTitle" class="section-heading" tabindex="-1">
+                Song details
+              </h3>
+              <button
+                id="promptClose"
+                class="icon-button prompt-close"
+                type="button"
+                aria-label="Close song details"
+                title="Close song details"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M7 7l10 10M17 7 7 17"></path>
+                </svg>
+              </button>
+            </div>
+            <dl id="trackFacts" class="track-facts"></dl>
+            <p id="trackStats" class="track-stats" hidden></p>
+            <h4 class="section-label">Song description</h4>
+            <p id="prompt" class="prompt-copy"></p>
+            <details id="promptMeta" class="prompt-meta" hidden>
+              <summary>Creation details</summary>
+              <dl id="promptMetaList" class="track-facts prompt-meta-list"></dl>
+            </details>
           </section>
         </div>
-        <div class="radio-programming-panel">
+
+        <div id="radioSecondary" class="radio-secondary">
+          <section
+            id="radioQueue"
+            class="radio-queue"
+            aria-labelledby="radioQueueTitle"
+          >
+            <div class="radio-queue-head">
+              <h3 id="radioQueueTitle" class="section-heading" tabindex="-1">
+                Up next
+              </h3>
+              <p id="radioQueueSummary" class="radio-queue-summary"></p>
+            </div>
+            <ol id="radioQueueTracks" class="radio-queue-tracks"></ol>
+          </section>
           <details id="radioOwnerControls" class="owner-controls-disclosure">
             <summary>
-              <strong id="radioOwnerControlsSummary">Playback settings</strong>
+              <span class="section-heading">Playback settings</span>
+              <span id="radioOwnerControlsSummary" class="disclosure-summary"
+                >No repeats</span
+              >
             </summary>
             <fieldset
-              id="radioProgramming"
               class="radio-programming"
-              aria-describedby="stationCapabilityDetail"
+              aria-describedby="radioProgrammingNote"
             >
-              <legend class="station-picker-label">Playback settings</legend>
+              <legend class="sr-only">Playback settings</legend>
+              <p id="radioProgrammingNote" class="field-hint">
+                Changes affect everyone listening.
+              </p>
               <div class="station-programming-field">
                 <span id="stationRandomModeLabel" class="programming-label"
                   >Playback order</span
@@ -419,7 +726,7 @@
                       value="true_random"
                     />
                     <span class="random-mode-card">
-                      <strong>True random</strong>
+                      <strong>Shuffle with repeats</strong>
                       <small>Repeats can happen</small>
                     </span>
                   </label>
@@ -437,11 +744,6 @@
               </label>
             </fieldset>
           </details>
-          <div id="radioQueue" class="radio-queue" aria-live="polite">
-            <span class="section-label">Up next</span>
-            <span id="radioQueueSummary">The station queue is empty.</span>
-            <ol id="radioQueueTracks" class="radio-queue-tracks"></ol>
-          </div>
         </div>
       </section>
 
@@ -449,292 +751,264 @@
         id="libraryView"
         class="library-page view-panel"
         data-view="/library"
+        aria-labelledby="libraryViewTitle"
         hidden
       >
-        <div id="libraryHero" class="library-hero">
-          <div class="section-label library-eyebrow">The complete archive</div>
-          <h2 id="libraryViewTitle" tabindex="-1">
-            Find your<br />next favorite.
-          </h2>
-          <p>
-            Search every original track, then choose what happens next.
-            <strong id="libraryStationTarget"
-              >Your picks will go to the shared station.</strong
+        <div class="library-intro">
+          <div class="library-intro-copy">
+            <p class="section-label">Music library</p>
+            <h2 id="libraryViewTitle" class="view-title" tabindex="-1">
+              Library
+            </h2>
+            <p class="view-lede library-lede">
+              Find songs, preview them, and build stations.
+            </p>
+          </div>
+          <button
+            id="stationsToggle"
+            class="button stations-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="stations"
+          >
+            <!-- app sets the name ("Your stations, 2 saved"); the visible
+                 words lead it, a space apart. -->
+            <span>Your stations</span>
+            <span id="stationsToggleCount" class="stations-toggle-count tabular"
+              >…</span
+            ><svg
+              class="disclosure-chevron"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
             >
-          </p>
+              <path d="m7 10 5 5 5-5"></path>
+            </svg>
+          </button>
         </div>
-        <section aria-labelledby="libraryTitle">
-          <div class="library-tools">
-            <label class="search-field"
-              ><span class="sr-only">Search the music library</span
+
+        <section class="library-browse" aria-labelledby="libraryTitle">
+          <div class="library-tools" role="search" aria-label="Songs">
+            <label class="search-field library-search"
+              ><span class="sr-only">Search songs and lyrics</span
               ><svg aria-hidden="true" viewBox="0 0 24 24">
                 <circle cx="11" cy="11" r="6.5"></circle>
                 <path d="m16 16 4 4"></path></svg
               ><input
                 id="librarySearch"
                 type="search"
-                placeholder="Search title, artist, lyrics, prompt…"
+                placeholder="Search songs and lyrics"
                 autocomplete="off"
+                spellcheck="false"
+                enterkeyhint="search"
+                maxlength="160"
             /></label>
-            <label class="sr-only" for="librarySort">Sort tracks</label>
-            <select class="select-control library-sort" id="librarySort">
-              <option value="archive">Archive order</option>
-              <option value="newest">Newest first</option>
-              <option value="title">Title A–Z</option>
-              <option value="duration">Longest first</option>
-              <option value="played">Most played</option>
-            </select>
-            <div class="view-switch" aria-label="Library view">
+            <label class="list-sort"
+              ><span class="sr-only">Sort songs</span
+              ><svg aria-hidden="true" viewBox="0 0 24 24">
+                <path
+                  d="M8 5v14M4.5 8.5 8 5l3.5 3.5M16 19V5M12.5 15.5 16 19l3.5-3.5"
+                ></path></svg
+              ><select id="librarySort" class="select-control">
+                <option value="match">Best match</option>
+                <option value="newest">Newest added first</option>
+                <option value="archive">Oldest added first</option>
+                <option value="title">Title A–Z</option>
+                <option value="duration">Longest first</option>
+                <option value="played">Most played</option>
+              </select></label
+            >
+          </div>
+          <a
+            id="libraryJumpAll"
+            class="button-quiet library-jump"
+            href="#libraryTitle"
+            hidden
+            ><span id="libraryJumpAllLabel">All songs</span
+            ><svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M6.5 13.5 12 19l5.5-5.5"></path></svg
+          ></a>
+          <div class="library-filters">
+            <div
+              id="libraryFilterRow"
+              class="filter-row"
+              role="group"
+              aria-label="Show songs"
+            >
+              <button
+                class="filter-chip"
+                type="button"
+                data-library-filter="all"
+                aria-pressed="true"
+              >
+                All</button
+              ><span
+                id="libraryGroupFilter"
+                class="library-group-filter"
+                hidden
+              ></span
+              ><button
+                class="filter-chip"
+                type="button"
+                data-library-filter="liked"
+                aria-pressed="false"
+              >
+                Liked by listeners</button
+              ><button
+                class="filter-chip"
+                type="button"
+                data-library-filter="covers"
+                aria-pressed="false"
+              >
+                With artwork</button
+              ><button
+                class="filter-chip"
+                type="button"
+                data-library-filter="recent"
+                aria-pressed="false"
+              >
+                Recently added
+              </button>
+            </div>
+          </div>
+          <a
+            class="button-quiet stations-jump sr-only focus:not-sr-only"
+            href="#stationsTitle"
+            id="libraryJumpStations"
+            >Jump to your stations</a
+          >
+          <p id="shelfKeyboardHint" class="sr-only">
+            Use Left and Right arrows to choose a song, and Down arrow to open
+            its actions.
+          </p>
+          <section
+            id="libraryShelves"
+            class="library-shelves"
+            aria-label="Browse"
+            hidden
+          ></section>
+          <div class="library-results-head">
+            <div class="library-results-title">
+              <h3 id="libraryTitle" tabindex="-1">All songs</h3>
+              <p id="libraryCount" class="tabular">Loading songs…</p>
+              <button
+                id="librarySaveFilter"
+                class="button library-save-filter"
+                type="button"
+                aria-label="Save as station from this filter"
+                hidden
+              >
+                Save as station
+              </button>
+            </div>
+            <div
+              class="view-switch"
+              role="group"
+              aria-label="Song list layout"
+              title="Song list layout"
+            >
               <button
                 type="button"
                 data-library-view="grid"
                 aria-pressed="true"
+                aria-label="Grid view"
+                title="Grid view"
               >
-                Grid</button
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4.5" y="4.5" width="6" height="6" rx="1"></rect>
+                  <rect x="13.5" y="4.5" width="6" height="6" rx="1"></rect>
+                  <rect x="4.5" y="13.5" width="6" height="6" rx="1"></rect>
+                  <rect x="13.5" y="13.5" width="6" height="6" rx="1"></rect>
+                </svg></button
               ><button
                 type="button"
                 data-library-view="list"
                 aria-pressed="false"
+                aria-label="List view"
+                title="List view"
               >
-                List
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6.5h11M9 12h11M9 17.5h11"></path>
+                  <circle cx="5" cy="6.5" r="1"></circle>
+                  <circle cx="5" cy="12" r="1"></circle>
+                  <circle cx="5" cy="17.5" r="1"></circle>
+                </svg>
               </button>
             </div>
           </div>
-          <div class="library-results-head">
-            <h2 id="libraryTitle" tabindex="-1">All tracks</h2>
-            <p id="libraryCount" aria-live="polite">Loading the archive…</p>
-          </div>
-          <div class="filter-row" role="group" aria-label="Track filters">
-            <button
-              class="filter-chip"
-              type="button"
-              data-library-filter="all"
-              aria-pressed="true"
-            >
-              All</button
-            ><button
-              class="filter-chip"
-              type="button"
-              data-library-filter="liked"
-              aria-pressed="false"
-            >
-              Liked</button
-            ><button
-              class="filter-chip"
-              type="button"
-              data-library-filter="covers"
-              aria-pressed="false"
-            >
-              With artwork</button
-            ><button
-              class="filter-chip"
-              type="button"
-              data-library-filter="recent"
-              aria-pressed="false"
-            >
-              Recent
+          <p id="libraryQueueNote" class="library-queue-note" hidden></p>
+          <div class="track-grid" id="libraryTracks" aria-busy="true"></div>
+          <div
+            id="libraryTrackMenu"
+            class="menu-popover library-menu"
+            role="menu"
+            popover
+          ></div>
+          <div
+            id="libraryStatus"
+            class="sr-only"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          ></div>
+        </section>
+        <section
+          id="stations"
+          class="library-stations"
+          aria-labelledby="stationsTitle"
+        >
+          <div class="library-stations-head">
+            <h3 id="stationsTitle" class="section-heading" tabindex="-1">
+              Your stations
+            </h3>
+            <button id="newStation" class="button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14"></path>
+              </svg>
+              New station
             </button>
           </div>
-          <div class="track-grid" id="libraryTracks" aria-busy="true"></div>
+          <ul
+            id="savedStationList"
+            class="station-strip"
+            role="list"
+            aria-labelledby="stationsTitle"
+          ></ul>
+          <!-- How ownership works is said once, here, beside the stations
+               it applies to. -->
+          <details class="library-stations-note">
+            <summary>
+              Editing access is saved in this browser or app.
+              <span class="library-stations-note-more">How editing works</span>
+            </summary>
+            <p class="field-hint">
+              Links you share are listen-only. To edit a saved station on
+              another browser, profile, or device, copy its private edit link
+              from the editor. Changing browser or profile, or clearing its
+              data, requires that link to restore editing access.
+            </p>
+          </details>
+          <!-- Wide screens: what Radio is playing, and what's next, beside
+               the songs. -->
           <section
-            id="stationManager"
-            class="station-manager"
-            aria-labelledby="stationManagerTitle"
+            id="libraryOnAir"
+            class="library-on-air"
+            aria-labelledby="libraryOnAirTitle"
+            hidden
           >
-            <div class="station-manager-head">
-              <div>
-                <div class="section-label">Saved radio</div>
-                <h2 id="stationManagerTitle">Your stations</h2>
-                <p>
-                  Save this Library view as a live filter, or build a
-                  hand-picked list.
-                </p>
-              </div>
-              <div class="station-manager-actions">
-                <button id="createFilterStation" class="button" type="button">
-                  Station from this filter
-                </button>
-                <button id="createListStation" class="button" type="button">
-                  New hand-picked station
-                </button>
-              </div>
+            <div class="library-on-air-head">
+              <h3 id="libraryOnAirTitle" class="section-heading">On Radio</h3>
+              <a
+                class="button-quiet library-on-air-open"
+                href="/"
+                data-route="/"
+                >Open Radio</a
+              >
             </div>
-            <form id="stationEditor" class="station-editor" hidden>
-              <input id="stationEditorID" type="hidden" />
-              <input id="stationEditorSource" type="hidden" value="filter" />
-              <div class="station-editor-grid">
-                <label>
-                  Station name
-                  <input
-                    id="stationEditorName"
-                    type="text"
-                    maxlength="80"
-                    required
-                    autocomplete="off"
-                  />
-                </label>
-                <div class="station-programming-field">
-                  <span id="stationEditorRandomLabel" class="programming-label"
-                    >Playback order</span
-                  >
-                  <div
-                    id="stationEditorRandom"
-                    class="random-mode-options"
-                    role="radiogroup"
-                    aria-labelledby="stationEditorRandomLabel"
-                  >
-                    <label class="random-mode-option">
-                      <input
-                        type="radio"
-                        name="stationEditorRandom"
-                        value="deck"
-                        checked
-                      />
-                      <span class="random-mode-card">
-                        <strong>No repeats</strong>
-                        <small>Shuffle every song once</small>
-                      </span>
-                    </label>
-                    <label class="random-mode-option">
-                      <input
-                        type="radio"
-                        name="stationEditorRandom"
-                        value="true_random"
-                      />
-                      <span class="random-mode-card">
-                        <strong>True random</strong>
-                        <small>Repeats can happen</small>
-                      </span>
-                    </label>
-                  </div>
-                </div>
-                <label class="station-toggle">
-                  <span class="station-toggle-copy">
-                    <strong>Skip disliked</strong>
-                    <small>Keep them out of rotation</small>
-                  </span>
-                  <input id="stationEditorSkip" type="checkbox" />
-                  <span class="station-toggle-switch" aria-hidden="true"
-                    ><span></span
-                  ></span>
-                </label>
-              </div>
-              <p id="stationEditorSummary" class="station-editor-summary"></p>
-              <div
-                id="stationEditorMembers"
-                class="station-editor-members"
-              ></div>
-              <div class="station-manager-actions">
-                <button class="button" type="submit">Save station</button>
-                <button id="stationEditorCancel" class="button" type="button">
-                  Cancel
-                </button>
-              </div>
-              <p id="stationEditorStatus" aria-live="polite"></p>
-            </form>
-            <div id="savedStationList" class="saved-station-list"></div>
+            <p id="libraryOnAirStation" class="library-on-air-station"></p>
+            <ol id="libraryOnAirList" class="library-on-air-list"></ol>
           </section>
         </section>
-        <aside
-          class="preview-dock"
-          id="libraryPreviewDock"
-          aria-label="Local audio preview"
-          hidden
-          inert
-        >
-          <div class="dock-cover" id="libraryDockCover"></div>
-          <div class="dock-copy">
-            <div class="dock-kicker">Private preview</div>
-            <div class="dock-title" id="libraryDockTitle">Select a track</div>
-          </div>
-          <div class="range-row dock-progress">
-            <span id="libraryCurrentTime">0:00</span>
-            <div class="range-track">
-              <div id="libraryProgressFill" class="range-fill"></div>
-              <div id="libraryProgressThumb" class="range-thumb"></div>
-              <input
-                class="range-input"
-                id="libraryProgress"
-                type="range"
-                min="0"
-                max="0"
-                value="0"
-                step="0.1"
-                aria-label="Preview position"
-                disabled
-              />
-            </div>
-            <span id="libraryDuration">0:00</span>
-          </div>
-          <div class="dock-actions">
-            <button
-              class="dock-action"
-              id="libraryBack"
-              type="button"
-              aria-label="Back 10 seconds"
-              disabled
-            >
-              −10</button
-            ><button
-              class="play-button preview-play"
-              id="libraryPlayPause"
-              type="button"
-              aria-label="Play preview"
-              disabled
-            >
-              <svg class="playback-icon" data-icon="play" viewBox="0 0 24 24">
-                <path d="m9 7 8 5-8 5z"></path></svg
-              ><svg
-                class="pause-icon hidden"
-                data-icon="pause"
-                viewBox="0 0 24 24"
-              >
-                <path d="M8 6v12M16 6v12"></path>
-              </svg></button
-            ><button
-              class="dock-action"
-              id="libraryForward"
-              type="button"
-              aria-label="Forward 10 seconds"
-              disabled
-            >
-              +10</button
-            ><a
-              class="dock-action dock-download"
-              id="libraryDownload"
-              download
-              aria-label="Download track"
-              tabindex="-1"
-              >↓</a
-            ><button
-              class="button dock-return-live"
-              id="libraryReturnLive"
-              type="button"
-            >
-              Return live
-            </button>
-          </div>
-        </aside>
       </section>
-
-      <dialog id="addToStationDialog" class="station-dialog">
-        <form method="dialog" aria-labelledby="addToStationTitle">
-          <div class="section-label">Add song</div>
-          <h2 id="addToStationTitle">Add to station</h2>
-          <p id="addToStationTrack"></p>
-          <label>
-            Station
-            <select id="addToStationSelect" class="select-control"></select>
-          </label>
-          <p id="addToStationStatus" aria-live="polite"></p>
-          <div class="station-manager-actions">
-            <button class="button" value="cancel">Cancel</button>
-            <button id="confirmAddToStation" class="button" type="button">
-              Add song
-            </button>
-          </div>
-        </form>
-      </dialog>
 
       <section
         id="readerView"
@@ -742,36 +1016,50 @@
         data-view="/reader"
         hidden
       >
-        <div id="readerHero" class="reader-hero">
-          <div class="section-label">The reading room</div>
-          <h2 id="readerLibraryTitle" tabindex="-1">
-            Stories deserve<br />the whole page.
-          </h2>
-          <p>
-            Read the preserved source while its narration follows along. Pick up
-            where you left off, or browse everything saved to Reader.
-          </p>
-          <div class="reader-browser">
-            <label class="search-field reader-search"
-              ><span class="sr-only">Search Reader items</span
-              ><svg aria-hidden="true" viewBox="0 0 24 24">
-                <circle cx="11" cy="11" r="6.5"></circle>
-                <path d="m16 16 4 4"></path></svg
-              ><input
-                id="readerSearch"
-                type="search"
-                placeholder="Search titles and sources"
-                autocomplete="off"
-            /></label>
-            <label class="sr-only" for="readerSort">Sort Reader items</label>
-            <select class="select-control reader-sort" id="readerSort">
-              <option value="newest">Newest first</option>
-              <option value="title">Title A–Z</option>
-              <option value="duration">Longest first</option>
-            </select>
-          </div>
-          <div class="reader-filter-row">
-            <div class="filter-chips" aria-label="Filter Reader library">
+        <div id="readerHero" class="reader-library">
+          <header class="reader-library-head">
+            <p class="section-label">The reading room</p>
+            <h2 id="readerLibraryTitle" class="view-title" tabindex="-1">
+              Reader
+            </h2>
+            <p class="view-lede">
+              Saved articles and documents, narrated. The text follows along
+              while you listen.
+            </p>
+          </header>
+          <div class="reader-browse">
+            <div class="reader-toolbar">
+              <label class="search-field reader-search"
+                ><span class="sr-only">Search Reader</span
+                ><svg aria-hidden="true" viewBox="0 0 24 24">
+                  <circle cx="11" cy="11" r="6.5"></circle>
+                  <path d="m16 16 4 4"></path></svg
+                ><input
+                  id="readerSearch"
+                  type="search"
+                  placeholder="Search Reader"
+                  autocomplete="off"
+                  enterkeyhint="search"
+              /></label>
+              <label class="list-sort"
+                ><span class="sr-only">Sort items</span
+                ><svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path
+                    d="M8 5v14M4.5 8.5 8 5l3.5 3.5M16 19V5M12.5 15.5 16 19l3.5-3.5"
+                  ></path></svg
+                ><select class="select-control" id="readerSort">
+                  <option value="newest">Newest added first</option>
+                  <option value="recent">Recently listened</option>
+                  <option value="title">Title A–Z</option>
+                  <option value="duration">Longest first</option>
+                </select></label
+              >
+            </div>
+            <div
+              class="filter-row reader-filters"
+              role="group"
+              aria-label="Show items"
+            >
               <button
                 class="filter-chip"
                 type="button"
@@ -791,176 +1079,1038 @@
               <button
                 class="filter-chip"
                 type="button"
-                data-reader-filter="processing"
+                data-reader-filter="not-ready"
                 aria-pressed="false"
               >
-                Processing
+                Not ready
               </button>
-            </div>
-            <span
-              id="readerCount"
-              class="reader-count"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              >Loading Reader…</span
-            >
-          </div>
-          <div
-            id="readerItems"
-            class="reader-library-grid"
-            aria-busy="true"
-          ></div>
-        </div>
-        <div id="readerMain" class="reader-main" hidden>
-          <header class="reader-head">
-            <a
-              class="reader-library-back"
-              id="readerLibraryBack"
-              href="/reader"
-              hidden
-              >← All Reader items</a
-            >
-            <div
-              id="readerMeta"
-              class="section-label"
-              role="status"
-              aria-live="polite"
-            >
-              Reader
-            </div>
-            <h2 id="readerTitle" class="reader-title" tabindex="-1">
-              Select a reader item
-            </h2>
-            <p id="readerDetails" class="reader-details">
-              Generated audio follows the source text and highlights the current
-              segment.
-            </p>
-            <div class="reader-controls">
               <button
-                id="readerBack"
-                class="reader-skip"
+                class="filter-chip"
                 type="button"
-                aria-label="Back 10 seconds"
-                disabled
+                data-reader-filter="attention"
+                aria-pressed="false"
               >
-                −10
+                Needs attention
               </button>
               <button
-                id="readerPlayPause"
-                class="play-button reader-play"
+                class="filter-chip"
                 type="button"
-                aria-label="Play"
-                disabled
+                data-reader-filter="finished"
+                aria-pressed="false"
+              >
+                Finished
+              </button>
+              <button
+                class="filter-chip"
+                type="button"
+                data-reader-filter="hidden"
+                aria-pressed="false"
+                hidden
+              >
+                Hidden
+              </button>
+            </div>
+          </div>
+          <section
+            id="readerContinue"
+            class="reader-continue"
+            aria-labelledby="readerContinueTitle"
+            hidden
+          >
+            <h3 id="readerContinueTitle" class="section-heading">
+              Continue listening
+            </h3>
+            <ul id="readerContinueItems" class="reader-continue-list"></ul>
+          </section>
+          <section class="reader-all" aria-labelledby="readerAllTitle">
+            <div class="reader-all-head">
+              <h3 id="readerAllTitle" class="section-heading">All items</h3>
+              <span id="readerCount" class="reader-count tabular"></span>
+            </div>
+            <ul
+              id="readerItems"
+              class="reader-list"
+              aria-labelledby="readerAllTitle"
+              aria-busy="true"
+            ></ul>
+          </section>
+          <p
+            id="readerListStatus"
+            class="sr-only"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          ></p>
+        </div>
+        <article
+          id="readerMain"
+          class="reader-item"
+          aria-labelledby="readerTitle"
+          hidden
+        >
+          <a class="reader-back" id="readerLibraryBack" href="/reader"
+            ><svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="m14.5 6-6 6 6 6"></path></svg
+            >Back to Reader</a
+          >
+          <div
+            id="readerItemLoading"
+            class="reader-item-loading"
+            role="status"
+            hidden
+          ></div>
+          <header id="readerItemHead" class="reader-item-head">
+            <p id="readerMeta" class="section-label reader-eyebrow"></p>
+            <h2 id="readerTitle" class="reader-title" tabindex="-1">
+              Loading item…
+            </h2>
+            <p id="readerDetails" class="reader-details"></p>
+            <div id="readerNotices" class="reader-notices"></div>
+            <div id="readerActions" class="reader-actions" hidden>
+              <button
+                id="readerResume"
+                class="button is-primary reader-resume"
+                type="button"
               >
                 <svg
-                  id="readerPlayIcon"
-                  class="playback-icon"
+                  id="readerResumePlay"
+                  class="playback-icon reader-resume-play"
                   viewBox="0 0 24 24"
+                  aria-hidden="true"
                 >
-                  <path d="m9 7 8 5-8 5z"></path></svg
+                  <path
+                    d="M8.5 6.2v11.6a.8.8 0 0 0 1.2.7l9.3-5.8a.8.8 0 0 0 0-1.4L9.7 5.5a.8.8 0 0 0-1.2.7z"
+                  ></path></svg
                 ><svg
-                  id="readerPauseIcon"
-                  class="pause-icon hidden"
+                  id="readerResumePause"
+                  class="playback-icon reader-resume-pause"
                   viewBox="0 0 24 24"
+                  aria-hidden="true"
                 >
-                  <path d="M8 6v12M16 6v12"></path>
-                </svg>
+                  <rect x="6.5" y="5.5" width="4" height="13" rx="1.2"></rect>
+                  <rect
+                    x="13.5"
+                    y="5.5"
+                    width="4"
+                    height="13"
+                    rx="1.2"
+                  ></rect></svg
+                ><span id="readerResumeLabel" class="tabular">Play</span>
               </button>
               <button
-                id="readerForward"
-                class="reader-skip"
+                id="readerTocOpen"
+                class="button-quiet reader-action-icon reader-toc-open"
                 type="button"
-                aria-label="Forward 10 seconds"
-                disabled
+                aria-haspopup="dialog"
+                aria-controls="readerTocSheet"
+                aria-label="Contents"
+                title="Contents"
+                hidden
               >
-                +10
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 6.5h11M9 12h11M9 17.5h11"></path>
+                  <path d="M4.5 6.5h1M4.5 12h1M4.5 17.5h1"></path>
+                </svg>
+                <span>Contents</span>
               </button>
-              <label class="speed-control"
-                >Speed
-                <select id="readerSpeed">
-                  <option value="1">1.0×</option>
-                  <option value="1.15" selected>1.15×</option>
-                  <option value="1.25">1.25×</option>
-                  <option value="1.5">1.5×</option>
-                  <option value="1.75">1.75×</option>
-                  <option value="2">2.0×</option>
-                </select></label
+              <label class="reader-action-rate"
+                ><span class="sr-only">Narration speed</span
+                ><select
+                  id="readerActionRate"
+                  aria-label="Narration speed"
+                ></select
+              ></label>
+              <button
+                id="readerTextOpen"
+                class="button-quiet reader-text-open"
+                type="button"
+                aria-expanded="false"
+                aria-controls="readerTextMenu"
+                title="Text settings"
+                hidden
               >
+                <span class="reader-text-glyph" aria-hidden="true"></span
+                ><span class="reader-text-label">Text</span
+                ><span class="sr-only"> settings</span>
+              </button>
+              <div
+                id="readerTextMenu"
+                class="menu-popover reader-text-menu"
+                role="group"
+                aria-label="Text settings"
+                popover
+              >
+                <fieldset class="reader-pref">
+                  <legend>Text size</legend>
+                  <div class="reader-pref-options">
+                    <label
+                      ><input
+                        type="radio"
+                        name="readerTextSize"
+                        value="small"
+                      /><span class="reader-pref-size is-small"
+                        >Small</span
+                      ></label
+                    ><label
+                      ><input
+                        type="radio"
+                        name="readerTextSize"
+                        value="default"
+                        checked
+                      /><span class="reader-pref-size">Default</span></label
+                    ><label
+                      ><input
+                        type="radio"
+                        name="readerTextSize"
+                        value="large"
+                      /><span class="reader-pref-size is-large"
+                        >Large</span
+                      ></label
+                    ><label
+                      ><input
+                        type="radio"
+                        name="readerTextSize"
+                        value="larger"
+                      /><span class="reader-pref-size is-larger"
+                        >Larger</span
+                      ></label
+                    >
+                  </div>
+                </fieldset>
+                <fieldset class="reader-pref">
+                  <legend>Line spacing</legend>
+                  <div class="reader-pref-options">
+                    <label
+                      ><input
+                        type="radio"
+                        name="readerTextSpacing"
+                        value="compact"
+                      /><span>Compact</span></label
+                    ><label
+                      ><input
+                        type="radio"
+                        name="readerTextSpacing"
+                        value="default"
+                        checked
+                      /><span>Default</span></label
+                    ><label
+                      ><input
+                        type="radio"
+                        name="readerTextSpacing"
+                        value="airy"
+                      /><span>Airy</span></label
+                    >
+                  </div>
+                </fieldset>
+                <fieldset class="reader-pref">
+                  <legend>Page</legend>
+                  <div class="reader-pref-options">
+                    <label
+                      ><input
+                        type="radio"
+                        name="readerTextTheme"
+                        value="dark"
+                        checked
+                      /><span class="reader-pref-theme is-dark"
+                        >Dark</span
+                      ></label
+                    ><label
+                      ><input
+                        type="radio"
+                        name="readerTextTheme"
+                        value="sepia"
+                      /><span class="reader-pref-theme is-sepia"
+                        >Sepia</span
+                      ></label
+                    ><label
+                      ><input
+                        type="radio"
+                        name="readerTextTheme"
+                        value="light"
+                      /><span class="reader-pref-theme is-light"
+                        >Light</span
+                      ></label
+                    >
+                  </div>
+                </fieldset>
+                <p class="field-hint reader-pref-note">Saved on this device.</p>
+              </div>
               <a
-                id="readerSource"
-                class="source-link"
+                id="readerOriginal"
+                class="button-quiet reader-link"
                 target="_blank"
                 rel="noopener"
-                aria-disabled="true"
-                tabindex="-1"
-                >Source</a
+                title="Original page"
+                hidden
+                ><span class="reader-link-label">Original page</span
+                ><svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M14 5h5v5M19 5l-8 8M17 14v5H5V7h5"></path></svg
+              ></a>
+              <a
+                id="readerSource"
+                class="button-quiet reader-link"
+                title="Download original"
+                download
+                hidden
+                ><span class="reader-link-label">Download original</span
+                ><svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg
+              ></a>
+              <button
+                id="readerMore"
+                aria-haspopup="menu"
+                class="icon-button reader-action-icon"
+                type="button"
+                aria-expanded="false"
+                aria-controls="readerMoreMenu"
+                aria-label="More actions for this item"
+                title="More actions"
               >
-            </div>
-            <div class="range-row reader-progress">
-              <span id="readerTime">0:00</span>
-              <div class="range-track">
-                <div id="readerProgressFill" class="range-fill"></div>
-                <div id="readerProgressThumb" class="range-thumb"></div>
-                <input
-                  id="readerProgress"
-                  class="range-input"
-                  type="range"
-                  min="0"
-                  value="0"
-                  step="0.1"
-                  aria-label="Reader position"
-                  disabled
-                />
+                <svg class="menu-dots" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="5" cy="12" r="1.8"></circle>
+                  <circle cx="12" cy="12" r="1.8"></circle>
+                  <circle cx="19" cy="12" r="1.8"></circle>
+                </svg>
+              </button>
+              <div
+                id="readerMoreMenu"
+                class="menu-popover reader-menu"
+                role="menu"
+                aria-label="Item actions"
+                popover
+              >
+                <a
+                  role="menuitem"
+                  id="readerOriginalItem"
+                  class="reader-menu-source"
+                  target="_blank"
+                  rel="noopener"
+                  hidden
+                  >Original page</a
+                >
+                <a
+                  role="menuitem"
+                  id="readerSourceItem"
+                  class="reader-menu-source"
+                  download
+                  hidden
+                  >Download original</a
+                >
+                <button role="menuitem" id="readerFinish" type="button">
+                  Mark as finished
+                </button>
+                <button role="menuitem" id="readerHide" type="button">
+                  Hide from Reader
+                </button>
               </div>
-              <span id="readerDuration" class="range-end">0:00</span>
             </div>
+            <!-- Keyboard guidance appears once keyboard focus is in the
+                 text, where it applies. -->
+            <p id="readerHint" class="reader-hint" hidden>
+              <span class="reader-hint-touch"
+                >Tap a narrated paragraph to listen from there.</span
+              ><span class="reader-hint-pointer"
+                >Click a narrated paragraph to listen from there.</span
+              ><span class="reader-hint-keys"
+                >Pick a paragraph with the arrow keys, then press Enter to
+                listen from there.</span
+              >
+            </p>
+            <p id="readerHiddenNote" class="reader-hidden-note" hidden>
+              Hidden on this device.
+              <button id="readerUnhide" class="button-quiet" type="button">
+                Unhide
+              </button>
+            </p>
+            <details id="readerNotes" class="reader-notes" hidden>
+              <summary id="readerNotesSummary">Notes about this text</summary>
+              <ul id="readerNotesList"></ul>
+            </details>
           </header>
-          <article id="readerText" class="reader-text" aria-busy="false">
-            <div class="reader-empty">
-              <strong>The reading room is quiet.</strong>Saved documents will
-              appear here when they are ready.
-            </div>
-          </article>
-        </div>
+          <details id="readerToc" class="reader-toc" hidden>
+            <summary>
+              <span>Contents</span
+              ><span
+                id="readerTocCount"
+                class="reader-toc-count tabular"
+              ></span>
+            </summary>
+            <nav id="readerTocNav" aria-label="Contents">
+              <ol id="readerTocList" class="reader-toc-list"></ol>
+            </nav>
+          </details>
+          <aside
+            id="readerListening"
+            class="reader-listening"
+            aria-label="Listening progress"
+            hidden
+          >
+            <p id="readerItemTime" class="tabular"></p>
+            <progress
+              id="readerItemProgress"
+              aria-label="Item progress"
+              max="1"
+              value="0"
+            ></progress>
+          </aside>
+          <div id="readerText" class="reader-text" aria-busy="false"></div>
+          <p
+            id="readerItemStatus"
+            class="sr-only"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          ></p>
+        </article>
+      </section>
+
+      <section
+        id="notFoundView"
+        class="not-found view-panel"
+        data-view="/404"
+        aria-labelledby="notFoundTitle"
+        hidden
+      >
+        <p class="section-label">Not found</p>
+        <h2 id="notFoundTitle" class="view-title" tabindex="-1">
+          Page not found
+        </h2>
+        <p class="view-lede">
+          There’s nothing at this address. The link may be mistyped, or the page
+          may have moved.
+        </p>
+        <ul class="not-found-links" role="list">
+          <li>
+            <a class="not-found-link" href="/" data-route="/"
+              ><strong>Radio</strong
+              ><span>The shared station, playing now</span></a
+            >
+          </li>
+          <li>
+            <a class="not-found-link" href="/library" data-route="/library"
+              ><strong>Library</strong
+              ><span>Search, preview, and your stations</span></a
+            >
+          </li>
+          <li>
+            <a class="not-found-link" href="/reader" data-route="/reader"
+              ><strong>Reader</strong><span>Saved articles, narrated</span></a
+            >
+          </li>
+        </ul>
       </section>
     </main>
 
-    <audio id="audio" preload="auto" playsinline></audio>
-    <aside
-      id="audioOwnerBar"
-      class="audio-owner-bar"
-      aria-label="Local audio player"
-      hidden
+    <dialog
+      id="stationSheet"
+      class="sheet station-sheet"
+      aria-labelledby="stationSheetTitle"
     >
-      <div>
-        <span id="audioOwnerKicker" class="section-label"
-          >Listening locally</span
-        ><strong id="audioOwnerLabel">Private preview</strong>
-      </div>
-      <div class="audio-owner-actions">
-        <button
-          id="audioOwnerPlayPause"
-          class="button"
-          type="button"
-          aria-label="Pause local audio"
+      <div class="sheet-body">
+        <div class="station-sheet-head">
+          <h2 id="stationSheetTitle" class="sheet-title">Station</h2>
+          <button
+            id="stationSheetClose"
+            class="icon-button"
+            type="button"
+            aria-label="Close"
+            title="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7l10 10M17 7 7 17"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="stationOptions" class="station-options"></div>
+        <p id="stationAccess" class="station-note">
+          <span class="skeleton skeleton-line">Checking this station</span>
+        </p>
+        <div
+          id="stationMenu"
+          class="station-sheet-actions"
+          role="group"
+          aria-label="This station"
         >
-          Pause
-        </button>
-        <button id="returnLive" class="button" type="button">
-          Return to live
-        </button>
+          <button id="editStation" class="button" type="button" hidden>
+            Edit this station
+          </button>
+          <button id="shareStation" class="button" type="button" hidden>
+            Copy listen-only link
+          </button>
+          <button id="endStation" class="button" type="button" hidden>
+            End this temporary station
+          </button>
+          <a
+            id="yourStations"
+            class="button"
+            href="/library#stations"
+            data-route="/library#stations"
+            >Manage in Library</a
+          >
+          <button id="createStation" class="button" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14"></path></svg
+            >New station
+          </button>
+        </div>
+        <div id="stationShareFallback" class="station-share-fallback" hidden>
+          <label for="stationShareLink" class="field"
+            >Listen-only link
+            <span class="field-hint"
+              >People with this link can listen but can’t change the
+              station.</span
+            ></label
+          >
+          <div>
+            <input
+              id="stationShareLink"
+              class="text-input"
+              type="text"
+              readonly
+            />
+            <button id="stationShareClose" class="button" type="button">
+              Done
+            </button>
+          </div>
+        </div>
       </div>
-    </aside>
+    </dialog>
+
+    <dialog
+      id="readerTocSheet"
+      class="sheet reader-toc-sheet"
+      aria-labelledby="readerTocSheetTitle"
+    >
+      <div class="sheet-body">
+        <div class="station-sheet-head">
+          <h2 id="readerTocSheetTitle" class="sheet-title">Contents</h2>
+          <button
+            id="readerTocSheetClose"
+            class="icon-button"
+            type="button"
+            aria-label="Close"
+            title="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7l10 10M17 7 7 17"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="readerTocSheetBody" class="reader-toc-sheet-body"></div>
+      </div>
+    </dialog>
+
+    <dialog id="queueDetails" class="sheet" aria-labelledby="queueDetailsTitle">
+      <div class="sheet-body">
+        <div class="station-sheet-head">
+          <h2 id="queueDetailsTitle" class="sheet-title" tabindex="-1">
+            Song details
+          </h2>
+          <button id="queueDetailsClose" class="button" type="button">
+            Close
+          </button>
+        </div>
+        <p id="queueDetailsMeta"></p>
+        <p id="queueDetailsDescription" class="prompt-copy"></p>
+        <a id="queueDetailsDownload" class="button" download>Download song</a>
+      </div>
+    </dialog>
+
+    <dialog
+      id="songDetailsSheet"
+      class="sheet song-details-sheet"
+      aria-labelledby="promptTitle"
+    >
+      <div id="songDetailsSheetBody" class="sheet-body"></div>
+    </dialog>
+
+    <dialog
+      id="lyricsSheet"
+      class="lyrics-sheet"
+      aria-labelledby="lyricsSheetTitle"
+    >
+      <div class="lyrics-sheet-body">
+        <div class="lyrics-sheet-head">
+          <button
+            id="lyricsSheetClose"
+            class="icon-button"
+            type="button"
+            aria-label="Close lyrics"
+            title="Close lyrics"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 9.5 6 6 6-6"></path>
+            </svg>
+          </button>
+          <span
+            id="lyricsSheetArt"
+            class="lyrics-sheet-art"
+            aria-hidden="true"
+          ></span>
+          <div class="lyrics-sheet-copy">
+            <h2 id="lyricsSheetTitle" class="lyrics-sheet-title">Lyrics</h2>
+            <p id="lyricsSheetMeta" class="lyrics-sheet-meta"></p>
+          </div>
+          <button
+            id="lyricsSheetToggle"
+            class="play-button lyrics-sheet-toggle"
+            type="button"
+          ></button>
+        </div>
+        <div class="lyrics-sheet-extras">
+          <div id="lyricsSheetProgress"></div>
+          <div id="lyricsSheetReactions" class="lyrics-sheet-reactions"></div>
+          <div id="lyricsSheetShared" class="lyrics-sheet-shared" hidden>
+            <span id="lyricsSheetScope"></span>
+            <button id="lyricsSheetSkip" class="button" type="button">
+              Skip for everyone
+            </button>
+          </div>
+        </div>
+        <div id="lyricsSheetSlot" class="lyrics-sheet-slot"></div>
+      </div>
+    </dialog>
+
+    <dialog
+      id="newStationDialog"
+      class="sheet library-sheet"
+      aria-labelledby="newStationTitle"
+      aria-describedby="newStationLede"
+    >
+      <div class="sheet-body">
+        <div class="station-sheet-head">
+          <div class="library-sheet-head">
+            <h2 id="newStationTitle" class="sheet-title">New station</h2>
+            <p id="newStationLede" class="library-sheet-lede">
+              What kind of station do you want to make?
+            </p>
+          </div>
+          <button
+            id="newStationClose"
+            class="icon-button"
+            type="button"
+            aria-label="Close"
+            title="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7l10 10M17 7 7 17"></path>
+            </svg>
+          </button>
+        </div>
+        <div
+          id="newStationError"
+          class="library-sheet-error"
+          role="alert"
+          hidden
+        ></div>
+        <ul class="station-kinds" role="list">
+          <li class="station-kind">
+            <span class="station-kind-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8"></circle>
+                <path d="M12 8v4l2.5 2.5"></path>
+              </svg>
+            </span>
+            <div class="station-kind-copy">
+              <button
+                type="button"
+                data-station-kind="temporary"
+                aria-describedby="stationKindTemporary"
+              >
+                Temporary station
+              </button>
+              <p id="stationKindTemporary">
+                Queue songs as you go with Play next and Add to queue. It ends
+                24 hours after you last use it. People you share it with can
+                listen but can’t change it.
+              </p>
+            </div>
+          </li>
+          <li class="station-kind">
+            <span class="station-kind-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M9 6.5h11M9 12h11M9 17.5h11"></path>
+                <path d="m3.5 12 1.5 1.5L7.5 10"></path>
+              </svg>
+            </span>
+            <div class="station-kind-copy">
+              <button
+                type="button"
+                data-station-kind="list"
+                aria-describedby="stationKindList"
+              >
+                Hand-picked station
+              </button>
+              <p id="stationKindList">
+                Choose exactly which songs play. Saved until you delete it.
+              </p>
+            </div>
+          </li>
+          <li class="station-kind">
+            <span class="station-kind-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 6h16l-6 7v5l-4 2v-7z"></path>
+              </svg>
+            </span>
+            <div class="station-kind-copy">
+              <button
+                type="button"
+                data-station-kind="filter"
+                aria-describedby="stationKindFilter"
+              >
+                Filter station
+              </button>
+              <p id="stationKindFilter">
+                Plays every song that matches a search or filter, including
+                songs added later. Saved until you delete it.
+              </p>
+            </div>
+          </li>
+        </ul>
+        <div class="sheet-actions">
+          <button id="newStationCancel" class="button" type="button">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog
+      id="stationEditorDialog"
+      class="sheet library-sheet library-editor"
+      aria-labelledby="stationEditorTitle"
+    >
+      <form id="stationEditor" class="sheet-body" novalidate>
+        <div class="station-sheet-head">
+          <div class="library-sheet-head">
+            <p id="stationEditorKind" class="section-label">Station</p>
+            <h2 id="stationEditorTitle" class="sheet-title" tabindex="-1">
+              New station
+            </h2>
+          </div>
+          <button
+            id="stationEditorClose"
+            class="icon-button"
+            type="button"
+            aria-label="Close"
+            title="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7l10 10M17 7 7 17"></path>
+            </svg>
+          </button>
+        </div>
+        <label class="field" for="stationEditorName"
+          >Station name
+          <input
+            id="stationEditorName"
+            class="text-input"
+            type="text"
+            maxlength="80"
+            required
+            autocomplete="off"
+        /></label>
+        <fieldset id="stationEditorFilter" class="library-editor-group">
+          <legend class="programming-label">Songs</legend>
+          <label class="field" for="stationEditorQuery"
+            >Search words
+            <input
+              id="stationEditorQuery"
+              class="text-input"
+              type="search"
+              maxlength="160"
+              autocomplete="off"
+              spellcheck="false"
+              aria-describedby="stationEditorQueryHint"
+            />
+            <span id="stationEditorQueryHint" class="field-hint"
+              >Plays the songs Library search finds for these words, in titles,
+              artists, lyrics, and song descriptions. Leave it empty to include
+              every song.</span
+            ></label
+          >
+          <label class="field" for="stationEditorMode"
+            >Include
+            <select id="stationEditorMode" class="select-control">
+              <option value="all">All songs</option>
+              <option value="liked">Liked by listeners</option>
+              <option value="covers">Songs with artwork</option>
+              <option value="recent">Recently added (last 6 months)</option>
+            </select></label
+          >
+          <p
+            id="stationEditorMatches"
+            class="field-hint library-match-count"
+          ></p>
+          <ul
+            id="stationEditorPreview"
+            class="editor-preview"
+            aria-label="Songs it would play"
+            hidden
+          ></ul>
+          <div id="stationEditorNotice" class="editor-notice" hidden>
+            <p id="stationEditorNoticeText"></p>
+            <button
+              id="stationEditorUseShown"
+              class="button"
+              type="button"
+              hidden
+            ></button>
+          </div>
+        </fieldset>
+        <section
+          id="stationEditorAccess"
+          class="library-editor-group editor-access"
+          aria-labelledby="stationEditorAccessTitle"
+          hidden
+        >
+          <h3 id="stationEditorAccessTitle" class="programming-label">
+            Sharing and editing
+          </h3>
+          <div class="editor-access-row">
+            <div class="editor-access-copy">
+              <strong>Listen-only link</strong>
+              <p class="field-hint">
+                Anyone on Zak Radio can listen · only you can change it.
+              </p>
+            </div>
+            <button id="stationEditorShare" class="button" type="button">
+              Copy listen-only link
+            </button>
+          </div>
+          <div class="editor-access-row">
+            <div class="editor-access-copy">
+              <strong>Edit on another device</strong>
+              <p class="field-hint">
+                Open this private link on your other device to edit the station
+                there too. It also keeps your editing access if this app’s data
+                is cleared.
+                <strong class="editor-access-warning"
+                  >Anyone with it can change or delete the station, so send it
+                  only to yourself.</strong
+                >
+              </p>
+            </div>
+            <button id="stationEditorTransfer" class="button" type="button">
+              Copy private edit link
+            </button>
+          </div>
+          <p
+            id="stationEditorAccessStatus"
+            class="field-hint editor-access-status"
+            role="status"
+          ></p>
+          <div
+            id="stationEditorLinkFallback"
+            class="editor-link-fallback"
+            hidden
+          >
+            <label class="field" for="stationEditorLinkField"
+              ><span id="stationEditorLinkLabel">Link</span>
+              <input
+                id="stationEditorLinkField"
+                class="text-input"
+                type="text"
+                readonly
+            /></label>
+          </div>
+        </section>
+        <section
+          id="stationEditorList"
+          class="library-editor-group"
+          aria-labelledby="stationEditorSongsTitle"
+        >
+          <h3 id="stationEditorSongsTitle" class="programming-label">
+            Songs <span id="stationEditorSongCount" class="tabular"></span>
+          </h3>
+          <label class="search-field editor-search"
+            ><span class="sr-only">Find songs to add</span
+            ><svg aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="6.5"></circle>
+              <path d="m16 16 4 4"></path></svg
+            ><input
+              id="stationEditorSearch"
+              type="search"
+              placeholder="Find songs to add"
+              autocomplete="off"
+              spellcheck="false"
+          /></label>
+          <ul
+            id="stationEditorResults"
+            class="editor-songs editor-results"
+            aria-label="Songs to add"
+            hidden
+          ></ul>
+          <ol
+            id="stationEditorMembers"
+            class="editor-songs editor-members"
+            aria-labelledby="stationEditorSongsTitle"
+          ></ol>
+        </section>
+        <div class="station-programming-field">
+          <span id="stationEditorRandomLabel" class="programming-label"
+            >Playback order</span
+          >
+          <div
+            id="stationEditorRandom"
+            class="random-mode-options"
+            role="radiogroup"
+            aria-labelledby="stationEditorRandomLabel"
+          >
+            <label class="random-mode-option">
+              <input
+                type="radio"
+                name="stationEditorRandom"
+                value="deck"
+                checked
+              />
+              <span class="random-mode-card">
+                <strong>No repeats</strong>
+                <small>Shuffle every song once</small>
+              </span>
+            </label>
+            <label class="random-mode-option">
+              <input
+                type="radio"
+                name="stationEditorRandom"
+                value="true_random"
+              />
+              <span class="random-mode-card">
+                <strong>Shuffle with repeats</strong>
+                <small>Repeats can happen</small>
+              </span>
+            </label>
+          </div>
+        </div>
+        <label class="station-toggle">
+          <span class="station-toggle-copy">
+            <strong>Skip disliked</strong>
+            <small>Keep them out of rotation</small>
+          </span>
+          <input id="stationEditorSkip" type="checkbox" />
+          <span class="station-toggle-switch" aria-hidden="true"
+            ><span></span
+          ></span>
+        </label>
+
+        <div
+          id="stationEditorError"
+          class="library-sheet-error"
+          role="alert"
+          hidden
+        ></div>
+        <div
+          id="stationEditorStatus"
+          class="sr-only"
+          role="status"
+          aria-live="polite"
+        ></div>
+        <div
+          id="stationEditorDiscard"
+          class="editor-discard"
+          role="group"
+          aria-labelledby="stationEditorDiscardTitle"
+          hidden
+        >
+          <p id="stationEditorDiscardTitle" class="editor-discard-title">
+            Discard your changes?
+          </p>
+          <p class="field-hint">
+            Closing now loses what you changed in this station.
+          </p>
+          <div class="editor-discard-actions">
+            <button id="stationEditorKeep" class="button" type="button">
+              Keep editing
+            </button>
+            <button
+              id="stationEditorDiscardConfirm"
+              class="button is-danger"
+              type="button"
+            >
+              Discard changes
+            </button>
+          </div>
+        </div>
+        <div class="sheet-actions">
+          <button id="stationEditorCancel" class="button" type="button">
+            Cancel
+          </button>
+          <button
+            id="stationEditorSave"
+            class="button is-primary"
+            type="submit"
+          >
+            Create station
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      id="addToStationDialog"
+      class="sheet"
+      aria-labelledby="addToStationTitle"
+      aria-describedby="addToStationTrack"
+    >
+      <form method="dialog" class="sheet-body">
+        <div class="station-sheet-head">
+          <div>
+            <h2 id="addToStationTitle" class="sheet-title">Add to station</h2>
+            <p id="addToStationTrack" class="sheet-lede"></p>
+          </div>
+          <button
+            class="icon-button"
+            value="cancel"
+            formnovalidate
+            aria-label="Close"
+            title="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7l10 10M17 7 7 17"></path>
+            </svg>
+          </button>
+        </div>
+        <!-- One row per hand-picked station. A check means the station
+             has the song; changing it adds or removes the song at once. -->
+        <fieldset class="add-station-choices">
+          <legend class="sr-only">Choose stations</legend>
+          <p class="field-hint">
+            Only hand-picked stations take individual songs. Filter stations
+            play songs matching their saved search.
+          </p>
+          <p class="field-hint">
+            Changes save right away. Use Undo to reverse one.
+          </p>
+          <ul id="addToStationList" class="add-station-list" role="list"></ul>
+          <button
+            id="addToStationNew"
+            class="add-station-row add-station-new"
+            type="button"
+          >
+            <span class="add-station-mark" aria-hidden="true"
+              ><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg
+            ></span>
+            <span class="add-station-name">New station with this song</span>
+          </button>
+        </fieldset>
+        <p id="addToStationStatus" class="sheet-status" role="status"></p>
+        <div class="sheet-actions">
+          <button class="button" value="done" formnovalidate>Done</button>
+        </div>
+      </form>
+    </dialog>
+
+    <audio id="audio" preload="auto" playsinline></audio>
+    <aside id="player" class="player" aria-label="Player" hidden></aside>
+    <div id="toast" class="snackbar-host"></div>
     <div
-      id="audioOwnerAnnouncement"
+      id="notifyAnnouncer"
       class="sr-only"
       role="status"
       aria-live="polite"
       aria-atomic="true"
     ></div>
-    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script src="/static/platform.js?v=1"></script>
-    <script type="module" src="/static/app.js?v=36"></script>
+    <script src="/static/platform.js?v=3"></script>
+    <script type="module" src="/static/app.js?v=42"></script>
   </body>
 </html>
