@@ -56,6 +56,7 @@ type Track struct {
 	DislikeCount       int    `json:"dislike_count,omitempty"`
 	SkipCount          int    `json:"skip_count,omitempty"`
 	TimedLyricsBundled bool   `json:"-"`
+	HasLyrics          bool   `json:"has_lyrics"`
 	HasSyncedLyrics    bool   `json:"has_synced_lyrics,omitempty"`
 	HasCover           bool   `json:"has_cover"`
 	Liked              bool   `json:"liked,omitempty"`

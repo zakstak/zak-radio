@@ -53,6 +53,21 @@ type readerParseCall struct {
 
 var errReaderParseBusy = errors.New("reader image parser is busy")
 
+// readerItemListColumns adds listening progress to each listed item so the
+// Reader list can show it without opening every item. listened_seconds and
+// listened_at are null until the item has saved playback; listened_seconds
+// counts playable segments before the saved one, like the browser's position.
+const readerItemListColumns = readerItemRequestColumns + `,
+(select count(*) from reader_segments s
+ where s.item_id=reader_items.id and s.status='ready') as ready_segment_count,
+(select p.position + coalesce((
+   select sum(s.duration) from reader_segments s
+   where s.item_id=p.item_id and s.status='ready' and s.duration>0
+     and s.segment_index<p.segment_index), 0)
+ from reader_playback p where p.item_id=reader_items.id) as listened_seconds,
+(select p.updated_at from reader_playback p
+ where p.item_id=reader_items.id) as listened_at`
+
 func (a *App) readerItems(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := readerPage(w, r, maxReaderItemsPage)
 	if !ok {
@@ -66,14 +81,14 @@ func (a *App) readerItems(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if hasCursor {
 		rows, err = a.db.QueryContext(r.Context(),
-			"select "+readerItemRequestColumns+`
+			"select "+readerItemListColumns+`
 			 from reader_items
 			 where uploaded_at < ? or (uploaded_at = ? and id > ?)
 			 order by uploaded_at desc, id limit ?`,
 			cursorTime, cursorTime, cursorID, limit)
 	} else {
 		rows, err = a.db.QueryContext(r.Context(),
-			"select "+readerItemRequestColumns+
+			"select "+readerItemListColumns+
 				" from reader_items order by uploaded_at desc, id limit ? offset ?", limit, offset)
 	}
 	if err != nil {

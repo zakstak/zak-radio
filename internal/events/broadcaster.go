@@ -45,6 +45,13 @@ func (b *Broadcaster) Forget(topic string) {
 	b.mu.Unlock()
 }
 
+// TopicSubscriberCount counts current connections to one topic only.
+func (b *Broadcaster) TopicSubscriberCount(topic string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.subscribers[topic])
+}
+
 func (b *Broadcaster) SubscriberCount() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()

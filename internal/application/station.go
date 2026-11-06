@@ -39,6 +39,59 @@ const (
 	maxRevisionValue = int64(9007199254740990)
 )
 
+// CapacityError reports a full temporary-station limit and when a slot frees
+// up on its own. RetryAfter is the time until the earliest temporary station
+// counted against that limit expires; it is zero when saved stations, which
+// never expire, hold every slot. Limit is the number of stations that limit
+// allows, and PerCreator says whether it is one creator's own limit rather
+// than the service-wide one.
+type CapacityError struct {
+	RetryAfter time.Duration
+	Limit      int
+	PerCreator bool
+}
+
+func (e *CapacityError) Error() string {
+	if e.RetryAfter <= 0 {
+		return stationmodel.ErrCapacity.Error() + " by saved stations"
+	}
+	return stationmodel.ErrCapacity.Error()
+}
+
+func (e *CapacityError) Unwrap() error { return stationmodel.ErrCapacity }
+
+// capacityError explains which limit is full. An empty creatorBucket means the
+// service-wide limit. Lookup failures still report capacity, without timing.
+func (s *StationService) capacityError(
+	ctx context.Context, now float64, creatorBucket string,
+) error {
+	query := `select min(expires_at) from stations where kind='temporary'
+	 and expires_at is not null and not exists (
+		select 1 from station_definitions d where d.station_id=stations.id
+	 )`
+	var args []any
+	if creatorBucket != "" {
+		query += " and creator_bucket=?"
+		args = append(args, creatorBucket)
+	}
+	limit := maxTempStations
+	if creatorBucket != "" {
+		limit = maxCreatorStations
+	}
+	var earliest sql.NullFloat64
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&earliest); err != nil {
+		return stationmodel.ErrCapacity
+	}
+	if !earliest.Valid {
+		return &CapacityError{Limit: limit, PerCreator: creatorBucket != ""}
+	}
+	wait := math.Max(1, math.Ceil(earliest.Float64-now))
+	return &CapacityError{
+		RetryAfter: time.Duration(wait) * time.Second,
+		Limit:      limit, PerCreator: creatorBucket != "",
+	}
+}
+
 type SavedStationInput struct {
 	Name         string
 	SourceType   string
@@ -62,16 +115,18 @@ type SavedStationUpdate struct {
 }
 
 type StationService struct {
-	clockSample time.Time
-	db          *sql.DB
-	clock       stationmodel.Clock
-	monotonic   stationmodel.Clock
-	randomIndex stationmodel.RandomIndex
-	events      *appevents.Broadcaster
-	catalog     catalogmodel.Catalog
-	clockHigh   float64
-	mu          sync.Mutex
-	clockMu     sync.Mutex
+	clockSample   time.Time
+	db            *sql.DB
+	clock         stationmodel.Clock
+	monotonic     stationmodel.Clock
+	randomIndex   stationmodel.RandomIndex
+	events        *appevents.Broadcaster
+	searchEntries map[string]*searchEntry
+	catalog       catalogmodel.Catalog
+	clockHigh     float64
+	mu            sync.Mutex
+	clockMu       sync.Mutex
+	searchOnce    sync.Once
 }
 
 func NewStationService(db *sql.DB, catalog catalogmodel.Catalog, events *appevents.Broadcaster) *StationService {
@@ -274,7 +329,7 @@ where k.key_hash=?`, keyHash).Scan(&existingID, &existingOwnerHash, &existingExp
 		return "", "", 0, scanErr2
 	}
 	if count >= maxTempStations {
-		return "", "", 0, stationmodel.ErrCapacity
+		return "", "", 0, s.capacityError(ctx, now, "")
 	}
 	if creatorBucket == "" {
 		return "", "", 0, fmt.Errorf("%w: creator identity is required", stationmodel.ErrInvalidCommand)
@@ -285,7 +340,7 @@ select count(*) from stations where kind='temporary' and creator_bucket=?`,
 		return "", "", 0, scanErr3
 	}
 	if count >= maxCreatorStations {
-		return "", "", 0, stationmodel.ErrCapacity
+		return "", "", 0, s.capacityError(ctx, now, creatorBucket)
 	}
 	expires := now + tempStationLife.Seconds()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -367,7 +422,7 @@ where k.key_hash=?`, keyHash).Scan(&existingID, &existingOwnerHash)
 		return stationmodel.Definition{}, "", scanErr4
 	}
 	if count >= maxTempStations {
-		return stationmodel.Definition{}, "", stationmodel.ErrCapacity
+		return stationmodel.Definition{}, "", s.capacityError(ctx, now, "")
 	}
 	if scanErr5 := s.db.QueryRowContext(ctx, `
 select count(*) from stations where kind='temporary' and creator_bucket=?`,
@@ -375,7 +430,7 @@ select count(*) from stations where kind='temporary' and creator_bucket=?`,
 		return stationmodel.Definition{}, "", scanErr5
 	}
 	if count >= maxCreatorStations {
-		return stationmodel.Definition{}, "", stationmodel.ErrCapacity
+		return stationmodel.Definition{}, "", s.capacityError(ctx, now, creatorBucket)
 	}
 	id, err := randomHex(16)
 	if err != nil {
@@ -600,7 +655,9 @@ where station_id=?`,
 	return definition, nil
 }
 
-func (s *StationService) DeleteSaved(
+// DeleteOwned removes a saved station or ends a temporary one early. Only the
+// owner token may do either; ending a temporary station frees its slot.
+func (s *StationService) DeleteOwned(
 	ctx context.Context, stationID, ownerToken string,
 ) error {
 	stationID = normalizedStationID(stationID)
@@ -621,8 +678,8 @@ func (s *StationService) DeleteSaved(
 	if err != nil {
 		return err
 	}
-	if !row.Saved {
-		return sql.ErrNoRows
+	if row.Kind != "temporary" {
+		return stationmodel.ErrForbidden
 	}
 	if !canControl(row, ownerToken) {
 		return stationmodel.ErrForbidden
@@ -1130,6 +1187,44 @@ func (s *StationService) applyCommand(ctx context.Context, tx *sql.Tx, row *stat
 			return fmt.Errorf("%w: radio does not accept queued tracks", stationmodel.ErrInvalidCommand)
 		}
 		return s.enqueueTrack(ctx, tx, row.ID, command.TrackID, false)
+	case "queue_remove", "queue_move_up", "queue_move_down", "queue_play":
+		if row.Saved || command.Position == nil || math.IsNaN(*command.Position) || math.IsInf(*command.Position, 0) {
+			return fmt.Errorf("%w: a queue position is required", stationmodel.ErrInvalidCommand)
+		}
+		tracks, err := s.queueTracks(ctx, tx, row.ID)
+		if err != nil {
+			return err
+		}
+		position := *command.Position
+		if position < 0 || position >= float64(len(tracks)) || position != math.Trunc(position) {
+			return fmt.Errorf("%w: queue position changed; try again", stationmodel.ErrInvalidCommand)
+		}
+		index := int(position)
+		if tracks[index] != command.TrackID {
+			return fmt.Errorf("%w: queue song changed; try again", stationmodel.ErrInvalidCommand)
+		}
+		switch command.Action {
+		case "queue_move_up", "queue_move_down":
+			destination := index - 1
+			if command.Action == "queue_move_down" {
+				destination = index + 1
+			}
+			if destination < 0 || destination >= len(tracks) {
+				return fmt.Errorf("%w: song is already at the end of the queue", stationmodel.ErrInvalidCommand)
+			}
+			tracks[index], tracks[destination] = tracks[destination], tracks[index]
+		case "queue_remove", "queue_play":
+			tracks = append(tracks[:index], tracks[index+1:]...)
+		}
+		if err := s.replaceQueue(ctx, tx, row.ID, tracks); err != nil {
+			return err
+		}
+		if command.Action == "queue_play" {
+			row.Playing = true
+			return s.changeTrack(ctx, tx, row, command.TrackID, now)
+		}
+		row.Position = clamp(current)
+		return nil
 	case "set_station_random_mode":
 		if !row.Saved ||
 			(command.RandomMode != "true_random" && command.RandomMode != "deck") {
@@ -1405,11 +1500,10 @@ func (s *StationService) eligibleStationTracks(
 			}
 		}
 	}
-	query := strings.ToLower(definition.FilterQuery)
-	eligible := make([]string, 0, len(source))
+	pool := make([]string, 0, len(source))
 	for _, trackID := range source {
 		track := s.catalog.ByID[trackID]
-		if track == nil || (definition.SkipDisliked && disliked[trackID]) {
+		if track == nil {
 			continue
 		}
 		switch definition.FilterMode {
@@ -1428,14 +1522,18 @@ func (s *StationService) eligibleStationTracks(
 				continue
 			}
 		}
-		if query != "" {
-			search := strings.ToLower(strings.Join([]string{
-				track.Title, track.Artist, track.Source, track.Group,
-				track.Summary, track.SearchText,
-			}, " "))
-			if !strings.Contains(search, query) {
-				continue
-			}
+		pool = append(pool, trackID)
+	}
+	// The words match as Library search matches them, among the songs the
+	// filter includes, so a saved search plays what it showed. Disliked
+	// songs leave afterwards, as they would from the search's results.
+	if definition.SourceType == "filter" {
+		pool = s.searchTrackIDs(pool, definition.FilterQuery)
+	}
+	eligible := make([]string, 0, len(pool))
+	for _, trackID := range pool {
+		if definition.SkipDisliked && disliked[trackID] {
+			continue
 		}
 		eligible = append(eligible, trackID)
 	}
