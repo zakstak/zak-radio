@@ -243,7 +243,6 @@ mount-path = "/data/zak-radio"
 retention = "retainOnDestroy"
 backup-policy = "require"
 shape = "directory"
-size-limit-bytes = 10737418240
 read-only = false
 EOF
 chmod 0644 "$staging/apphost.vnext.toml"

@@ -136,18 +136,24 @@ manifest="$(scripts/prepare-kiln-package.sh \
   --trusted-ingress "$ingress_ips")"
 ```
 
-On an authorized Saga agent VM, run the preflight first:
+Pyre owns deployment access and Kiln owns publication, backups, and runtime
+health. Follow the execution host's current Pyre instructions and
+[deployment procedure](docs/deployment.md). Forge has a scoped Pyre client;
+publication does not require a Saga CLI or a worker VM.
+
+On Forge, verify the installed client:
 
 ```bash
-saga appv doctor --agent-vm --json
+~/.local/bin/pyre-lab kiln.doctor
+~/.local/bin/pyre-lab kiln.inventory
 ```
 
-Continue only if every preflight check passes:
-
-```bash
-saga appv check --manifest "$manifest" --json
-saga appv publish --manifest "$manifest" --json
-```
+Preserve the exact live rollback package before publication. A directory's
+timestamp does not prove that it matches the running deployment. Kiln 2.1
+rejects volume size limits that its directory backend cannot enforce, so the
+generated manifest omits that declaration. The retained volume, mount, and
+backup requirement remain unchanged. The manifest's historical `owner = "saga"`
+is a stored identity, not an instruction to use retired Saga tooling.
 
 The generated directory lives under `.kiln-packages/<RELEASE>` and is ignored by
 Git. The Dockerfile is required by Kiln, but Docker is not used to compile the
