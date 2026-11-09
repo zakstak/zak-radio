@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const currentSchemaVersion = 18
+const currentSchemaVersion = 19
 
 type migration struct {
 	run     func(context.Context, *sql.Tx) error
@@ -128,7 +128,8 @@ func preflightDatabaseMode(
 		return nil
 	}
 	allowed := map[string]int64{
-		"app_metadata": maxReaderItems, "likes": maxCatalogTracks,
+		"song_upload_keys": maxSongUploadKeys,
+		"app_metadata":     maxReaderItems, "likes": maxCatalogTracks,
 		"reader_items": maxReaderItems, "reader_playback": maxReaderItems,
 		"reader_segments": maxReaderSegments, "skip_counts": maxCatalogTracks,
 		"radio_rotation":        maxCatalogTracks,
@@ -346,6 +347,7 @@ select count(*) from sqlite_master where type='table' and name not like 'sqlite_
 		{version: 16, run: addDislikeCounts},
 		{version: 17, run: addRadioProgramming},
 		{version: 18, run: addPersistentStations},
+		{version: 19, run: addSongUploadKeys},
 	}
 	for _, item := range migrations {
 		if item.version <= version {

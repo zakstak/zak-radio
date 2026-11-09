@@ -344,6 +344,7 @@ select item_id, status, coalesce(audio_path, ''), audio_bytes from reader_segmen
 
 func validateCanonicalSchema(ctx context.Context, db *sql.DB) error {
 	expectedTables := map[string][]string{
+		"song_upload_keys":      {"id", "token_hash", "owner_hash", "name", "created_at", "expires_at"},
 		"app_metadata":          {"key", "value"},
 		"likes":                 {"track_id", "liked", "updated_at", "disliked"},
 		"reader_items":          {"id", "title", "source_url", "source_type", "source_hash", "author", "published_at", "uploaded_at", "generated_at", "status", "voice", "tts_backend", "tts_speed", "storage_dir", "source_path", "normalized_text_path", "manifest_path", "total_duration", "segment_count", "audio_bytes", "extractor_version", "quality_score", "quality_warnings", "cleanup_after", "notes"},
@@ -358,6 +359,7 @@ func validateCanonicalSchema(ctx context.Context, db *sql.DB) error {
 		"stations":              {"id", "kind", "owner_hash", "track_id", "position", "playing", "repeat_one", "shuffle", "created_at", "updated_at", "track_changed_at", "expires_at", "revision", "creator_bucket"},
 	}
 	expectedTableSQL := map[string]string{
+		"song_upload_keys": songUploadKeysSchema,
 		"app_metadata": `create table app_metadata (
 			key text primary key,
 			value text not null

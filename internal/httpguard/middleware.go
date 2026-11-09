@@ -63,16 +63,16 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 		setSecurityHeaders(w)
 		requestHost := effectiveRequestHost(r, trustedProxies)
 		if !allowedHost(requestHost, allowedHosts) {
-			http.Error(w, "unrecognized request host", http.StatusMisdirectedRequest)
+			Error(w, r, http.StatusMisdirectedRequest, "", "unrecognized request host")
 			return
 		}
 		if !authorizedIngress(r, trustedIngress) {
-			http.Error(w, "request did not arrive through the authorized ingress", http.StatusForbidden)
+			Error(w, r, http.StatusForbidden, "", "request did not arrive through the authorized ingress")
 			return
 		}
 		if r.Method == http.MethodOptions {
 			if !sameOriginRequest(r, requestHost, allowedOrigins) {
-				http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+				Error(w, r, http.StatusForbidden, "", "cross-origin request forbidden")
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -80,29 +80,29 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 		}
 		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
 			isPrivateReadRoute(r.URL.Path) && crossSiteBrowserRequest(r) {
-			http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+			Error(w, r, http.StatusForbidden, "", "cross-origin request forbidden")
 			return
 		}
 		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
 			InvalidRangeRequest(r.Header.Get("Range")) && !isSizeAwareRangeRoute(r.URL.Path) {
-			http.Error(w, "multiple or oversized byte ranges are not supported", http.StatusRequestedRangeNotSatisfiable)
+			Error(w, r, http.StatusRequestedRangeNotSatisfiable, "", "multiple or oversized byte ranges are not supported")
 			return
 		}
-		if r.Method == http.MethodPost {
+		if r.Method == http.MethodPost || r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/song-upload/keys/") {
 			if !sameOriginRequest(r, requestHost, allowedOrigins) {
-				http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+				Error(w, r, http.StatusForbidden, "", "cross-origin request forbidden")
 				return
 			}
 			if rule, ok := writeRateRule(r.URL.Path); ok &&
 				!limiter.allow(ClientAddressWithPrefix(r, trustedProxies, clientIPv6Prefix), r.URL.Path, rule) {
 				w.Header().Set("Retry-After", strconv.Itoa(int(rule.window.Seconds())))
-				http.Error(w, "request rate limit exceeded", http.StatusTooManyRequests)
+				Error(w, r, http.StatusTooManyRequests, "", "request rate limit exceeded")
 				return
 			}
 			release, ok := writes.acquire(
 				ClientAddressWithPrefix(r, trustedProxies, clientIPv6Prefix))
 			if !ok {
-				http.Error(w, "write request capacity reached", http.StatusTooManyRequests)
+				Error(w, r, http.StatusTooManyRequests, "", "write request capacity reached")
 				return
 			}
 			defer release()
@@ -112,12 +112,12 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 			rule := rateRule{limit: 24, window: time.Minute}
 			if !streamStarts.allow(client, r.URL.Path, rule) {
 				w.Header().Set("Retry-After", strconv.Itoa(int(rule.window.Seconds())))
-				http.Error(w, "event stream start rate limit exceeded", http.StatusTooManyRequests)
+				Error(w, r, http.StatusTooManyRequests, "", "event stream start rate limit exceeded")
 				return
 			}
 			release, ok := streams.acquire(client)
 			if !ok {
-				http.Error(w, "event stream capacity reached", http.StatusTooManyRequests)
+				Error(w, r, http.StatusTooManyRequests, "", "event stream capacity reached")
 				return
 			}
 			defer release()
@@ -127,7 +127,7 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 			release, ok := assets.acquire(
 				ClientAddressWithPrefix(r, trustedProxies, clientIPv6Prefix))
 			if !ok {
-				http.Error(w, "page asset capacity reached", http.StatusTooManyRequests)
+				Error(w, r, http.StatusTooManyRequests, "", "page asset capacity reached")
 				return
 			}
 			defer release()
@@ -136,7 +136,7 @@ func WrapConfig(next http.Handler, allowedHosts, allowedOrigins, trustedProxies,
 			release, ok := content.acquire(
 				ClientAddressWithPrefix(r, trustedProxies, clientIPv6Prefix))
 			if !ok {
-				http.Error(w, "content stream capacity reached", http.StatusTooManyRequests)
+				Error(w, r, http.StatusTooManyRequests, "", "content stream capacity reached")
 				return
 			}
 			defer release()
@@ -289,6 +289,10 @@ func writeRateRule(path string) (rateRule, bool) {
 		return rateRule{limit: 120, window: time.Minute}, true
 	}
 	switch path {
+	case "/api/song-upload/keys":
+		return rateRule{limit: 20, window: time.Hour}, true
+	case "/api/tracks":
+		return rateRule{limit: 20, window: time.Hour}, true
 	case "/api/stations":
 		return rateRule{limit: 20, window: time.Hour}, true
 	case "/api/control", "/api/reaction":
@@ -347,6 +351,30 @@ func proxyTrusted(remote net.IP, configured string) bool {
 		}
 	}
 	return false
+}
+
+// AuthenticatedUser accepts identity only from an explicitly trusted peer.
+// The configured proxy must remove incoming copies and set this header from SSO.
+func AuthenticatedUser(r *http.Request, trustedProxies, header string) string {
+	if header == "" {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if !proxyTrusted(net.ParseIP(host), trustedProxies) {
+		return ""
+	}
+	values := r.Header.Values(header)
+	if len(values) != 1 {
+		return ""
+	}
+	user := strings.TrimSpace(values[0])
+	if len(user) > 256 || strings.ContainsAny(user, ",\r\n\x00") {
+		return ""
+	}
+	return user
 }
 
 func (l *RequestLimiter) allow(client, path string, rule rateRule) bool {
@@ -441,7 +469,7 @@ func (l *StreamLimiter) Active() (total, clients int) {
 func DecodeJSON(w http.ResponseWriter, r *http.Request, target any, allowEmpty bool) bool {
 	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || contentType != "application/json" {
-		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+		Error(w, r, http.StatusUnsupportedMediaType, "", "Content-Type must be application/json")
 		return false
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, MaxJSONBodyBytes)
@@ -453,20 +481,36 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, target any, allowEmpty b
 		}
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			Error(w, r, http.StatusRequestEntityTooLarge, "", "request body too large")
 		} else {
-			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			Error(w, r, http.StatusBadRequest, "", "invalid JSON: "+err.Error())
 		}
 		return false
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			Error(w, r, http.StatusRequestEntityTooLarge, "", "request body too large")
 		} else {
-			http.Error(w, "request body must contain one JSON object", http.StatusBadRequest)
+			Error(w, r, http.StatusBadRequest, "", "request body must contain one JSON object")
 		}
 		return false
 	}
 	return true
+}
+
+// Error keeps the song API machine-readable, including admission failures.
+// Other routes retain their established plain-text error responses.
+func Error(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	if (r.URL.Path != "/api/tracks" || r.Method != http.MethodPost) && r.URL.Path != "/api/song-upload" && !strings.HasPrefix(r.URL.Path, "/api/song-upload/") {
+		http.Error(w, message, status)
+		return
+	}
+	if code == "" {
+		code = strings.ToLower(strings.ReplaceAll(http.StatusText(status), " ", "_"))
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": message}})
 }

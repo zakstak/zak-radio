@@ -32,6 +32,7 @@ func Run() error {
 	flag.StringVar(&cfg.AllowedOrigins, "allowed-origins", cfg.AllowedOrigins, "comma-separated exact browser origins, plus optional loopback")
 	flag.StringVar(&cfg.TrustedProxies, "trusted-proxies", cfg.TrustedProxies, "comma-separated proxy IPs or CIDRs allowed to set X-Real-IP")
 	flag.StringVar(&cfg.TrustedIngress, "trusted-ingress", cfg.TrustedIngress, "comma-separated ingress IPs or CIDRs allowed to reach external Hosts")
+	flag.StringVar(&cfg.UploadIdentityHeader, "upload-identity-header", cfg.UploadIdentityHeader, "identity header overwritten by the trusted SSO proxy; empty disables song uploads")
 	flag.IntVar(&cfg.ClientIPv6Prefix, "client-ipv6-prefix", cfg.ClientIPv6Prefix, "IPv6 prefix length used for abuse-control identity")
 	validateRoot := flag.String("validate-volume", "", "validate a retained volume read-only, then exit")
 	validateMigrationRoot := flag.String(
@@ -85,7 +86,7 @@ func Run() error {
 	}
 	stop, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	log.Printf("Zak Radio Go serving %d tracks from %s", len(app.catalog.Tracks), app.cfg.Archive)
+	log.Printf("Zak Radio Go serving %d tracks from %s", len(app.catalogSnapshot().Tracks), app.cfg.Archive)
 	log.Printf("Listening on http://%s", server.Addr)
 	serveFailure := serveUntilStopped(server, listener, stop.Done())
 	app.cancel()

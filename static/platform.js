@@ -225,9 +225,13 @@ window.ZakAPI = async function api(path, options = {}) {
       const limit = Number(response.headers.get("X-Station-Limit"));
       error.limit = Number.isFinite(limit) && limit > 0 ? limit : 0;
       error.limitScope = response.headers.get("X-Station-Limit-Scope") || "";
-      error.detail = (await response.text().catch(() => ""))
-        .trim()
-        .slice(0, 256);
+      let detail = (await response.text().catch(() => "")).trim();
+      try {
+        const payload = JSON.parse(detail);
+        if (typeof payload?.error?.message === "string")
+          detail = payload.error.message;
+      } catch {}
+      error.detail = detail.slice(0, 256);
       throw error;
     }
     return await response.json();

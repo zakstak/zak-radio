@@ -10,20 +10,21 @@ import (
 )
 
 type Config struct {
-	AllowedHosts      string
-	Host              string
-	DBPath            string
-	ReaderLibrary     string
-	StaticDir         string
-	TimedLyricsRoot   string
-	TrustedProxies    string
-	MetadataRoot      string
-	Archive           string
-	TrustedIngress    string
-	AllowedOrigins    string
-	ClientIPv6Prefix  int
-	Port              int
-	DeferStartupAudit bool
+	UploadIdentityHeader string
+	AllowedHosts         string
+	Host                 string
+	DBPath               string
+	ReaderLibrary        string
+	StaticDir            string
+	TimedLyricsRoot      string
+	TrustedProxies       string
+	MetadataRoot         string
+	Archive              string
+	TrustedIngress       string
+	AllowedOrigins       string
+	ClientIPv6Prefix     int
+	Port                 int
+	DeferStartupAudit    bool
 }
 
 func Load() (Config, error) {
@@ -45,20 +46,21 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return Config{
-		MetadataRoot:      metadataRoot,
-		Archive:           env("ZAK_RADIO_ARCHIVE", filepath.Join(metadataRoot, "music-library")),
-		DBPath:            env("ZAK_RADIO_DB", filepath.Join(metadataRoot, "station.sqlite3")),
-		ReaderLibrary:     env("ZAK_RADIO_READER_LIBRARY", filepath.Join(metadataRoot, "reader-library")),
-		StaticDir:         env("ZAK_RADIO_STATIC", filepath.Join(wd, "static")),
-		TimedLyricsRoot:   env("ZAK_RADIO_TIMED_LYRICS", ""),
-		AllowedHosts:      env("ZAK_RADIO_ALLOWED_HOSTS", "loopback"),
-		AllowedOrigins:    env("ZAK_RADIO_ALLOWED_ORIGINS", "loopback"),
-		TrustedProxies:    env("ZAK_RADIO_TRUSTED_PROXIES", ""),
-		TrustedIngress:    env("ZAK_RADIO_TRUSTED_INGRESS", ""),
-		ClientIPv6Prefix:  ipv6Prefix,
-		DeferStartupAudit: deferStartupAudit,
-		Host:              env("ZAK_RADIO_HOST", "127.0.0.1"),
-		Port:              port,
+		UploadIdentityHeader: env("ZAK_RADIO_UPLOAD_IDENTITY_HEADER", ""),
+		MetadataRoot:         metadataRoot,
+		Archive:              env("ZAK_RADIO_ARCHIVE", filepath.Join(metadataRoot, "music-library")),
+		DBPath:               env("ZAK_RADIO_DB", filepath.Join(metadataRoot, "station.sqlite3")),
+		ReaderLibrary:        env("ZAK_RADIO_READER_LIBRARY", filepath.Join(metadataRoot, "reader-library")),
+		StaticDir:            env("ZAK_RADIO_STATIC", filepath.Join(wd, "static")),
+		TimedLyricsRoot:      env("ZAK_RADIO_TIMED_LYRICS", ""),
+		AllowedHosts:         env("ZAK_RADIO_ALLOWED_HOSTS", "loopback"),
+		AllowedOrigins:       env("ZAK_RADIO_ALLOWED_ORIGINS", "loopback"),
+		TrustedProxies:       env("ZAK_RADIO_TRUSTED_PROXIES", ""),
+		TrustedIngress:       env("ZAK_RADIO_TRUSTED_INGRESS", ""),
+		ClientIPv6Prefix:     ipv6Prefix,
+		DeferStartupAudit:    deferStartupAudit,
+		Host:                 env("ZAK_RADIO_HOST", "127.0.0.1"),
+		Port:                 port,
 	}, nil
 }
 
@@ -88,6 +90,22 @@ func envInt(key string, fallback int) (int, error) {
 
 func (c Config) Normalized() (Config, error) {
 	var err error
+	c.UploadIdentityHeader = strings.TrimSpace(c.UploadIdentityHeader)
+	if c.UploadIdentityHeader != "" {
+		name := strings.ToLower(c.UploadIdentityHeader)
+		if !strings.HasPrefix(name, "x-") || len(name) > 100 || strings.TrimSpace(c.TrustedProxies) == "" {
+			return Config{}, fmt.Errorf("song uploads require an X- identity header and explicit trusted proxies")
+		}
+		for _, ch := range name {
+			if ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-' {
+				continue
+			}
+			return Config{}, fmt.Errorf("upload identity header must contain only letters, digits, and hyphens")
+		}
+		if name == "x-real-ip" || name == "x-kiln-ingress" || strings.HasPrefix(name, "x-forwarded-") {
+			return Config{}, fmt.Errorf("upload identity header must be dedicated to authenticated identity")
+		}
+	}
 	for name, value := range map[string]*string{
 		"metadata root": &c.MetadataRoot, "archive": &c.Archive, "database": &c.DBPath,
 		"reader library": &c.ReaderLibrary, "static directory": &c.StaticDir,

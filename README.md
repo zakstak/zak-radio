@@ -54,6 +54,75 @@ Local endpoints:
 - Readiness: <http://127.0.0.1:8793/health>
 - Process liveness: <http://127.0.0.1:8793/live>
 
+## Add songs
+
+Signed-in listeners can use **Library > Add song** when the service has an SSO
+identity source configured. The form requires a title, artist, and MP3 file.
+Lyrics are optional. Accepted songs appear immediately in Library and Radio, and
+persist across restarts.
+
+The server enforces these requirements:
+
+- Title and artist each contain 1 to 120 characters on one line.
+- Audio is a complete, decodable MPEG-1 or MPEG-2 Layer III `.mp3`, at most 32
+  MiB and 20 minutes, with a constant sample rate. ID3v2.3, ID3v2.4, and ID3v1
+  tags are supported.
+- Lyrics are UTF-8 text, at most 64 KiB, without control characters other than
+  line breaks and tabs.
+- The audio digest is new to the library, and the catalog and retained volume
+  have capacity for the song.
+
+Duration, track IDs, filenames, and audio digests come from the server. Uploads
+cannot replace existing songs or choose storage paths. The service accepts one
+upload at a time and limits each client address to 20 attempts per hour.
+
+### Configure upload identity
+
+Uploads are disabled by default. To enable them, configure
+`ZAK_RADIO_UPLOAD_IDENTITY_HEADER` or `--upload-identity-header` with the exact
+identity header that your SSO proxy sets after successful authentication.
+`ZAK_RADIO_TRUSTED_PROXIES` must identify the immediate proxy peer by IP or
+CIDR. The proxy must discard client-supplied copies of that header and overwrite
+it with the authenticated user identity. Forwarding an arbitrary request header
+does not establish a login.
+
+For Kiln packages, pass `--upload-identity-header HEADER` to
+`scripts/prepare-kiln-package.sh` along with the existing exact routing
+settings. The header name becomes part of the package identity. The gateway must
+allow POST requests to `/api/tracks` and bodies up to 33 MiB. This application
+setting does not configure the gateway or change SSO policy.
+
+### Give an agent upload access
+
+Sign in and open **Library > API access** to create an upload key. Copy the key
+once, then configure your agent to send it as `Authorization: Bearer <key>`.
+Keys grant `songs:write`, expire after 30 days by default, and can be revoked in
+the same dialog. Each user can have five active keys. Only hashes of keys and
+their owners' SSO identities are stored.
+
+Give the agent the instance's `/ai.json` URL. It includes the authentication
+steps, upload format, curl examples, and retry rules in one document. The same
+guide is available at `/.well-known/ai.json`, and it links to the complete
+OpenAPI definition at `/api/song-upload/openapi.json`. `GET /api/song-upload`
+checks its access and reports the limits. `POST /api/tracks` accepts multipart
+fields `title`, `artist`, `audio`, and optional `lyrics`, and returns the new
+track with status 201. Errors are JSON with stable codes. Duplicate audio
+returns 409 with `existing_track_id`, so an agent can resolve a retry after a
+lost response.
+
+See [Upload songs through the API](docs/song-upload-api.md) for curl examples,
+agent instructions, and gateway requirements. The gateway must forward bearer
+credentials to these automation endpoints without an interactive SSO redirect.
+Key management remains behind SSO. This checkout does not change the gateway.
+
+Uploaded media lives under the configured archive's `uploads/Listener songs/`.
+Files are flushed before an atomic index replacement, so an interrupted write
+cannot expose a partial song. A crash before index publication can leave an
+unreferenced upload directory. Retained-volume backups include these files. The
+curated metadata format stays compatible. API keys add database schema 19 with
+an automatic backup before migration. A schema-18 binary cannot open the
+migrated database. Roll back with the matching pre-upgrade volume snapshot.
+
 ## Build and test
 
 ```bash
