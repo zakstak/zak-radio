@@ -28,18 +28,19 @@ func (a *App) apiTracks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "track catalogue is busy", http.StatusTooManyRequests)
 		return
 	}
-	tracks, revision, err := a.tracksWithStats(r.Context())
+	catalog := a.catalogSnapshot()
+	tracks, revision, err := a.tracksWithStats(r.Context(), catalog)
 	if err != nil {
 		internalError(w)
 		return
 	}
 	writeJSON(w, map[string]any{
 		"tracks": tracks, "track_stats_revision": revision,
-		"catalog_revision": a.catalog.Revision,
+		"catalog_revision": catalog.Revision,
 	})
 }
 
-func (a *App) tracksWithStats(ctx context.Context) ([]catalogmodel.Track, int64, error) {
+func (a *App) tracksWithStats(ctx context.Context, catalog catalogmodel.Catalog) ([]catalogmodel.Track, int64, error) {
 	likes, dislikes, skips := map[string]int{}, map[string]int{}, map[string]int{}
 	tx, err := a.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -90,8 +91,8 @@ func (a *App) tracksWithStats(ctx context.Context) ([]catalogmodel.Track, int64,
 	if err := rows.Close(); err != nil {
 		return nil, 0, err
 	}
-	out := make([]catalogmodel.Track, len(a.catalog.Tracks))
-	copy(out, a.catalog.Tracks)
+	out := make([]catalogmodel.Track, len(catalog.Tracks))
+	copy(out, catalog.Tracks)
 	for i := range out {
 		out[i].LikeCount, out[i].DislikeCount = likes[out[i].ID], dislikes[out[i].ID]
 		out[i].Liked, out[i].Disliked = out[i].LikeCount > 0, out[i].DislikeCount > 0
@@ -104,7 +105,7 @@ func (a *App) tracksWithStats(ctx context.Context) ([]catalogmodel.Track, int64,
 }
 
 func (a *App) publishTrackStats(ctx context.Context) (map[string]any, error) {
-	tracks, revision, err := a.tracksWithStats(ctx)
+	tracks, revision, err := a.tracksWithStats(ctx, a.catalogSnapshot())
 	if err != nil {
 		return nil, err
 	}
@@ -196,8 +197,9 @@ func (a *App) trackStatsPayload(ctx context.Context, q queryer) (map[string]any,
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
-	stats := make([]map[string]any, 0, len(a.catalog.Tracks))
-	for _, track := range a.catalog.Tracks {
+	catalog := a.catalogSnapshot()
+	stats := make([]map[string]any, 0, len(catalog.Tracks))
+	for _, track := range catalog.Tracks {
 		stats = append(stats, map[string]any{
 			"track_id": track.ID,
 			"liked":    likes[track.ID] > 0, "disliked": dislikes[track.ID] > 0,
@@ -415,6 +417,8 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 	defer unsubscribe()
 	trackEvents, unsubscribeTracks := a.events.Subscribe("track-stats")
 	defer unsubscribeTracks()
+	catalogEvents, unsubscribeCatalog := a.events.Subscribe("catalog")
+	defer unsubscribeCatalog()
 	initial, err := a.station.Snapshot(r.Context(), id)
 	if err != nil {
 		stationError(w, err)
@@ -468,6 +472,12 @@ func (a *App) stationEvents(w http.ResponseWriter, r *http.Request) {
 			initialRevision = event.Revision
 			refreshStreamDeadline(w)
 			if _, writeErr := fmt.Fprintf(w, "event: station\ndata: %s\n\n", payload); writeErr != nil {
+				return
+			}
+			flusher.Flush()
+		case payload := <-catalogEvents:
+			refreshStreamDeadline(w)
+			if _, err := fmt.Fprintf(w, "event: catalog\ndata: %s\n\n", payload); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -584,7 +594,7 @@ func (a *App) apiReaction(w http.ResponseWriter, r *http.Request) {
 	if !httpguard.DecodeJSON(w, r, &request, false) {
 		return
 	}
-	if a.catalog.ByID[request.TrackID] == nil {
+	if a.catalogSnapshot().ByID[request.TrackID] == nil {
 		http.Error(w, "unknown track", http.StatusBadRequest)
 		return
 	}
@@ -694,7 +704,7 @@ func readTrackStatsRevision(ctx context.Context, q queryer) (int64, error) {
 
 func (a *App) apiTrackText(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/track/")
-	track := a.catalog.ByID[id]
+	track := a.catalogSnapshot().ByID[id]
 	if track == nil {
 		http.NotFound(w, r)
 		return

@@ -1,0 +1,327 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Zak Radio song upload API",
+    "version": "1.0.0",
+    "description": "Add songs with a scoped upload key created by a signed-in user in Library > API access. Send the key in Authorization: Bearer. Keys expire after 1–90 days and can be revoked. Upload binary MP3 files using multipart/form-data; do not send URLs, paths, or base64 in JSON. The server calculates duration, track ID, and SHA-256. Never create a second upload after success. If a response is lost, retry the same bytes; duplicate_audio identifies the existing track. A 429 response may include Retry-After. The ingress must forward Authorization and allow these automation endpoints through to the app without an interactive SSO redirect."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "security": [
+    {
+      "uploadKey": []
+    }
+  ],
+  "paths": {
+    "/api/song-upload": {
+      "get": {
+        "operationId": "getSongUploadRequirements",
+        "summary": "Check the key and upload requirements",
+        "responses": {
+          "200": {
+            "description": "Current upload capability. can_upload=false means the key is missing, invalid, expired, revoked, or uploads are disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "enabled",
+                    "can_upload",
+                    "max_audio_bytes",
+                    "max_lyrics_bytes",
+                    "max_duration_seconds"
+                  ],
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "can_upload": {
+                      "type": "boolean"
+                    },
+                    "can_manage_keys": {
+                      "type": "boolean",
+                      "description": "Requires the user's SSO session; an upload key does not grant key management."
+                    },
+                    "schema_url": {
+                      "type": "string"
+                    },
+                    "max_audio_bytes": {
+                      "type": "integer",
+                      "example": 33554432
+                    },
+                    "max_lyrics_bytes": {
+                      "type": "integer",
+                      "example": 65536
+                    },
+                    "max_duration_seconds": {
+                      "type": "integer",
+                      "example": 1200
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Key storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tracks": {
+      "post": {
+        "operationId": "addSong",
+        "summary": "Add a validated song to the shared library",
+        "description": "One complete MP3, at most 32 MiB and 20 minutes. MPEG-1 or MPEG-2 Layer III with a constant sample rate. Supported tags: ID3v2.3, ID3v2.4, and ID3v1. Duplicate bytes return 409 with existing_track_id; do not upload again. Titles and artists must each be 1–120 characters on one line. Lyrics must be UTF-8 without control characters other than tabs and line breaks. The service accepts one upload at a time and up to 20 attempts per client address per hour.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["title", "artist", "audio"],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "example": "Harbor lights",
+                    "description": "Song title on one line."
+                  },
+                  "artist": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "example": "Zak",
+                    "description": "Artist name on one line."
+                  },
+                  "audio": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Nonempty MP3 bytes with a filename ending in .mp3. At most 33554432 bytes."
+                  },
+                  "lyrics": {
+                    "type": "string",
+                    "description": "Optional plain UTF-8 lyrics, at most 65536 bytes. Section labels such as [Chorus] are allowed."
+                  }
+                }
+              },
+              "encoding": {
+                "audio": {
+                  "contentType": "audio/mpeg"
+                },
+                "lyrics": {
+                  "contentType": "text/plain; charset=utf-8"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Song saved and immediately available. Do not repeat the upload.",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Relative URL for the new song's audio."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["track"],
+                  "properties": {
+                    "track": {
+                      "$ref": "#/components/schemas/Track"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request or invalid_audio. Correct the fields or MP3 before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized. Use a valid, unexpired upload key or sign in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden. Request origin or ingress was rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "duplicate_audio includes existing_track_id. Other catalog_conflict errors indicate library limits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/APIError"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "existing_track_id": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "payload_too_large. Reduce the file or lyrics size.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "upload_busy or too_many_requests. Respect Retry-After before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "Seconds to wait, when supplied."
+              }
+            }
+          },
+          "500": {
+            "description": "storage_unavailable. A lost or failed response can follow publication; retry only the same audio bytes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "storage_full. Ask the service owner to free space.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "uploadKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "zru_ followed by 64 lowercase hexadecimal characters",
+        "description": "An upload-only key. It cannot create, list, or revoke keys and does not authorize station control."
+      }
+    },
+    "schemas": {
+      "APIError": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "Track": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "artist",
+          "duration",
+          "audio_sha256",
+          "audio_bytes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "number",
+            "description": "Duration in seconds, calculated by the server."
+          },
+          "audio_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "audio_bytes": {
+            "type": "integer"
+          },
+          "has_lyrics": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

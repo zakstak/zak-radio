@@ -4058,6 +4058,32 @@ html[data-zs-theme="radio"] {
     @apply mb-4 flex items-end justify-between gap-3 sm:mb-7;
     order: 0;
   }
+  .song-upload-entry {
+    @apply mb-4 flex flex-wrap items-center gap-3;
+  }
+  .song-upload-entry p {
+    @apply m-0;
+  }
+  .song-key-list {
+    @apply m-0 grid list-none gap-3 p-0;
+  }
+  .song-key-item {
+    @apply flex flex-wrap items-center justify-between gap-3 text-sm;
+    overflow-wrap: anywhere;
+  }
+  .song-upload-fields {
+    @apply m-0 grid min-w-0 gap-4 border-0 p-0;
+  }
+  .song-upload-file {
+    @apply w-full min-w-0 py-2 text-sm;
+  }
+  .song-upload-file::file-selector-button {
+    @apply mr-3 min-h-11 cursor-pointer border border-radio-line-strong bg-radio-bg px-3 text-radio-fg;
+    border-radius: var(--zs-radius-control);
+  }
+  .song-upload-lyrics {
+    @apply h-auto resize-y py-3;
+  }
   .library-intro-copy {
     @apply grid min-w-0 gap-1;
   }

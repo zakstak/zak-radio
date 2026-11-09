@@ -26,6 +26,7 @@ import {
 import { artworkFallback, paintArtworkFallback } from "./artwork.js";
 import { failureSentence, problemCopy, problemKind } from "./problem.js";
 import { initLibrary } from "./library.js";
+import { initSongUpload } from "./song-upload.js";
 import { initReader } from "./reader.js";
 
 const randomBrowserHex = window.ZakRandomBrowserHex;
@@ -2828,6 +2829,16 @@ function connectStationEvents() {
       renderPresence();
     } catch {}
   });
+  source.addEventListener("catalog", async () => {
+    if (source !== state.eventSource) return;
+    try {
+      await loadCatalog(true);
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      state.catalogError = error;
+      scheduleBootRetry();
+    }
+  });
   source.addEventListener("track", (event) => {
     if (source !== state.eventSource) return;
     try {
@@ -4657,6 +4668,7 @@ const editClaim = claimEditLink();
 router.render();
 boot();
 initLibrary({ router });
+initSongUpload();
 initReader({ router });
 void editClaim;
 syncMediaSessionActions();

@@ -268,6 +268,8 @@ update stations set track_id=?, position=0, playing=0, updated_at=?,
 }
 
 func (s *StationService) Snapshot(ctx context.Context, stationID string) (stationmodel.Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !validStationID(normalizedStationID(stationID)) {
 		return stationmodel.Snapshot{}, stationmodel.ErrInvalidCommand
 	}
@@ -489,6 +491,8 @@ values (?, ?, ?, ?)`, keyHash, id, ownerHash, now); execContextErr3 != nil {
 }
 
 func (s *StationService) ListSaved(ctx context.Context) ([]stationmodel.Definition, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	rows, err := s.db.QueryContext(ctx, `
 select station_id from station_definitions
 order by case when station_id='main' then 0 else 1 end, lower(name), station_id`)

@@ -73,6 +73,7 @@ func (a *App) integritySnapshot() map[string]bool {
 }
 
 func (a *App) refreshIntegrity(ctx context.Context) {
+	a.catalogMu.RLock()
 	checks := map[string]bool{
 		"catalog": len(a.catalog.Tracks) > 0,
 	}
@@ -105,6 +106,8 @@ func (a *App) refreshIntegrity(ctx context.Context) {
 			}
 		}
 	}
+
+	a.catalogMu.RUnlock()
 
 	readerOK := readerRelationalIntegrity(ctx, a.db) == nil
 	if readerOK {
@@ -274,6 +277,9 @@ select
 // Reader path reconciliation so hostile-but-canonical SQLite contents cannot
 // make startup build unbounded collections or hash oversized legacy artifacts.
 func retainedAdmissionIntegrity(ctx context.Context, q queryer) error {
+	if err := songUploadKeyIntegrity(ctx, q); err != nil {
+		return err
+	}
 	var items, segments, textBytes int64
 	if err := q.QueryRowContext(ctx, `
 select
@@ -611,8 +617,9 @@ where i.status='ready' and (
 }
 
 func (a *App) digestAudits(ctx context.Context) ([]digestAudit, bool) {
-	result := make([]digestAudit, 0, len(a.catalog.Tracks))
-	for _, track := range a.catalog.Tracks {
+	catalog := a.catalogSnapshot()
+	result := make([]digestAudit, 0, len(catalog.Tracks))
+	for _, track := range catalog.Tracks {
 		result = append(result, digestAudit{
 			category: "media", root: a.archiveRoot, rootPath: a.cfg.Archive,
 			artifact: integrityArtifact{

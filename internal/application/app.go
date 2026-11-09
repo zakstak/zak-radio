@@ -51,6 +51,8 @@ type App struct {
 	trackStatsMu     sync.RWMutex
 	readerImagesMu   sync.Mutex
 	auditMu          sync.Mutex
+	catalogMu        sync.RWMutex
+	songUploads      chan struct{}
 }
 
 func NewApp(cfg appconfig.Config) (*App, error) {
@@ -206,6 +208,7 @@ func NewApp(cfg appconfig.Config) (*App, error) {
 		readerParses:     make(chan struct{}, 2),
 		readerParseCalls: make(map[string]*readerParseCall),
 		trackReads:       make(chan struct{}, 2),
+		songUploads:      make(chan struct{}, 1),
 		integrity:        pendingIntegrityChecks(),
 		catalogDigests:   catalogDigests,
 		digestFailures:   make(map[string]string),
@@ -303,6 +306,15 @@ func (a *App) routes() http.Handler {
 
 func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+	if hasSongUploadBearer(r) && path != "/ai.json" && path != "/.well-known/ai.json" &&
+		path != "/api/song-upload" && path != "/api/song-upload/openapi.json" &&
+		path != "/api/song-upload/keys" && !strings.HasPrefix(path, "/api/song-upload/keys/") &&
+		(path != "/api/tracks" || r.Method != http.MethodPost) {
+		writeJSONStatus(w, http.StatusForbidden, map[string]any{"error": map[string]string{
+			"code": "insufficient_scope", "message": "Upload keys only authorize adding songs.",
+		}})
+		return
+	}
 	allowed := routeAllowedMethods(path)
 	if len(allowed) == 0 {
 		if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
@@ -315,11 +327,13 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if !methodIn(r.Method, allowed) {
 		w.Header().Set("Allow", strings.Join(allowed, ", "))
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		httpguard.Error(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 		return
 	}
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		switch {
+		case path == "/ai.json" || path == "/.well-known/ai.json":
+			a.songUploadGuide(w, r)
 		case path == "/" || path == "/library" || path == "/library/" ||
 			path == "/reader" || path == "/reader/":
 			serveRootContent(w, r, a.staticRoot, a.cfg.StaticDir,
@@ -337,6 +351,12 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 			})
 		case path == "/api/tracks":
 			a.apiTracks(w, r)
+		case path == "/api/song-upload":
+			a.songUploadAccess(w, r)
+		case path == "/api/song-upload/openapi.json":
+			a.songUploadSchema(w, r)
+		case path == "/api/song-upload/keys":
+			a.songUploadKeys(w, r)
 		case path == "/api/stations":
 			a.listStations(w, r)
 		case path == "/api/station":
@@ -377,8 +397,14 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 		a.savedStation(w, r)
 		return
 	}
+	if path == "/api/song-upload/keys" || strings.HasPrefix(path, "/api/song-upload/keys/") {
+		a.songUploadKeys(w, r)
+		return
+	}
 	if r.Method == http.MethodPost {
 		switch path {
+		case "/api/tracks":
+			a.addSong(w, r)
 		case "/api/stations":
 			a.createStation(w, r)
 		case "/api/control":
@@ -392,7 +418,7 @@ func (a *App) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	httpguard.Error(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
 }
 
 // maxShellBytes bounds the page read for an unknown address.
@@ -440,7 +466,8 @@ func (a *App) serveShellNotFound(w http.ResponseWriter, r *http.Request) {
 func routeAllowedMethods(path string) []string {
 	getHead := []string{http.MethodGet, http.MethodHead}
 	switch {
-	case path == "/" || path == "/library" || path == "/library/" ||
+	case path == "/ai.json" || path == "/.well-known/ai.json" ||
+		path == "/" || path == "/library" || path == "/library/" ||
 		path == "/reader" || path == "/reader/" ||
 		path == "/health" || path == "/live" ||
 		strings.HasPrefix(path, "/media/") ||
@@ -449,7 +476,14 @@ func routeAllowedMethods(path string) []string {
 		strings.HasPrefix(path, "/reader-source/") ||
 		strings.HasPrefix(path, "/static/"):
 		return getHead
-	case path == "/api" || path == "/api/tracks" || path == "/api/station" ||
+	case path == "/api/tracks":
+		return []string{http.MethodGet, http.MethodPost}
+	case path == "/api/song-upload/keys":
+		return []string{http.MethodGet, http.MethodPost}
+	case strings.HasPrefix(path, "/api/song-upload/keys/"):
+		return []string{http.MethodDelete}
+	case path == "/api" || path == "/api/song-upload" || path == "/api/station" ||
+		path == "/api/song-upload/openapi.json" ||
 		path == "/api/station/events" || path == "/api/reader" ||
 		path == "/api/reader/items" ||
 		strings.HasPrefix(path, "/api/track/") ||
@@ -495,7 +529,7 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSONStatus(w, status, map[string]any{
 		"ok": ok, "runtime": "go", "release": releaseIdentity,
-		"tracks": len(a.catalog.Tracks), "checks": checks,
+		"tracks": len(a.catalogSnapshot().Tracks), "checks": checks,
 	})
 }
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 [--output DIRECTORY] [--goarch ARCH] [--timed-lyrics-root DIRECTORY] [--allowed-hosts HOSTS --allowed-origins ORIGINS --trusted-proxies NETWORKS --trusted-ingress NETWORKS]" >&2
+  echo "usage: $0 [--output DIRECTORY] [--goarch ARCH] [--timed-lyrics-root DIRECTORY] [--upload-identity-header HEADER] [--allowed-hosts HOSTS --allowed-origins ORIGINS --trusted-proxies NETWORKS --trusted-ingress NETWORKS]" >&2
   exit 2
 }
 
@@ -15,6 +15,7 @@ allowed_origins="loopback"
 trusted_proxies=""
 trusted_ingress="*"
 timed_lyrics_root=""
+upload_identity_header=""
 deployment_configured=0
 
 while [[ "$#" -gt 0 ]]; do
@@ -54,6 +55,11 @@ while [[ "$#" -gt 0 ]]; do
       deployment_configured=1
       shift 2
       ;;
+    --upload-identity-header)
+      [[ "$#" -ge 2 ]] || usage
+      upload_identity_header="$2"
+      shift 2
+      ;;
     --timed-lyrics-root)
       [[ "$#" -ge 2 ]] || usage
       timed_lyrics_root="$(realpath "$2")"
@@ -86,6 +92,13 @@ fi
 [[ "$allowed_origins" =~ ^[A-Za-z0-9.,:/_-]+$ ]] || usage
 [[ -z "$trusted_proxies" || "$trusted_proxies" =~ ^[A-Fa-f0-9.,:/]+$ ]] || usage
 [[ "$trusted_ingress" == "*" || "$trusted_ingress" =~ ^[A-Fa-f0-9.,:/]+$ ]] || usage
+
+if [[ -n "$upload_identity_header" ]]; then
+  [[ "$upload_identity_header" =~ ^[Xx]-[A-Za-z0-9-]+$ && ${#upload_identity_header} -le 100 && -n "$trusted_proxies" ]] || usage
+  case "${upload_identity_header,,}" in
+    x-real-ip | x-kiln-ingress | x-forwarded-*) usage ;;
+  esac
+fi
 
 if [[ "$deployment_configured" == "1" ]] &&
   [[ "$allowed_hosts" == "loopback" || "$allowed_origins" == "loopback" ||
@@ -141,6 +154,7 @@ source_identity="$scratch/SOURCE.IDENTITY"
     printf 'allowed_origins=%s\n' "$allowed_origins"
     printf 'trusted_proxies=%s\n' "$trusted_proxies"
     printf 'trusted_ingress=%s\n' "$trusted_ingress"
+    printf 'upload_identity_header=%s\n' "$upload_identity_header"
     if [[ -n "$timed_lyrics_root" ]]; then
       printf 'timed_lyrics=bundled\n'
       (
@@ -222,7 +236,7 @@ ENV ZAK_RADIO_METADATA_ROOT=/data/zak-radio \\
 EXPOSE 8787
 USER 0:0
 ENTRYPOINT ["/zak-radio"]
-CMD ["--host", "0.0.0.0", "--port", "8787", "--allowed-hosts", "$allowed_hosts", "--allowed-origins", "$allowed_origins", "--trusted-proxies", "$trusted_proxies", "--trusted-ingress", "$trusted_ingress"]
+CMD ["--host", "0.0.0.0", "--port", "8787", "--allowed-hosts", "$allowed_hosts", "--allowed-origins", "$allowed_origins", "--trusted-proxies", "$trusted_proxies", "--trusted-ingress", "$trusted_ingress", "--upload-identity-header", "$upload_identity_header"]
 EOF
 chmod 0644 "$staging/Dockerfile"
 

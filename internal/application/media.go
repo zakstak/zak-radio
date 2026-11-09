@@ -18,7 +18,7 @@ func (a *App) media(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	track := a.catalog.ByID[parts[0]]
+	track := a.catalogSnapshot().ByID[parts[0]]
 	if track == nil {
 		http.NotFound(w, r)
 		return

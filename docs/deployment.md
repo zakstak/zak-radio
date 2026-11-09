@@ -64,6 +64,34 @@ Kiln's producer contracts define request schemas and publication behavior.
 Compatible code rollback uses retained current data and a supported manifest. It
 does not restore an old database over newer writes.
 
+## Song upload gateway configuration
+
+The reviewed Music gateway configuration is
+[`deploy/zak-radio.nginx.conf`](../deploy/zak-radio.nginx.conf). It preserves
+the existing SSO flow and trusted `X-Zakstak-Authenticated-User` identity for
+browser requests. Package this release with that upload identity header and the
+live deployment's existing routing settings and lyrics bundle.
+
+The gateway exposes `/ai.json`, `/.well-known/ai.json`, and the OpenAPI document
+without SSO. Bearer requests to the upload and capability endpoints reach the
+app's key validation. Requests with no cookie or credential reach the same
+validation. Key management and other application routes retain SSO. The gateway
+discards supplied identity headers on the agent route and permits 33 MiB bodies
+only on the upload route.
+
+Before activating this configuration through the Pyre owner lane, run its
+isolated gateway test on a host with nginx and Python 3:
+
+```sh
+scripts/test-song-upload-gateway.sh
+```
+
+The test binds temporary loopback ports with mock SSO and app servers. It reads
+no production TLS keys, sockets, identities, or data volumes. The owner must
+preserve the exact current gateway file, reject unexpected live-file changes,
+validate the complete nginx configuration, and reload the existing service. On
+validation or reload failure, restore the preserved file before retrying.
+
 ## November 6, 2026 release checkpoint
 
 Producing host: Forge. Runtime: primary Proxmox VM216, hostname

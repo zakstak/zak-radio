@@ -877,7 +877,8 @@ func TestRouteMethodMatrixDistinguishesKnownResources(t *testing.T) {
 		allow  string
 		status int
 	}{
-		{method: http.MethodPost, path: "/api/tracks", status: http.StatusMethodNotAllowed, allow: "GET"},
+		{method: http.MethodPut, path: "/api/tracks", status: http.StatusMethodNotAllowed, allow: "GET, POST"},
+		{method: http.MethodPost, path: "/api/song-upload", status: http.StatusMethodNotAllowed, allow: "GET"},
 		{method: http.MethodPut, path: "/api/stations", status: http.StatusMethodNotAllowed, allow: "GET, POST"},
 		{method: http.MethodPut, path: "/api/station", status: http.StatusMethodNotAllowed, allow: "GET"},
 		{method: http.MethodHead, path: "/apix", status: http.StatusNotFound, allow: ""},

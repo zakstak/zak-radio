@@ -47,6 +47,12 @@ func loadCatalog(
 	if err != nil {
 		return catalogmodel.Catalog{}, err
 	}
+	return loadCatalogIndex(cfg, archiveRoot, metadataRoot, timedLyricsRoot, indexData)
+}
+
+func loadCatalogIndex(cfg appconfig.Config, archiveRoot, metadataRoot, timedLyricsRoot *os.Root,
+	indexData []byte,
+) (catalogmodel.Catalog, error) {
 	index, err := decodeArchiveIndex(indexData)
 	if err != nil {
 		return catalogmodel.Catalog{}, err

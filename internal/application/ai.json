@@ -1,0 +1,80 @@
+{
+  "schema_version": "1",
+  "name": "Zak Radio",
+  "description": "Add songs to this music library using an upload API key and a binary MP3 file.",
+  "url_resolution": "Resolve all paths against the origin that served this document. Send credentials only to that origin. Do not follow redirects with credentials.",
+  "openapi": "/api/song-upload/openapi.json",
+  "authentication": {
+    "type": "bearer",
+    "header": "Authorization: Bearer <upload key>",
+    "scope": "songs:write",
+    "get_key": "The user signs in, opens Library > API access, selects Create upload key, and supplies the one-time secret through your secret store.",
+    "default_expiry_days": 30,
+    "expiry_days": { "minimum": 1, "maximum": 90 },
+    "revocation": "The user can revoke the key in Library > API access.",
+    "credential_handling": "Never print the key or include it in prompts, URLs, source files, or logs. Upload keys cannot manage keys, control stations, or replace songs."
+  },
+  "workflow": [
+    "Ask the user for the song title, artist, and MP3 file if they were not supplied. Lyrics are optional.",
+    "Read the upload key from your secret store. Do not ask the user for their SSO password.",
+    "GET /api/song-upload with the bearer key. Continue only if enabled and can_upload are both true.",
+    "POST /api/tracks with the bearer key and multipart/form-data fields described below. Send the actual MP3 bytes.",
+    "On HTTP 201, report track.id and finish. The song is immediately available in Library and Radio.",
+    "If the response is lost, retry only the identical audio bytes. A duplicate response identifies the existing song."
+  ],
+  "upload": {
+    "method": "POST",
+    "path": "/api/tracks",
+    "content_type": "multipart/form-data",
+    "fields": {
+      "title": {
+        "required": true,
+        "type": "UTF-8 text",
+        "min_characters": 1,
+        "max_characters": 120,
+        "single_line": true
+      },
+      "artist": {
+        "required": true,
+        "type": "UTF-8 text",
+        "min_characters": 1,
+        "max_characters": 120,
+        "single_line": true
+      },
+      "audio": {
+        "required": true,
+        "type": "binary file",
+        "filename_extension": ".mp3",
+        "max_bytes": 33554432,
+        "max_duration_seconds": 1200
+      },
+      "lyrics": { "required": false, "type": "UTF-8 text", "max_bytes": 65536 }
+    },
+    "rules": [
+      "Send each field once. Unknown fields are rejected.",
+      "Title and artist limits apply after trimming surrounding whitespace. Control characters are rejected.",
+      "Audio must be nonempty, complete, decodable MPEG-1 or MPEG-2 Layer III with a constant sample rate. ID3v2.3, ID3v2.4, and ID3v1 tags are supported.",
+      "Lyrics may contain line breaks and tabs, but no other control characters.",
+      "Do not submit a URL, server path, base64 audio, or JSON body. Let your HTTP client set the multipart boundary.",
+      "The server generates the track ID, filenames, duration, and SHA-256 digest. Existing songs cannot be overwritten.",
+      "Only one upload runs at a time. Each client address can make 20 upload attempts per hour."
+    ]
+  },
+  "responses": {
+    "201": "Complete. Read the new song from track, including track.id, track.duration, track.audio_sha256, and track.audio_bytes.",
+    "400": "Read error.code and error.message. Correct invalid_request or invalid_audio before retrying.",
+    "401": "Stop. The key is missing, invalid, expired, or revoked, or uploads are disabled.",
+    "403": "Stop. The request origin, ingress, or credential scope was rejected.",
+    "409": "For error.code=duplicate_audio, report existing_track_id and finish. The exact audio bytes already exist. For catalog_conflict, ask the service owner to check library capacity.",
+    "413": "Reduce the file or lyrics size before retrying.",
+    "429": "Respect Retry-After when present. Use a bounded retry count.",
+    "500": "Publication may have completed. Retry only the identical audio bytes, using a bounded retry count.",
+    "507": "Stop and ask the service owner to free storage."
+  },
+  "example": {
+    "setup": "Set ZAK_RADIO_URL to this instance's HTTPS origin. Store Authorization: Bearer <upload key> in a private file and chmod 600 that file.",
+    "check_access": "curl --fail-with-body --silent --show-error --header @/path/to/private/upload.headers \"${ZAK_RADIO_URL}/api/song-upload\"",
+    "upload": "curl --fail-with-body --silent --show-error --header @/path/to/private/upload.headers --form-string 'title=Harbor lights' --form-string 'artist=Zak' --form 'audio=@/path/to/song.mp3;type=audio/mpeg' \"${ZAK_RADIO_URL}/api/tracks\"",
+    "optional_lyrics": "Add --form 'lyrics=</path/to/lyrics.txt;type=text/plain' to send a lyrics file as text."
+  }
+}

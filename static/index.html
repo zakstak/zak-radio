@@ -786,6 +786,31 @@
           </button>
         </div>
 
+        <div id="songUploadEntry" class="song-upload-entry" hidden>
+          <button
+            id="songUploadOpen"
+            class="button"
+            type="button"
+            aria-haspopup="dialog"
+            hidden
+          >
+            Add song
+          </button>
+          <button
+            id="songKeysOpen"
+            class="button"
+            type="button"
+            aria-haspopup="dialog"
+            hidden
+          >
+            API access
+          </button>
+          <p id="songUploadSignIn" class="field-hint" hidden>
+            Sign in to add songs.
+          </p>
+          <p id="songUploadResult" class="field-hint" role="status"></p>
+        </div>
+
         <section class="library-browse" aria-labelledby="libraryTitle">
           <div class="library-tools" role="search" aria-label="Songs">
             <label class="search-field library-search"
@@ -1669,6 +1694,171 @@
         </div>
         <div id="lyricsSheetSlot" class="lyrics-sheet-slot"></div>
       </div>
+    </dialog>
+
+    <dialog
+      id="songKeysDialog"
+      class="sheet"
+      aria-labelledby="songKeysTitle"
+      aria-describedby="songKeysDescription"
+    >
+      <div class="sheet-body">
+        <div class="station-sheet-head">
+          <h2 id="songKeysTitle" class="sheet-title">API access</h2>
+          <button
+            id="songKeysClose"
+            class="icon-button"
+            type="button"
+            aria-label="Close API access"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7l10 10M17 7 7 17"></path>
+            </svg>
+          </button>
+        </div>
+        <p id="songKeysDescription" class="sheet-lede">
+          Create an upload key for your agent. It can add songs until it expires
+          or you revoke it. Give your agent the key and the
+          <a href="/ai.json" target="_blank" rel="noopener"
+            >agent instructions</a
+          >.
+        </p>
+        <form id="songKeysForm" class="song-upload-fields">
+          <label class="field"
+            >Key name
+            <input
+              class="text-input"
+              name="keyName"
+              value="LLM uploads"
+              required
+              maxlength="80"
+          /></label>
+          <label class="field"
+            >Expires in days
+            <input
+              class="text-input"
+              name="keyDays"
+              type="number"
+              min="1"
+              max="90"
+              value="30"
+              required
+          /></label>
+          <div class="sheet-actions">
+            <button id="songKeysCreate" class="button" type="submit">
+              Create upload key
+            </button>
+          </div>
+        </form>
+        <div id="songKeysReveal" class="song-upload-fields" hidden>
+          <label class="field"
+            >New upload key
+            <input
+              id="songKeysSecret"
+              class="text-input"
+              type="text"
+              readonly
+              autocomplete="off"
+              spellcheck="false"
+              aria-describedby="songKeysOnce"
+          /></label>
+          <p id="songKeysOnce" class="field-hint">
+            Shown once. Copy this key before closing.
+          </p>
+          <button id="songKeysCopy" class="button" type="button">
+            Copy upload key
+          </button>
+        </div>
+        <p id="songKeysStatus" class="sheet-status" role="status"></p>
+        <h3 class="section-heading">Active upload keys</h3>
+        <ul
+          id="songKeysList"
+          class="song-key-list"
+          aria-label="Active upload keys"
+        ></ul>
+      </div>
+    </dialog>
+
+    <dialog
+      id="songUploadDialog"
+      class="sheet"
+      aria-labelledby="songUploadTitle"
+      aria-describedby="songUploadRequirements"
+    >
+      <form id="songUploadForm" class="sheet-body">
+        <div class="station-sheet-head">
+          <h2 id="songUploadTitle" class="sheet-title">Add song</h2>
+          <button
+            id="songUploadClose"
+            class="icon-button"
+            type="button"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7l10 10M17 7 7 17"></path>
+            </svg>
+          </button>
+        </div>
+        <p id="songUploadRequirements" class="sheet-lede">
+          Add a song to the shared library. Include a title, artist, and a
+          complete MP3 file, up to 32 MiB and 20 minutes. Use MPEG-1 or MPEG-2
+          Layer III audio.
+        </p>
+        <fieldset id="songUploadFields" class="song-upload-fields">
+          <legend class="sr-only">Song details</legend>
+          <label class="field"
+            >Title
+            <input
+              class="text-input"
+              name="title"
+              required
+              maxlength="120"
+              autocomplete="off"
+          /></label>
+          <label class="field"
+            >Artist
+            <input
+              class="text-input"
+              name="artist"
+              required
+              maxlength="120"
+              autocomplete="off"
+          /></label>
+          <label class="field"
+            >MP3 file
+            <input
+              class="song-upload-file"
+              name="audio"
+              type="file"
+              accept=".mp3,audio/mpeg"
+              required
+          /></label>
+          <label class="field"
+            >Lyrics (optional)
+            <textarea
+              class="text-input song-upload-lyrics"
+              name="lyrics"
+              rows="6"
+              aria-describedby="songUploadLyricsHint"
+            ></textarea>
+            <span id="songUploadLyricsHint" class="field-hint"
+              >Plain text, up to 64 KiB. You can include section labels such as
+              [Chorus].</span
+            >
+          </label>
+        </fieldset>
+        <p
+          id="songUploadStatus"
+          class="sheet-status"
+          role="status"
+          tabindex="-1"
+        ></p>
+        <div class="sheet-actions">
+          <button id="songUploadSubmit" class="button" type="submit">
+            Add song
+          </button>
+        </div>
+      </form>
     </dialog>
 
     <dialog
