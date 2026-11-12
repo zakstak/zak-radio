@@ -496,6 +496,9 @@ const radioAdapter = {
         .filter(Boolean)
         .join(" · "),
       reactions: station && !lost ? reactionView(track) : null,
+      add: station
+        ? { run: (opener) => openAddToStation(track, opener) }
+        : null,
       href: radioHref(),
       artwork: track.has_cover
         ? { src: mediaCoverURL(track), seed: track.id }
@@ -2521,7 +2524,7 @@ function renderProgress(position, duration) {
     setAttribute(els.progress, "aria-valuetext", valueText);
   } else {
     setAttribute(els.progressTrack, "role", "progressbar");
-    setAttribute(els.progressTrack, "aria-label", "Song progress");
+    setAttribute(els.progressTrack, "aria-label", "Playback position");
     setAttribute(els.progressTrack, "aria-valuemin", "0");
     setAttribute(
       els.progressTrack,
