@@ -46,6 +46,8 @@ const LYRICS_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h10M4 11h12M4 15.5h7"></path><circle cx="17.5" cy="17" r="2.5"></circle><path d="M20 17V8.5l-2-.5"></path></svg>';
 const CLOSE_DOWN_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9.5 6 6 6-6"></path></svg>';
+const OPEN_UP_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14.5 6-6 6 6"></path></svg>';
 const HEART_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg>';
 const DISLIKE_ICON =
@@ -403,11 +405,14 @@ export function createPlayer({
   kicker.append(source, context);
   const title = element("a", "player-title");
   const note = element("p", "player-note");
-  // Phones: the art and title open the full player.
+  // Phones: the art and title open the full player. The chevron says so,
+  // in a column of its own after the title, inside the button's hit area.
   const open = element("button", "player-open", {
     type: "button",
     "aria-haspopup": "dialog",
   });
+  const expand = element("span", "player-expand", { "aria-hidden": "true" });
+  expand.innerHTML = OPEN_UP_ICON;
   meta.append(kicker, title, note);
 
   const transport = element("div", "player-transport");
@@ -439,7 +444,16 @@ export function createPlayer({
   volume.classList.add("player-volume");
   extras.append(download, liveButton, stationAction, volume);
 
-  inner.append(art, contents, meta, open, transport, progress.row, extras);
+  inner.append(
+    art,
+    contents,
+    meta,
+    expand,
+    open,
+    transport,
+    progress.row,
+    extras,
+  );
   root.append(line, follow, inner);
 
   // ---- Full player sheet ----

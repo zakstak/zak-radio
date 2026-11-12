@@ -3690,6 +3690,7 @@ html[data-zs-theme="radio"] {
   }
   .player:not(.has-extras) .player-extras,
   .player-open,
+  .player-expand,
   .player-line {
     display: none;
   }
@@ -3837,9 +3838,9 @@ html[data-zs-theme="radio"] {
     }
     .player-inner {
       @apply gap-x-2.5;
-      grid-template-columns: 44px minmax(0, 1fr) auto auto;
+      grid-template-columns: 44px minmax(0, 1fr) 16px auto auto;
       row-gap: 0;
-      grid-template-areas: "art meta extras transport" ". progress progress progress";
+      grid-template-areas: "art meta expand extras transport" ". progress progress progress progress";
     }
     .player-art {
       display: grid;
@@ -3863,11 +3864,24 @@ html[data-zs-theme="radio"] {
     .player-title {
       @apply my-0 min-h-0 py-0 hover:no-underline;
     }
+    /* The open button covers the art, the title, and the chevron. */
     .player-open {
       @apply relative z-[1] m-0 block min-h-12 cursor-pointer border-0 bg-transparent p-0;
       grid-row: 1;
-      grid-column: 1 / 3;
+      grid-column: 1 / 4;
       border-radius: var(--zs-radius-control);
+    }
+    /* The chevron that says the dock opens: its own column, so the
+       source line and title truncate before it. */
+    .player-expand {
+      @apply pointer-events-none grid place-items-center self-center;
+      grid-area: expand;
+      color: var(--zs-frost-mid);
+    }
+    .player-expand svg {
+      @apply size-4 fill-none stroke-current stroke-2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     .player-open:focus-visible {
       outline-offset: 2px;
@@ -3924,17 +3938,6 @@ html[data-zs-theme="radio"] {
     }
     .player-progress .player-time {
       font-size: 12px;
-    }
-    .player-meta {
-      padding-right: 20px;
-    }
-    .player-open::after {
-      content: "⌃";
-      position: absolute;
-      right: 2px;
-      top: 0;
-      color: var(--zs-frost-mid);
-      font-size: 16px;
     }
   }
 }
@@ -4055,7 +4058,7 @@ html[data-zs-theme="radio"] {
     display: none;
   }
   .player .player-inner {
-    grid-template-areas: "art meta extras transport";
+    grid-template-areas: "art meta expand extras transport";
   }
   .player .player-title {
     white-space: normal;
@@ -4064,9 +4067,6 @@ html[data-zs-theme="radio"] {
     -webkit-box-orient: vertical;
     line-height: 18px;
     font-size: 13px;
-  }
-  .player .player-meta {
-    padding-right: 8px;
   }
   .player .player-note {
     white-space: normal;
