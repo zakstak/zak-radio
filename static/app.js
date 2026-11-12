@@ -2795,7 +2795,7 @@ async function refreshStation(force = false, required = false) {
         stationId !== state.stationId
       )
         return;
-      state.streamConnected = false;
+      setStreamConnected(false);
       state.eventSource?.close();
       state.eventSource = null;
       setConnected(false, error);
@@ -2820,11 +2820,29 @@ async function refreshStation(force = false, required = false) {
   }
 }
 
+// The event stream keeps the station current. Polling stands in only while
+// the stream is down, and rests while the page is hidden; the stream keeps
+// reconnecting on its own either way.
+function syncStationPolling() {
+  const poll = !state.streamConnected && document.visibilityState !== "hidden";
+  if (poll && !state.pollTimer)
+    state.pollTimer = window.setInterval(refreshStation, 5000);
+  else if (!poll && state.pollTimer) {
+    window.clearInterval(state.pollTimer);
+    state.pollTimer = 0;
+  }
+}
+
+function setStreamConnected(connected) {
+  state.streamConnected = connected;
+  syncStationPolling();
+}
+
 function connectStationEvents() {
   window.clearTimeout(state.eventReconnectTimer);
   state.eventReconnectTimer = 0;
   state.eventSource?.close();
-  state.streamConnected = false;
+  setStreamConnected(false);
   setConnected(state.connected);
   state.connectedListeners = null;
   renderPresence();
@@ -2832,14 +2850,14 @@ function connectStationEvents() {
   state.eventSource = source;
   source.onopen = () => {
     if (source !== state.eventSource) return;
-    state.streamConnected = true;
+    setStreamConnected(true);
     state.eventReconnectAttempt = 0;
     setConnected(true);
   };
   source.addEventListener("station", async (event) => {
     if (source !== state.eventSource) return;
     try {
-      state.streamConnected = true;
+      setStreamConnected(true);
       state.eventReconnectAttempt = 0;
       setConnected(true);
       await applyStation(JSON.parse(event.data));
@@ -2880,7 +2898,7 @@ function connectStationEvents() {
     source.close();
     state.connectedListeners = null;
     renderPresence();
-    state.streamConnected = false;
+    setStreamConnected(false);
     setConnected(state.connected);
     const delay = Math.min(30000, 500 * 2 ** state.eventReconnectAttempt++);
     state.eventReconnectTimer = window.setTimeout(() => {
@@ -3716,8 +3734,7 @@ async function boot(forceCatalog = false) {
     setStationUnavailable(failureKind(error));
     connectStationEvents();
   }
-  window.clearInterval(state.pollTimer);
-  state.pollTimer = window.setInterval(refreshStation, 5000);
+  syncStationPolling();
 }
 
 // Without the catalog nothing can play, so keep retrying in the background.
@@ -4417,8 +4434,7 @@ els.radioRetry.addEventListener("click", async () => {
       await switchStation(state.stationId, state.ownerToken, {
         updateURL: false,
       });
-      if (!state.pollTimer)
-        state.pollTimer = window.setInterval(refreshStation, 5000);
+      syncStationPolling();
     } else {
       await boot(true);
     }
@@ -4570,7 +4586,11 @@ window.addEventListener("resize", scheduleRadioDock, { passive: true });
 window.addEventListener("zak-route", scheduleRadioDock);
 window.addEventListener("pageshow", () => schedulePlaybackRecovery(0));
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") schedulePlaybackRecovery(0);
+  syncStationPolling();
+  if (document.visibilityState !== "visible") return;
+  schedulePlaybackRecovery(0);
+  // Polling rested while hidden; catch up at once if the stream is down.
+  if (!state.streamConnected) void refreshStation();
 });
 let keyboardSeeking = false;
 function previewSeek() {
