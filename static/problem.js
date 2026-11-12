@@ -9,8 +9,10 @@ import { plural } from "./format.js";
 //   server       Zak Radio answered with an error
 //   busy         Zak Radio asked to slow down (429)
 //   notfound     the thing asked for doesn't exist (404)
+//   signedout    the action needs a sign-in this page doesn't have (401)
 export function problemKind(error) {
   const status = Number(error?.status) || 0;
+  if (status === 401) return "signedout";
   if (status === 404) return "notfound";
   if (status === 429) return "busy";
   if (status) return "server";
@@ -50,6 +52,10 @@ const PROBLEMS = {
   notfound: {
     title: "This isn’t available anymore",
     text: "It may have been removed.",
+  },
+  signedout: {
+    title: "You’re signed out",
+    text: "Your sign-in may have expired. Sign in again, then try again.",
   },
 };
 

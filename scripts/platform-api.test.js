@@ -32,6 +32,7 @@ test("API errors expose the JSON message and retain retry metadata", async () =>
     assert.equal(error.status, 429);
     assert.equal(error.retryAfter, 5);
     assert.equal(error.detail, "Another song is being added.");
+    assert.equal(error.code, "upload_busy");
     return true;
   });
 });
@@ -42,6 +43,7 @@ test("API errors preserve existing text responses and bound their length", async
     await assert.rejects(api("/api/control"), (error) => {
       assert.equal(error.detail, message.trim().slice(0, 256));
       assert.equal(error.retryAfter, 0);
+      assert.equal(error.code, "");
       return true;
     });
   }
