@@ -105,7 +105,8 @@ messages, and announcements.
 - **Skipped early**, not "early skips".
 - **Oldest added first** / **Newest added first**, not "In the order added" or
   "Newest first". Library starts at Newest added first (Best match while
-  searching) and remembers the listener's choice.
+  searching) and remembers the listener's choice. Best match is offered only
+  while searching.
 - **Search songs and lyrics**: Library's search, at every width.
 - **Fleet**, not "Saga Fleet".
 - Apostrophes are curly (’) everywhere in the interface.

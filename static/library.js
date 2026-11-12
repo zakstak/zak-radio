@@ -26,7 +26,8 @@ const FILTER_LABELS = {
   recent: "Recently added",
 };
 const FILTER_KEYS = Object.keys(FILTER_LABELS);
-// Best match and newest are separate orders. Remember the selected order.
+// "match" is the order Library starts with: Best match while searching,
+// Newest added first otherwise. Remember the order the listener chooses.
 const SORT_VALUES = [
   "match",
   "newest",
@@ -866,9 +867,24 @@ export function initLibrary({ router } = {}) {
     );
   }
 
+  const searching = () => Boolean(state.parsed.terms.length);
+
+  // The order in effect. "match", the order Library starts with, is Best
+  // match while searching and Newest added first otherwise; any other order
+  // is the listener's own choice and applies either way.
+  function activeSort() {
+    return state.sort === "match" && !searching() ? "newest" : state.sort;
+  }
+
   function syncControls() {
     if (els.search.value !== state.query) els.search.value = state.query;
-    if (els.sort.value !== state.sort) els.sort.value = state.sort;
+    // Best match means nothing without search words, so it is offered only
+    // while searching, and the control names the order the list is in.
+    const match = els.sort.querySelector('option[value="match"]');
+    match.hidden = !searching();
+    match.disabled = !searching();
+    const sort = activeSort();
+    if (els.sort.value !== sort) els.sort.value = sort;
     // "All" is pressed only when nothing narrows the list, group included.
     els.filters.forEach((chip) => {
       const key = chip.dataset.libraryFilter;
@@ -983,9 +999,7 @@ export function initLibrary({ router } = {}) {
       (a.entry.date || Infinity) - (b.entry.date || Infinity) ||
       byPosition(a, b);
     const sorters = {
-      match: state.parsed.terms.length
-        ? (a, b) => b.score - a.score || byPosition(a, b)
-        : (a, b) => b.entry.date - a.entry.date || byPosition(a, b),
+      match: (a, b) => b.score - a.score || byPosition(a, b),
       newest: (a, b) => b.entry.date - a.entry.date || byPosition(a, b),
       archive: oldest,
       title: (a, b) =>
@@ -997,7 +1011,7 @@ export function initLibrary({ router } = {}) {
         number(b.entry.track.play_count) - number(a.entry.track.play_count) ||
         byPosition(a, b),
     };
-    results.sort(sorters[state.sort] || byPosition);
+    results.sort(sorters[activeSort()] || byPosition);
     state.results = results;
   }
 
@@ -3887,9 +3901,13 @@ export function initLibrary({ router } = {}) {
   });
 
   els.sort.addEventListener("change", () => {
-    state.sort = SORT_VALUES.includes(els.sort.value)
+    const value = SORT_VALUES.includes(els.sort.value)
       ? els.sort.value
       : "newest";
+    // Newest added first is what the automatic order shows while not
+    // searching, so choosing it there goes back to that order (Best match
+    // when a search starts) rather than fixing newest for searches too.
+    state.sort = value === "newest" && !searching() ? "match" : value;
     window.ZakStorage.set(SORT_KEY, state.sort);
     refresh({ announce: true });
     writeURL();
