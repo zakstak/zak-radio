@@ -4247,7 +4247,6 @@ html[data-zs-theme="radio"] {
   .library-intro-copy {
     @apply grid min-w-0 gap-1;
   }
-  .library-intro .section-label,
   .library-intro .view-lede {
     @apply m-0;
   }
@@ -4538,19 +4537,24 @@ html[data-zs-theme="radio"] {
   .track-card-duration {
     @apply shrink-0;
   }
+  /* A mark, not a control: a bare heart with no button-like chip behind
+     it, outlined in the canvas color so it reads on any artwork. */
   .track-card-liked-badge {
-    @apply pointer-events-none absolute top-2 left-2 grid size-7 place-items-center rounded-full;
-    background: rgb(8 10 12 / 72%);
+    @apply pointer-events-none absolute top-2 left-2 grid place-items-center;
     color: var(--zs-signal-readable);
   }
   .track-card-liked-badge svg {
-    @apply size-4 fill-current stroke-none;
+    @apply size-4 fill-current;
+    stroke: var(--zs-canvas);
+    stroke-width: 3px;
+    paint-order: stroke;
+    overflow: visible;
   }
   .track-card.is-list .track-card-liked-badge {
-    @apply top-auto -right-1 -bottom-1 left-auto size-5;
+    @apply top-auto -right-1 -bottom-1 left-auto;
   }
   .track-card.is-list .track-card-liked-badge svg {
-    @apply size-3;
+    @apply size-3.5;
   }
   .track-card.is-list .track-card-art {
     @apply overflow-visible;
@@ -4899,8 +4903,33 @@ html[data-zs-theme="radio"] {
   .library-editor:has(.editor-discard:not([hidden])) .sheet-actions {
     display: none;
   }
+  /* Sharing folds away under the songs, a band with the same chevron as
+     Radio's Playback settings. */
   .editor-access {
-    @apply gap-2 border-t border-radio-line pt-4;
+    @apply min-w-0 border-y border-radio-line;
+  }
+  .editor-access > summary {
+    @apply flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-3;
+  }
+  .editor-access > summary::-webkit-details-marker {
+    display: none;
+  }
+  .editor-access > summary::after {
+    @apply size-2 shrink-0 border-r-2 border-b-2 border-radio-muted transition-transform;
+    content: "";
+    transform: translateY(-2px) rotate(45deg);
+  }
+  .editor-access[open] > summary::after {
+    transform: translateY(2px) rotate(-135deg);
+  }
+  .editor-access > summary:hover .programming-label {
+    @apply underline underline-offset-4;
+  }
+  .editor-access-summary {
+    @apply grid min-w-0 gap-0.5;
+  }
+  .editor-access-body {
+    @apply grid gap-2 pb-4;
   }
   .editor-access-row {
     @apply flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-1;
@@ -5051,10 +5080,14 @@ html[data-zs-theme="radio"] {
     height: 18px;
     fill: currentColor;
   }
+  /* Up to two lines, so an untitled song's collection doesn't push its
+     length out of view. */
   .editor-song-copy > span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .editor-song-copy .editor-song-excerpt {
     display: none;
@@ -5576,9 +5609,6 @@ html[data-zs-theme="radio"] {
     justify-content: space-between;
     gap: 12px;
   }
-  .library-intro .section-label {
-    display: none;
-  }
   .library-intro .view-title {
     font-size: 28px;
   }
@@ -5654,9 +5684,6 @@ html[data-zs-theme="radio"] {
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
-  .library-intro .section-label {
-    display: none;
-  }
   .library-intro .view-title {
     font-size: 24px;
   }
