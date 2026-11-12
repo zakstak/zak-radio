@@ -960,6 +960,9 @@ function stationOptionButton({ id, name, meta }) {
   option.type = "button";
   option.className = "station-option";
   option.dataset.stationId = id;
+  // The name is the visible text, so voice control can say what it reads.
+  // The station playing now is the current one, as state rather than
+  // added words.
   const current = id === state.stationId;
   option.setAttribute("aria-current", String(current));
   const copy = document.createElement("span");
@@ -981,12 +984,6 @@ function stationOptionButton({ id, name, meta }) {
   check.innerHTML =
     '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>';
   option.append(check);
-  // The name is set from the same words: visually hidden text would be read
-  // with a stray space before its comma ("…pause or skip , playing now").
-  option.setAttribute(
-    "aria-label",
-    [name, meta, current ? "playing now" : ""].filter(Boolean).join(", "),
-  );
   return option;
 }
 
