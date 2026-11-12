@@ -313,6 +313,8 @@ function weakTrackLabel(value) {
   return false;
 }
 
+const UNTITLED = "Untitled";
+
 // A weak imported title ("2", "[Verse 1]") gives way to the song's subject.
 // Without one the song is "Untitled", never its collection's name: that
 // would read as the collection itself, and every view already shows the
@@ -324,12 +326,23 @@ function trackDisplayTitle(track) {
     String(track?.summary || "").split(/\r?\n/, 1)[0],
   );
   if (!weakTrackLabel(subject)) return subject;
-  return "Untitled";
+  return UNTITLED;
 }
 
 function trackDisplayGroup(track) {
   const group = cleanedTrackLabel(track?.group);
   return weakTrackLabel(group) ? "" : group;
+}
+
+// Who made a song, for rows that leave out the collection. An "Untitled"
+// song names its collection too, so it can be told apart from the others.
+function trackByline(track) {
+  return [
+    track?.artist || "Zak",
+    trackDisplayTitle(track) === UNTITLED ? trackDisplayGroup(track) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // The neutral tile for a station that isn't available; songs without
@@ -348,6 +361,7 @@ function createArtworkFallback(track) {
 
 window.ZakTrackDisplayTitle = trackDisplayTitle;
 window.ZakTrackDisplayGroup = trackDisplayGroup;
+window.ZakTrackByline = trackByline;
 window.ZakArtworkFallback = createArtworkFallback;
 
 const audioController = createAudioController({
@@ -2063,10 +2077,10 @@ function queueItem(track, index, editable) {
   title.className = "queue-title";
   title.textContent = track ? trackDisplayTitle(track) : "Unknown song";
   copy.append(title);
-  if (track?.artist) {
+  if (track) {
     const artist = document.createElement("span");
     artist.className = "queue-artist";
-    artist.textContent = track.artist;
+    artist.textContent = trackByline(track);
     copy.append(artist);
   }
   const length = document.createElement("span");
@@ -2148,7 +2162,7 @@ function renderQueue() {
   setText(
     nextLine,
     nextTrack
-      ? `Next: ${trackDisplayTitle(nextTrack)}${nextTrack.artist ? ` · ${nextTrack.artist}` : ""}`
+      ? `Next: ${trackDisplayTitle(nextTrack)} · ${trackByline(nextTrack)}`
       : "",
   );
   let ids = [];
