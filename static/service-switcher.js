@@ -1,8 +1,8 @@
 /*
  * Zakstak Service Switcher 1.0.0
  * Canonical source: zakstak/saga-product/design-system/service-switcher.js
- * Product adaptation: compact launcher tiles (name and monogram); directory
- * validation unchanged.
+ * Product adaptation: compact launcher tiles (name and monogram) and a
+ * fallback note that links Fleet; directory validation unchanged.
  */
 
 export const SERVICE_DIRECTORY_SCHEMA = "zakstak.service-directory.v1";
@@ -181,8 +181,15 @@ export async function loadServiceSwitcher(
       );
     }
     root.dataset.directoryState = "fallback";
-    status.textContent =
-      "Apps didn’t load. Open the apps page to see them all.";
+    // Name the page that lists every app, and link it.
+    const fleet = root.ownerDocument.createElement("a");
+    fleet.href = FLEET_FALLBACK.href;
+    fleet.textContent = FLEET_FALLBACK.name;
+    status.replaceChildren(
+      "Apps didn’t load. Open ",
+      fleet,
+      " to see them all.",
+    );
     return false;
   } finally {
     globalThis.clearTimeout(timeout);

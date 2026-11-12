@@ -2266,11 +2266,15 @@ export function initLibrary({ router } = {}) {
     });
     if (result?.ok) {
       // The queue note above the songs explains Play next and Add to queue.
+      // Say what it starts with; Open Radio only from another view.
+      const first = track || result.firstTrack;
       notify(
-        track
-          ? `Your temporary station is playing ${quote(displayTitle(track))}.`
-          : "Your temporary station is playing.",
-        { action: { label: "Open Radio", run: openRadio } },
+        !first
+          ? "Your temporary station is playing."
+          : `Your temporary station is playing ${quote(displayTitle(first))}${!track && result.fromRadio ? ", the song that was on Radio" : ""}.`,
+        router?.path() === "/"
+          ? {}
+          : { action: { label: "Open Radio", run: openRadio } },
       );
       renderQueueNote();
       renderStations();

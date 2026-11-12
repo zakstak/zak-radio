@@ -826,11 +826,13 @@ export function initReader({ router }) {
           "Everything else is in Continue listening above.",
         ),
       );
-    // Phones show the sort as an icon; the count says which order it is.
-    // With nothing to show, the empty state says so instead.
+    // The count matches the cards under it: items shown in Continue
+    // listening aren't repeated here. Phones show the sort as an icon; the
+    // count says which order it is. With nothing to show, the empty state
+    // says so instead.
     const countText =
       continuing.size && listed.length
-        ? `${countLabel()} · ${continuing.size} in progress above`
+        ? plural(listed.length, "more item")
         : countLabel();
     const sortText = els.sort.selectedOptions[0]?.textContent || "";
     if (els.count.dataset.key !== `${countText}|${sortText}`) {
@@ -2312,6 +2314,7 @@ export function initReader({ router }) {
       !playable && !state.segmentsLoading && !state.textError,
     );
     renderMoreMenu();
+    fitActions();
   }
 
   function renderMoreMenu() {
@@ -2392,6 +2395,7 @@ export function initReader({ router }) {
     const focused = itemLoading.contains(document.activeElement);
     els.main.classList.remove("is-loading");
     itemLoading.hidden = true;
+    fitActions();
     router.setSkipTarget("readerTitle");
     if (focused) els.title.focus({ preventScroll: true });
   }
@@ -3321,6 +3325,53 @@ export function initReader({ router }) {
     else if (currentSegmentElement()) focusSegment(currentSegmentElement());
     else opener.focus();
   }
+
+  // ---- Item actions: one row ----
+  // The controls never wrap, so More is never left on a row of its own.
+  // Resume shares their row if they fit beside it at their most compact;
+  // otherwise it takes the row above them (phones always do). Then, until
+  // the controls fit, the source links move into More, and Text and then
+  // Contents keep only their icons.
+  const COMPACT_STEPS = [
+    "is-sources-in-more",
+    "is-text-icon",
+    "is-contents-icon",
+  ];
+  function onOneRow(nodes) {
+    const shown = nodes.filter((node) => node.getClientRects().length);
+    const first = shown[0]?.getBoundingClientRect();
+    return shown.every(
+      (node) => node.getBoundingClientRect().top < first.bottom,
+    );
+  }
+  function fitActions() {
+    const row = els.actions;
+    if (!row.getClientRects().length) return;
+    const controls = [...row.children].filter(
+      (node) => node !== els.resume && !node.hasAttribute("popover"),
+    );
+    row.classList.remove("is-resume-row");
+    row.classList.add(...COMPACT_STEPS);
+    row.classList.toggle("is-resume-row", !onOneRow([els.resume, ...controls]));
+    row.classList.remove(...COMPACT_STEPS);
+    for (const step of COMPACT_STEPS) {
+      if (onOneRow(controls)) return;
+      row.classList.add(step);
+    }
+  }
+  // A width change, or a longer Resume label, refits on the next frame;
+  // refitting inside the observer would resize what it observes.
+  let fitFrame = 0;
+  function scheduleFitActions() {
+    if (fitFrame) return;
+    fitFrame = window.requestAnimationFrame(() => {
+      fitFrame = 0;
+      fitActions();
+    });
+  }
+  if ("ResizeObserver" in window)
+    new ResizeObserver(scheduleFitActions).observe(els.actions);
+  else window.addEventListener("resize", scheduleFitActions, { passive: true });
 
   // ---- More actions: mark finished, hide ----
   const menuPopover = typeof els.moreMenu.showPopover === "function";
