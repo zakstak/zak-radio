@@ -1425,7 +1425,9 @@ const lyricsSheetLike = createReactionButton("like");
 const lyricsSheetDislike = createReactionButton("dislike");
 byId("lyricsSheetReactions").append(lyricsSheetLike, lyricsSheetDislike);
 const lyricsSheetShared = byId("lyricsSheetShared");
+const lyricsSheetPause = byId("lyricsSheetPause");
 const lyricsSheetSkip = byId("lyricsSheetSkip");
+lyricsSheetPause.addEventListener("click", () => toggleStationForEveryone());
 lyricsSheetSkip.addEventListener("click", () => skipForEveryone());
 bindProgress(
   lyricsSheetProgress,
@@ -4029,7 +4031,13 @@ function renderLyricsSheet() {
       action.icon === "play" ? PLAY_ICON : STOP_ICON;
   }
   els.lyricsSheetToggle.disabled = action.disabled;
+  // The same station-wide controls as Shared controls: Pause becomes Resume
+  // while the station is paused.
   setText(byId("lyricsSheetScope"), stationScope());
+  setText(
+    lyricsSheetPause,
+    state.station?.playing === false ? resumeLabel() : pauseLabel(),
+  );
   lyricsSheetShared.hidden = !(
     canControlStation() &&
     state.station &&

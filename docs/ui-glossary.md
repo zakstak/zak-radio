@@ -41,8 +41,8 @@ messages, and announcements.
   station sees in that place, and how the station sheet begins.
 - **Pause for everyone**, **Skip for everyone**, **Resume for everyone**:
   station-wide changes on every station you control. They live in Shared
-  controls and the full player. Temporary stations use labeled transport icons
-  on phones to keep all five actions in one row.
+  controls, the full player, and full-screen lyrics. Temporary stations use
+  labeled transport icons on phones to keep all five actions in one row.
 - Playback settings (**Playback order**, **Skip disliked**) change the station
   for everyone, so they confirm with **Undo** like Pause and Skip.
 - **Shuffle** / **Repeat**: a temporary station's play order, labelled toggles

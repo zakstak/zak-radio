@@ -3514,8 +3514,9 @@ html[data-zs-theme="radio"] {
   max-width: none;
 }
 
+/* Full-screen lyrics read in one centered column, about 720px of text. */
 .lyrics-sheet-body {
-  max-width: 1200px;
+  max-width: 800px;
 }
 
 .lyrics-sheet .lyrics-context {
