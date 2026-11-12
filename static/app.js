@@ -51,6 +51,9 @@ const state = {
   eventReconnectTimer: 0,
   eventReconnectAttempt: 0,
   streamConnected: false,
+  // When the station stream last delivered an event, in wall-clock time.
+  streamEventAt: 0,
+  streamSilenceTimer: 0,
   stationRequestGeneration: 0,
   stationRequestInFlight: null,
   localPlaybackBlocked: false,
@@ -2872,6 +2875,50 @@ function syncStationPolling() {
 function setStreamConnected(connected) {
   state.streamConnected = connected;
   syncStationPolling();
+  checkStreamSilence();
+}
+
+// The stream counts as connected once it delivers an event, not when it
+// opens: a proxy that buffers the stream can open it and then deliver
+// nothing.
+function noteStreamEvent() {
+  state.streamEventAt = Date.now();
+  state.eventReconnectAttempt = 0;
+  setStreamConnected(true);
+}
+
+// The server sends presence on every stream at least every 15 s. A stream
+// that stays open but goes quiet for longer has stalled without erroring,
+// as a half-open connection does after the device sleeps or changes
+// network, and the browser can take minutes to notice. Drop it so polling
+// stands in while a new stream connects. Wall-clock time counts the time
+// the device slept; a clock set backwards counts as silence too.
+const STREAM_SILENCE_LIMIT = 40_000;
+function checkStreamSilence() {
+  window.clearTimeout(state.streamSilenceTimer);
+  state.streamSilenceTimer = 0;
+  if (!state.streamConnected) return;
+  const silence = Date.now() - state.streamEventAt;
+  if (silence >= 0 && silence < STREAM_SILENCE_LIMIT)
+    state.streamSilenceTimer = window.setTimeout(
+      checkStreamSilence,
+      STREAM_SILENCE_LIMIT - silence,
+    );
+  else dropStationEvents(state.eventSource);
+}
+
+// Closes a stream that failed or went quiet and reconnects after a delay
+// that grows until a stream delivers again.
+function dropStationEvents(source) {
+  source.close();
+  state.connectedListeners = null;
+  renderPresence();
+  setStreamConnected(false);
+  setConnected(state.connected);
+  const delay = Math.min(30000, 500 * 2 ** state.eventReconnectAttempt++);
+  state.eventReconnectTimer = window.setTimeout(() => {
+    if (source === state.eventSource) connectStationEvents();
+  }, delay);
 }
 
 function connectStationEvents() {
@@ -2884,23 +2931,17 @@ function connectStationEvents() {
   renderPresence();
   const source = new EventSource(`/api/station/events?${stationQuery()}`);
   state.eventSource = source;
-  source.onopen = () => {
-    if (source !== state.eventSource) return;
-    setStreamConnected(true);
-    state.eventReconnectAttempt = 0;
-    setConnected(true);
-  };
   source.addEventListener("station", async (event) => {
     if (source !== state.eventSource) return;
+    noteStreamEvent();
     try {
-      setStreamConnected(true);
-      state.eventReconnectAttempt = 0;
       setConnected(true);
       await applyStation(JSON.parse(event.data));
     } catch {}
   });
   source.addEventListener("presence", (event) => {
     if (source !== state.eventSource) return;
+    noteStreamEvent();
     try {
       const count = JSON.parse(event.data).connected;
       state.connectedListeners =
@@ -2910,6 +2951,7 @@ function connectStationEvents() {
   });
   source.addEventListener("catalog", async () => {
     if (source !== state.eventSource) return;
+    noteStreamEvent();
     try {
       await loadCatalog(true);
     } catch (error) {
@@ -2920,26 +2962,19 @@ function connectStationEvents() {
   });
   source.addEventListener("track", (event) => {
     if (source !== state.eventSource) return;
+    noteStreamEvent();
     try {
       applyTrackStats(JSON.parse(event.data));
     } catch {}
   });
   source.addEventListener("expired", async () => {
     if (source !== state.eventSource) return;
+    noteStreamEvent();
     notify("That station isn’t available anymore. Switched to All songs.");
     await switchStation("main", "");
   });
   source.onerror = () => {
-    if (source !== state.eventSource) return;
-    source.close();
-    state.connectedListeners = null;
-    renderPresence();
-    setStreamConnected(false);
-    setConnected(state.connected);
-    const delay = Math.min(30000, 500 * 2 ** state.eventReconnectAttempt++);
-    state.eventReconnectTimer = window.setTimeout(() => {
-      if (source === state.eventSource) connectStationEvents();
-    }, delay);
+    if (source === state.eventSource) dropStationEvents(source);
   };
 }
 
@@ -4625,8 +4660,11 @@ document.addEventListener("visibilitychange", () => {
   syncStationPolling();
   if (document.visibilityState !== "visible") return;
   schedulePlaybackRecovery(0);
-  // Polling rested while hidden; catch up at once if the stream is down.
-  if (!state.streamConnected) void refreshStation();
+  // Polling rested while hidden, and a device that slept or changed network
+  // can leave the stream open but silent: catch up once either way, and drop
+  // the stream at once if it has gone quiet.
+  checkStreamSilence();
+  void refreshStation();
 });
 let keyboardSeeking = false;
 function previewSeek() {
