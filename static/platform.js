@@ -226,10 +226,15 @@ window.ZakAPI = async function api(path, options = {}) {
       error.limit = Number.isFinite(limit) && limit > 0 ? limit : 0;
       error.limitScope = response.headers.get("X-Station-Limit-Scope") || "";
       let detail = (await response.text().catch(() => "")).trim();
+      // JSON errors carry a stable code to decide on; the message is
+      // for logs, not for listeners.
+      error.code = "";
       try {
         const payload = JSON.parse(detail);
         if (typeof payload?.error?.message === "string")
           detail = payload.error.message;
+        if (typeof payload?.error?.code === "string")
+          error.code = payload.error.code;
       } catch {}
       error.detail = detail.slice(0, 256);
       throw error;

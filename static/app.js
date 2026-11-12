@@ -4730,8 +4730,8 @@ window.ZakEditLink = (stationId) => {
 const editClaim = claimEditLink();
 router.render();
 boot();
-initLibrary({ router });
-initSongUpload();
+const library = initLibrary({ router });
+initSongUpload({ library });
 initReader({ router });
 void editClaim;
 syncMediaSessionActions();

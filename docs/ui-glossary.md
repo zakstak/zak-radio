@@ -92,6 +92,32 @@ messages, and announcements.
 - **Hide from Reader** / **Show in Reader again**: hides an item on this device;
   it stays under the **Hidden** filter.
 
+## Adding songs and API access
+
+- **Add song**: Library's button and dialog for uploading a song, at the top of
+  Library at every width. The dialog's main button says **Add song** too.
+- **Sign in to add songs**: what signed-out listeners see in its place. It loads
+  the page again through the sign-in gateway. **Sign in again** opens a new tab
+  instead, so an open form keeps what you entered.
+- **You’re signed out**: the error heading for an action that needs a sign-in
+  ("You’re signed out, so the song wasn’t added."). It offers **Sign in again**
+  and **Try again**.
+- **Show song**: finds a song in Library and puts focus on it. A finished upload
+  says "“Harbor Lights” is now in Library." and one that is already there says
+  "This song is already in Library as “Harbor Lights”."; both offer **Show
+  song**.
+- Limits use everyday units: "32 MB", "20 minutes", "about 60,000 characters".
+  Not MiB, KiB, bytes, "UTF-8", or "MPEG-1 or MPEG-2 Layer III".
+- **API access**: the dialog for upload keys. Say "agent", not "LLM"; a new key
+  is named "Agent uploads" unless you change it.
+- A new upload key is shown once. Closing before copying it asks "Close without
+  copying?" with **Copy key** and **Close anyway**.
+- **Revoke** asks in the key's row first: "Revoke “Agent uploads”, created Nov
+  12? Agents using it stop working right away." with **Cancel** and **Revoke
+  key**.
+- Dates read "Dec 12, 2026", never "12/12/2026". A creation date in the current
+  year may drop the year: "created Nov 12".
+
 ## Words
 
 - **Song description**, not "prompt" or "production notes": the musical

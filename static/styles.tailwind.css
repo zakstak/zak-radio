@@ -4120,20 +4120,119 @@ html[data-zs-theme="radio"] {
     order: 0;
   }
   .song-upload-entry {
-    @apply mb-4 flex flex-wrap items-center gap-3;
+    @apply mb-4 grid min-w-0 justify-items-start gap-2;
   }
-  .song-upload-entry p {
-    @apply m-0;
+  .song-upload-entry-actions {
+    @apply flex flex-wrap items-center gap-2;
+  }
+  .song-upload-result {
+    @apply m-0 text-[13px] leading-5 text-radio-muted;
+  }
+  .song-upload-result:empty {
+    @apply hidden;
+  }
+  .song-upload-result-error {
+    @apply max-w-[60ch];
+  }
+  .song-upload-done-actions {
+    @apply -mt-1 flex flex-wrap gap-2;
   }
   .song-key-list {
-    @apply m-0 grid list-none gap-3 p-0;
+    @apply m-0 grid list-none gap-0 border-t border-radio-line p-0;
   }
   .song-key-item {
-    @apply flex flex-wrap items-center justify-between gap-3 text-sm;
+    @apply flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-radio-line py-3 text-sm;
     overflow-wrap: anywhere;
+  }
+  .song-key-copy {
+    @apply grid min-w-0 flex-[1_1_14rem] gap-0.5;
+  }
+  .song-key-copy > strong {
+    @apply font-semibold text-radio-fg;
+  }
+  .song-key-copy > span {
+    @apply text-[13px] leading-5 text-radio-muted;
+  }
+  .song-key-empty {
+    @apply py-3 text-sm text-radio-muted;
+  }
+  /* Revoke asks in the row itself, with the safe choice focused. */
+  .song-key-confirm {
+    @apply grid w-full gap-2 border px-3 py-2.5;
+    border-color: var(--zs-warning-line);
+    background: color-mix(
+      in srgb,
+      var(--zs-warning) 10%,
+      var(--zs-surface-raised)
+    );
+    border-radius: var(--zs-radius-control);
+  }
+  .song-key-confirm p {
+    @apply m-0 text-sm leading-6 text-radio-fg;
+  }
+  .song-key-list .error-state {
+    @apply my-3 px-4 py-5 sm:px-5 sm:py-6;
+  }
+  .song-keys-head {
+    @apply flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1;
+  }
+  .song-keys-head p {
+    @apply m-0;
+  }
+  .song-keys-create {
+    @apply justify-between;
+  }
+  .song-keys-create p {
+    @apply m-0 max-w-[36ch] flex-[1_1_14rem];
+  }
+  .song-keys-reveal {
+    @apply grid min-w-0 gap-3;
+  }
+  .song-keys-secret {
+    @apply font-mono text-[13px];
+  }
+  .song-keys-copy {
+    @apply flex flex-wrap gap-2;
   }
   .song-upload-fields {
     @apply m-0 grid min-w-0 gap-4 border-0 p-0;
+  }
+  /* A field's own error sits under it; the field says it's invalid. */
+  .field-error {
+    @apply text-[13px] leading-5 font-semibold;
+    color: var(--zs-danger);
+  }
+  .field [aria-invalid="true"] {
+    border-color: var(--zs-danger-line);
+  }
+  .song-upload-progress {
+    @apply grid gap-1.5;
+  }
+  .song-upload-progress progress {
+    @apply h-2 w-full overflow-hidden rounded-full border-0 bg-radio-soft;
+    appearance: none;
+    accent-color: var(--zs-signal);
+  }
+  .song-upload-progress progress::-webkit-progress-bar {
+    background: var(--zs-surface);
+  }
+  .song-upload-progress progress::-webkit-progress-value {
+    background: var(--zs-signal);
+  }
+  .song-upload-progress progress::-moz-progress-bar {
+    background: var(--zs-signal);
+  }
+  .song-upload-progress p {
+    @apply m-0;
+  }
+  /* A link inside running text looks like one. */
+  .text-link {
+    @apply font-semibold whitespace-nowrap text-radio-accent-readable underline underline-offset-4;
+  }
+  .text-link svg {
+    @apply ml-0.5 inline-block size-[1em] fill-none stroke-current stroke-2 align-[-0.125em];
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .song-upload-file {
     @apply w-full min-w-0 py-2 text-sm;
@@ -5155,7 +5254,7 @@ html[data-zs-theme="radio"] {
   .library-page {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 320px;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto 1fr;
     column-gap: 40px;
     align-items: start;
   }
@@ -5163,14 +5262,19 @@ html[data-zs-theme="radio"] {
     grid-column: 1;
     grid-row: 1;
   }
-  .library-browse {
+  /* Add song and API access stay with the intro, never after the list. */
+  .song-upload-entry {
     grid-column: 1;
     grid-row: 2;
+  }
+  .library-browse {
+    grid-column: 1;
+    grid-row: 3;
     min-width: 0;
   }
   .library-stations {
     grid-column: 2;
-    grid-row: 1 / span 2;
+    grid-row: 1 / span 3;
     position: sticky;
     top: calc(var(--library-sticky-top) + 20px);
     max-height: calc(
