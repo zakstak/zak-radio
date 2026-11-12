@@ -4215,6 +4215,35 @@ export function initLibrary({ router } = {}) {
     const params = paramsFromURL();
     if (params.present) adoptParams(params);
   }
+
+  // Show one song: the search a listener would type for it, as its own
+  // history entry, with focus on the song's card. Add song uses it for a
+  // song that is already in Library.
+  function showTrack(trackId) {
+    const entry = state.entries.find((item) => item.track.id === trackId);
+    if (!entry || !onLibrary()) return false;
+    state.query = entry.title;
+    state.filter = "all";
+    state.group = "";
+    state.artist = "";
+    state.sort = "match";
+    state.limit = PAGE_SIZE;
+    refresh({ announce: true });
+    writeURL({ push: true, focus: "#songUploadOpen" });
+    const card = els.tracks.querySelector(
+      `[data-track-id="${CSS.escape(trackId)}"]`,
+    );
+    if (!card) return false;
+    card.scrollIntoView({
+      block: "center",
+      behavior: calm.matches ? "auto" : "smooth",
+    });
+    card
+      .querySelector('[data-control="preview"]')
+      ?.focus({ preventScroll: true });
+    return true;
+  }
+
   registerPlayer();
   refresh();
   renderStations();
@@ -4225,4 +4254,5 @@ export function initLibrary({ router } = {}) {
   }
   if (onLibrary() && window.location.hash === "#stations")
     setStationsOpen(true);
+  return { showTrack };
 }
