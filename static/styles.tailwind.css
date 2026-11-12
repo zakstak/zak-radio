@@ -5521,7 +5521,6 @@ html[data-zs-theme="radio"] {
   .reader-library-head {
     @apply grid gap-1.5;
   }
-  .reader-library-head .section-label,
   .reader-library-head .view-lede {
     @apply m-0;
   }
