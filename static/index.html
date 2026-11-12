@@ -819,6 +819,11 @@
           </div>
           <p id="songUploadResult" class="song-upload-result" role="status"></p>
           <div
+            id="songUploadResultActions"
+            class="song-upload-done-actions"
+            hidden
+          ></div>
+          <div
             id="songUploadResultError"
             class="library-sheet-error song-upload-result-error"
             role="alert"
@@ -1959,6 +1964,11 @@
           <p class="field-hint">You can close this. The upload keeps going.</p>
         </div>
         <p id="songUploadStatus" class="sheet-status" role="status"></p>
+        <div
+          id="songUploadStatusActions"
+          class="song-upload-done-actions"
+          hidden
+        ></div>
         <div
           id="songUploadError"
           class="library-sheet-error"

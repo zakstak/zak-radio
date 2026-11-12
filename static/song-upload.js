@@ -173,6 +173,8 @@ export function initSongUpload({ library = null } = {}) {
   const fields = document.getElementById("songUploadFields");
   const submit = document.getElementById("songUploadSubmit");
   const status = document.getElementById("songUploadStatus");
+  const statusActions = document.getElementById("songUploadStatusActions");
+  const resultActions = document.getElementById("songUploadResultActions");
   const problem = document.getElementById("songUploadError");
   const progressRow = document.getElementById("songUploadProgressRow");
   const progress = document.getElementById("songUploadProgress");
@@ -186,7 +188,9 @@ export function initSongUpload({ library = null } = {}) {
   let busy = false;
   let limits = null;
   let audioCheck = null;
-  let revealOnClose = "";
+  // Set while Show song closes the dialog, so its close handler leaves
+  // focus on the song instead of returning it to Add song.
+  let keepFocus = false;
 
   async function checkAccess() {
     try {
@@ -319,9 +323,8 @@ export function initSongUpload({ library = null } = {}) {
   // ---- Showing a song: Library finds it, the way a search would.
   function showSong(trackId) {
     if (dialog.open) {
-      revealOnClose = trackId;
+      keepFocus = true;
       dialog.close();
-      return;
     }
     clearProblem(resultError);
     if (!library?.showTrack(trackId)) returnFocus(open);
@@ -365,20 +368,44 @@ export function initSongUpload({ library = null } = {}) {
     showProblem(resultError, failure.message, actionsFor(failure, "page"));
   }
 
+  // A finished upload says so in the dialog and under the Library buttons,
+  // each with Show song, so the outcome is there whether or not the dialog
+  // was closed while it uploaded.
+  function showAdded(message, trackId) {
+    status.textContent = message;
+    result.textContent = message;
+    for (const row of [statusActions, resultActions]) {
+      row.replaceChildren(
+        ...(trackId
+          ? [actionButton("Show song", () => showSong(trackId))]
+          : []),
+      );
+      row.hidden = !trackId;
+    }
+  }
+
+  function clearAdded() {
+    for (const row of [statusActions, resultActions]) {
+      row.hidden = true;
+      row.replaceChildren();
+    }
+  }
+
   async function succeed(track) {
     form.reset();
-    result.textContent = `“${track.title}” was added to the library.`;
-    status.textContent = result.textContent;
+    let listed = true;
     try {
       await window.ZakCatalog.load(true);
     } catch {
-      result.textContent = "Song added. Refresh Library to see it.";
+      listed = false;
     }
-    if (dialog.open) dialog.close();
+    const title = trackTitle(track.id) || track.title;
+    if (listed) showAdded(`“${title}” is now in Library.`, track.id);
+    else showAdded(`“${title}” is now in Library. Refresh Library to see it.`);
+    if (dialog.open) statusActions.querySelector("button")?.focus();
   }
 
-  function setBusy(on) {
-    busy = on;
+  function lockForm(on) {
     fields.disabled = on;
     progressRow.hidden = !on;
     if (on) {
@@ -391,8 +418,13 @@ export function initSongUpload({ library = null } = {}) {
   }
 
   open.addEventListener("click", () => {
+    keepFocus = false;
     clearProblem(resultError);
-    if (!busy) status.textContent = "";
+    if (!busy) {
+      status.textContent = "";
+      statusActions.hidden = true;
+      statusActions.replaceChildren();
+    }
     dialog.showModal();
     if (!busy)
       (form.querySelector('[aria-invalid="true"]') || inputs.title).focus();
@@ -402,10 +434,8 @@ export function initSongUpload({ library = null } = {}) {
     .addEventListener("click", () => dialog.close());
   dialog.addEventListener("close", () => {
     if (busy) result.textContent = status.textContent;
-    if (revealOnClose) {
-      const trackId = revealOnClose;
-      revealOnClose = "";
-      showSong(trackId);
+    if (keepFocus) {
+      keepFocus = false;
       return;
     }
     returnFocus(open);
@@ -414,34 +444,44 @@ export function initSongUpload({ library = null } = {}) {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (busy) return;
-    // Try again goes with the error it belonged to; focus moves first.
-    if (problem.contains(document.activeElement)) submit.focus();
-    clearProblem(problem);
-    if (!limits) await checkAccess();
-    if (!(await validate())) return;
-    const title = inputs.title.value.trim();
-    // Read the form before its fields are disabled, which drops them.
-    const body = new FormData(form);
-    // Focus stays on the button while the fields are locked.
-    if (fields.contains(document.activeElement)) submit.focus();
-    setBusy(true);
-    progress.value = 0;
-    status.textContent = `Uploading “${title}”…`;
-    result.textContent = dialog.open ? "" : status.textContent;
-    clearProblem(resultError);
+    // Claimed before anything waits: a second submit while the file is
+    // still being read would otherwise send a second, empty request.
+    busy = true;
+    let outcome = null;
     let sent = false;
-    const outcome = await sendSong(body, {
-      onProgress(fraction) {
-        progress.value = Math.round(fraction * 100);
-      },
-      onSent() {
-        sent = true;
-        progress.removeAttribute("value");
-        status.textContent = `Checking “${title}”…`;
-        if (!dialog.open) result.textContent = status.textContent;
-      },
-    });
-    setBusy(false);
+    try {
+      // Try again goes with the error it belonged to; focus moves first.
+      if (problem.contains(document.activeElement)) submit.focus();
+      clearProblem(problem);
+      if (!limits) await checkAccess();
+      if (!(await validate())) return;
+      const title = inputs.title.value.trim();
+      // Read the form before its fields are disabled, which drops them.
+      const body = new FormData(form);
+      // Focus stays on the button while the fields are locked.
+      if (fields.contains(document.activeElement)) submit.focus();
+      lockForm(true);
+      progress.value = 0;
+      clearAdded();
+      status.textContent = `Uploading “${title}”…`;
+      result.textContent = dialog.open ? "" : status.textContent;
+      clearProblem(resultError);
+      outcome = await sendSong(body, {
+        onProgress(fraction) {
+          progress.value = Math.round(fraction * 100);
+        },
+        onSent() {
+          sent = true;
+          progress.removeAttribute("value");
+          status.textContent = `Checking “${title}”…`;
+          if (!dialog.open) result.textContent = status.textContent;
+        },
+      });
+    } finally {
+      lockForm(false);
+      busy = false;
+    }
+    if (!outcome) return;
     if (outcome.ok) await succeed(outcome.track);
     else await fail(outcome.error, sent);
   });

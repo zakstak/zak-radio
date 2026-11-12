@@ -91,9 +91,10 @@ messages, and announcements.
 - **You’re signed out**: the error heading for an action that needs a sign-in
   ("You’re signed out, so the song wasn’t added."). It offers **Sign in again**
   and **Try again**.
-- **Show song**: finds a song in Library and puts focus on it. An upload that is
-  already in Library says "This song is already in Library as “Harbor Lights”."
-  and offers **Show song**.
+- **Show song**: finds a song in Library and puts focus on it. A finished upload
+  says "“Harbor Lights” is now in Library." and one that is already there says
+  "This song is already in Library as “Harbor Lights”."; both offer **Show
+  song**.
 - Limits use everyday units: "32 MB", "20 minutes", "about 60,000 characters".
   Not MiB, KiB, bytes, "UTF-8", or "MPEG-1 or MPEG-2 Layer III".
 - **API access**: the dialog for upload keys. Say "agent", not "LLM"; a new key
