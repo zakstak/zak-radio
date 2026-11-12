@@ -84,6 +84,25 @@ function sendSong(body, { onProgress, onSent }) {
   });
 }
 
+// Reloads the catalog until it lists the song. The server's own "catalog
+// changed" event also forces a reload, and two forced reloads cancel each
+// other, so a cancelled one waits for the one still running.
+async function catalogLists(trackId) {
+  let force = true;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await window.ZakCatalog.load(force);
+    } catch (error) {
+      if (error?.name !== "AbortError") return false;
+      force = false;
+      continue;
+    }
+    if (trackTitle(trackId)) return true;
+    force = true;
+  }
+  return Boolean(trackTitle(trackId));
+}
+
 function trackTitle(trackId) {
   const track = window.ZakCatalog?.tracks?.find((item) => item.id === trackId);
   if (!track) return "";
@@ -347,7 +366,7 @@ export function initSongUpload({ library = null } = {}) {
 
   async function fail(error, sent) {
     if (error.code === "duplicate_audio" && !trackTitle(error.existingTrackId))
-      await window.ZakCatalog.load(true).catch(() => {});
+      await catalogLists(error.existingTrackId);
     const failure = describeFailure(error, sent);
     if (error.status === 401) checkAccess();
     status.textContent = "";
@@ -393,12 +412,7 @@ export function initSongUpload({ library = null } = {}) {
 
   async function succeed(track) {
     form.reset();
-    let listed = true;
-    try {
-      await window.ZakCatalog.load(true);
-    } catch {
-      listed = false;
-    }
+    const listed = await catalogLists(track.id);
     const title = trackTitle(track.id) || track.title;
     if (listed) showAdded(`“${title}” is now in Library.`, track.id);
     else showAdded(`“${title}” is now in Library. Refresh Library to see it.`);
