@@ -2340,7 +2340,6 @@ export function initLibrary({ router } = {}) {
         state.pendingDeletes.set(id, {
           station,
           height: tileFor(id)?.getBoundingClientRect().height || 0,
-          timer: 0,
         });
         commitDelete(id);
         focusAfterRemoval(id);
@@ -2367,9 +2366,7 @@ export function initLibrary({ router } = {}) {
     text.append(
       element("span", "", pending.committing ? "Deleting " : "Deleted "),
       element("strong", "", quote(pending.station.name)),
-      pending.committing
-        ? ""
-        : " · Undo within 10 seconds or before leaving Library.",
+      pending.committing ? "" : " · Undo stays until your next action.",
     );
     if (pending.committing) {
       tile.append(text);
@@ -2628,16 +2625,16 @@ export function initLibrary({ router } = {}) {
     if (!tileFor(stationId)) focusVisible(els.newStation);
   }
 
-  // Each inline Undo has its own predictable lifetime, independent of notices.
+  // A deleted station's inline Undo stays until the listener's next action,
+  // like every Undo: a press anywhere outside the deletes (another Delete,
+  // an inline Undo, or the menu that holds Delete keep them), leaving
+  // Library, or hiding or closing the page. Only then does the delete reach
+  // the server.
   function requestDelete(station) {
     const id = station.station_id;
     const height = tileFor(id)?.getBoundingClientRect().height || 0;
     state.deleteErrors.delete(id);
-    state.pendingDeletes.set(id, {
-      station,
-      height,
-      timer: window.setTimeout(() => commitDelete(id), 10000),
-    });
+    state.pendingDeletes.set(id, { station, height });
     renderStations();
     tileFor(id)
       ?.querySelector('[data-control="undo"]')
@@ -2653,14 +2650,27 @@ export function initLibrary({ router } = {}) {
 
   function announceDeletes() {
     announce(
-      "Station removed. Undo in its place within 10 seconds or before leaving Library.",
+      "Station deleted. Undo stays in its place until your next action.",
     );
   }
+
+  // The press finishes first: committing repaints the station list, which
+  // would otherwise replace the control that was pressed under its handler.
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (
+        waitingDeletes().length &&
+        !event.target.closest?.("[data-keep-notice]")
+      )
+        window.setTimeout(() => commitDeletes());
+    },
+    { capture: true },
+  );
 
   function undoDelete(stationId) {
     const pending = state.pendingDeletes.get(stationId);
     if (!pending || pending.committing) return;
-    window.clearTimeout(pending.timer);
     state.pendingDeletes.delete(stationId);
     renderStations();
     highlightTile(stationId);
@@ -2678,23 +2688,16 @@ export function initLibrary({ router } = {}) {
   async function commitDelete(stationId, { keepalive = false } = {}) {
     const pending = state.pendingDeletes.get(stationId);
     if (!pending || pending.committing) return;
-    window.clearTimeout(pending.timer);
     pending.committing = true;
-    if (!keepalive) renderStations({ force: true });
-    const request = window.ZakAPI(
-      `/api/stations/${encodeURIComponent(stationId)}`,
-      {
+    renderStations({ force: true });
+    // keepalive lets the request outlive a page that is closing or that a
+    // phone suspends; a page that stays (or comes back) still finishes it.
+    try {
+      await window.ZakAPI(`/api/stations/${encodeURIComponent(stationId)}`, {
         method: "DELETE",
         body: { owner_token: ownerToken(stationId) },
         keepalive,
-      },
-    );
-    if (keepalive) {
-      request.catch(() => {});
-      return;
-    }
-    try {
-      await request;
+      });
       finishDelete(stationId);
     } catch (error) {
       if (number(error?.status) === 404) {
@@ -2724,7 +2727,13 @@ export function initLibrary({ router } = {}) {
     renderStations();
   }
 
+  // A hidden page may be closed without warning, so hiding it counts as the
+  // next action too.
   window.addEventListener("pagehide", () => commitDeletes({ keepalive: true }));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden")
+      commitDeletes({ keepalive: true });
+  });
 
   // -------------------------------------------------------------- chooser
 
