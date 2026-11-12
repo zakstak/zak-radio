@@ -1120,20 +1120,21 @@ export function initReader({ router }) {
     } catch {}
   }
 
-  // The area between the sticky app bar and the docked player.
+  // The area between the sticky app bar and the bottom chrome (the dock
+  // and, on phones, the tab bar), less the notification above it while one
+  // shows (--notice-space; see createNotifier in player.js).
   function visibleBand() {
     const rail = document.querySelector(".app-rail");
     const railBottom =
       rail && getComputedStyle(rail).position !== "static"
         ? Math.max(0, rail.getBoundingClientRect().bottom)
         : 0;
-    const player =
-      parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue(
-          "--bottom-chrome",
-        ),
-      ) || 0;
-    return { top: railBottom, bottom: window.innerHeight - player };
+    const rootStyle = getComputedStyle(document.documentElement);
+    const covered = ["--bottom-chrome", "--notice-space"].reduce(
+      (sum, name) => sum + (parseFloat(rootStyle.getPropertyValue(name)) || 0),
+      0,
+    );
+    return { top: railBottom, bottom: window.innerHeight - covered };
   }
 
   // mode "follow": only scroll when the element is not comfortably visible.
