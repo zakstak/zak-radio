@@ -1715,11 +1715,11 @@ function renderTrackFacts(track, station) {
     ["Made with", providerName(track.source)],
     ["File size", fileSize(track.audio_bytes)],
   ].filter(([, value]) => value);
-  // Listening statistics read as a sentence, not a label and a value.
+  // Listening statistics read as a sentence, in Library's words.
   const stats = station
     ? skips
       ? `Skipped early ${plural(skips, "time")}.`
-      : "Listeners have let this song play through."
+      : "Never skipped early."
     : "";
   setText(els.trackStats, stats);
   els.trackStats.hidden = !stats;
@@ -2087,7 +2087,7 @@ function queueItem(track, index, editable) {
         const result = await postControl(
           action,
           { track_id: track.id, position: index },
-          { outcome: "The queue didn’t change" },
+          { outcome: "the queue didn’t change" },
         );
         if (state.stationId !== stationId) return;
         delete els.radioQueueTracks.dataset.key;

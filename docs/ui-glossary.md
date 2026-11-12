@@ -104,7 +104,8 @@ messages, and announcements.
   Badges use the same first words.
 - Station limits are said plainly: "You can keep up to 5 stations at once";
   never "slots".
-- **Skipped early**, not "early skips".
+- **Skipped early**, not "early skips": "Skipped early 3 times", "Never skipped
+  early".
 - **Oldest added first** / **Newest added first**, not "In the order added" or
   "Newest first". Library starts at Newest added first (Best match while
   searching) and remembers the listener's choice.
