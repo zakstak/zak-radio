@@ -145,7 +145,7 @@ const els = {
   pauseIcon: byId("pauseIcon"),
   listenNote: byId("listenNote"),
   listenAlternatives: byId("listenAlternatives"),
-  listenMainMeanwhile: byId("listenMainMeanwhile"),
+  listenMain: byId("listenMain"),
   like: byId("like"),
   likeCount: byId("likeCount"),
   dislike: byId("dislike"),
@@ -3165,7 +3165,9 @@ async function primaryAction() {
   );
 }
 
-async function listenToMainMeanwhile() {
+// While waiting for a paused station, "Listen to All songs" switches to All
+// songs instead, which stops waiting.
+async function listenToMain() {
   const previous = { id: state.stationId, label: stationLabel() };
   state.autoListen = false;
   state.userActivatedAudio = true;
@@ -4196,7 +4198,7 @@ els.stationOptions.addEventListener("click", async (event) => {
 
 // Choosing a station while listening means "play this". A live station plays
 // at once; a paused one this browser controls starts in the same step, with
-// Undo; one it doesn't control is waited for, with the way back. Back and
+// Undo; one it doesn't control is waited for, as Radio itself shows. Back and
 // Forward (fromHistory) keep listening to a live station but never start
 // one for everyone.
 async function tuneTo(stationId, { fromHistory = false } = {}) {
@@ -4250,12 +4252,10 @@ async function tuneTo(stationId, { fromHistory = false } = {}) {
     });
     return;
   }
+  // The big button and its note say this device is waiting, with Listen to
+  // All songs beside them, and the status region announces it.
   state.autoListen = true;
   renderStation();
-  notify(
-    `“${stationLabel()}” is paused by its owner. You’ll hear it as soon as they start it.`,
-    { action: back },
-  );
 }
 
 async function returnToStation(previous) {
@@ -4330,7 +4330,7 @@ els.endStation.addEventListener("click", async () => {
     notify(result.message, { tone: "error" });
   }
 });
-els.listenMainMeanwhile.addEventListener("click", listenToMainMeanwhile);
+els.listenMain.addEventListener("click", listenToMain);
 els.stationRandomMode.addEventListener("change", (event) => {
   if (!event.target.matches('input[type="radio"]')) return;
   void setRandomMode(radioGroupValue(els.stationRandomMode));

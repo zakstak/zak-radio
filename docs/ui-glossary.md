@@ -31,7 +31,9 @@ messages, and announcements.
   doesn't control is waited for (**Listen when it starts**).
 - **Listen when it starts** / **Stop waiting**: only for listen-only listeners.
   This device waits for a paused station and plays it as soon as its owner
-  starts it.
+  starts it. The note under the button says so, and **Listen to All songs**
+  beside it switches to All songs instead, which stops waiting. Waiting needs no
+  notification of its own.
 - **Shared controls**: the group of station-wide controls on All songs. On Radio
   it comes after this device's own controls (Listen and the song's actions); the
   station name and **Change** stay at the top. On a station you made, the same
