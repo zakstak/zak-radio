@@ -208,11 +208,11 @@
                 id="toggleDetails"
                 class="button-quiet details-toggle"
                 type="button"
-                aria-expanded="false"
-                aria-controls="promptPanel"
+                aria-haspopup="dialog"
+                aria-controls="songDetailsSheet"
                 hidden
               >
-                <span id="toggleDetailsLabel">Song details</span
+                <span>Song details</span
                 ><svg
                   class="disclosure-chevron"
                   viewBox="0 0 24 24"
@@ -312,11 +312,11 @@
               <p id="listenNote" class="listen-note">On this device only</p>
               <div id="listenAlternatives" class="listen-alternatives" hidden>
                 <button
-                  id="listenMainMeanwhile"
+                  id="listenMain"
                   class="button-quiet listen-alternative"
                   type="button"
                 >
-                  Listen to All songs meanwhile
+                  Listen to All songs
                 </button>
               </div>
             </div>
@@ -689,7 +689,27 @@
                 >No repeats</span
               >
             </summary>
+            <div
+              id="radioSettingsReadOnly"
+              class="radio-settings-read-only"
+              hidden
+            >
+              <p class="field-hint">
+                Listen-only · only its owner can change these.
+              </p>
+              <dl class="track-facts">
+                <div>
+                  <dt>Playback order</dt>
+                  <dd id="radioSettingsOrder">No repeats</dd>
+                </div>
+                <div>
+                  <dt>Skip disliked</dt>
+                  <dd id="radioSettingsSkip">Off</dd>
+                </div>
+              </dl>
+            </div>
             <fieldset
+              id="radioProgramming"
               class="radio-programming"
               aria-describedby="radioProgrammingNote"
             >
@@ -1550,12 +1570,7 @@
         <p id="stationAccess" class="station-note">
           <span class="skeleton skeleton-line">Checking this station</span>
         </p>
-        <div
-          id="stationMenu"
-          class="station-sheet-actions"
-          role="group"
-          aria-label="This station"
-        >
+        <div id="stationMenu" class="station-sheet-actions">
           <button id="editStation" class="button" type="button" hidden>
             Edit this station
           </button>
@@ -1687,6 +1702,9 @@
           <div id="lyricsSheetReactions" class="lyrics-sheet-reactions"></div>
           <div id="lyricsSheetShared" class="lyrics-sheet-shared" hidden>
             <span id="lyricsSheetScope"></span>
+            <button id="lyricsSheetPause" class="button" type="button">
+              Pause for everyone
+            </button>
             <button id="lyricsSheetSkip" class="button" type="button">
               Skip for everyone
             </button>

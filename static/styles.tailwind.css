@@ -1897,12 +1897,9 @@ html[data-zs-theme="radio"] {
     @apply m-0 text-[13px] leading-5 text-radio-muted lg:text-sm;
     min-height: 20px;
   }
-  /* Song details open in place, under the song's own metadata. */
+  /* Song details open in a sheet, from under the song's own metadata. */
   .details-toggle {
     @apply -ml-1 min-h-11 justify-self-start px-1 text-[13px] text-radio-accent-readable hover:bg-transparent lg:text-sm;
-  }
-  .details-toggle[aria-expanded="true"] .disclosure-chevron {
-    rotate: 180deg;
   }
   /* The same heading style as every other error state. */
   .radio-stage[data-state="error"] .track-title {
@@ -2071,6 +2068,13 @@ html[data-zs-theme="radio"] {
   .radio-programming .field-hint {
     @apply m-0;
   }
+  /* Listen-only listeners read the settings instead of disabled controls. */
+  .radio-settings-read-only {
+    @apply grid min-w-0 gap-3 pb-2;
+  }
+  .radio-settings-read-only .field-hint {
+    @apply m-0;
+  }
   /* One row per station: a check shows it has the song, and changing it
      adds or removes the song at once. New station is the last row. */
   .add-station-choices {
@@ -2178,7 +2182,12 @@ html[data-zs-theme="radio"] {
     width: 16px;
     height: 16px;
   }
+  /* Presence has a line of its own, aligned with the text above it (past
+     the 18px people mark, its margin, and the row gap), so it never runs on
+     from the note. */
   .station-presence {
+    flex-basis: 100%;
+    padding-left: 26px;
     font-size: 12px;
     font-weight: 400;
     color: var(--zs-frost-mid);
@@ -2803,11 +2812,12 @@ html[data-zs-theme="radio"] {
     @apply w-auto;
     flex-basis: 100%;
   }
-  /* Song actions become icons; their names stay for assistive tech. */
+  /* Song actions become icons; their names stay for assistive tech. Add
+     keeps its label at every width. */
   .listener-controls .track-action {
     @apply px-2;
   }
-  .listener-controls .track-action > span:not(.reaction-count) {
+  .listener-controls .track-action > span:not(.reaction-count, .song-add-label) {
     @apply sr-only;
   }
   .station-switch {
@@ -2848,7 +2858,11 @@ html[data-zs-theme="radio"] {
   .station-controls-note {
     grid-column: 2;
   }
-  .station-presence,
+  .station-presence {
+    grid-column: 2;
+    padding-left: 0;
+    margin-top: 2px;
+  }
   .station-share-nearby {
     grid-column: 1 / -1;
     margin-top: 6px;
@@ -3030,11 +3044,18 @@ html[data-zs-theme="radio"] {
   .radio-primary .station-switch {
     min-height: 44px;
   }
-  .radio-primary .station-switch-status {
-    display: none;
-  }
+  /* Phones keep Live or Paused, as a compact badge before the name. */
   .radio-primary .station-switch-copy {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .radio-primary .station-switch-status {
+    flex-shrink: 0;
+    padding: 1px 6px 0;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    line-height: 16px;
   }
   .radio-primary .listen-button {
     padding-block: 6px;
@@ -3522,8 +3543,9 @@ html[data-zs-theme="radio"] {
   max-width: none;
 }
 
+/* Full-screen lyrics read in one centered column, about 720px of text. */
 .lyrics-sheet-body {
-  max-width: 1200px;
+  max-width: 800px;
 }
 
 .lyrics-sheet .lyrics-context {

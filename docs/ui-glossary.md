@@ -31,18 +31,23 @@ messages, and announcements.
   doesn't control is waited for (**Listen when it starts**).
 - **Listen when it starts** / **Stop waiting**: only for listen-only listeners.
   This device waits for a paused station and plays it as soon as its owner
-  starts it.
+  starts it. The note under the button says so, and **Listen to All songs**
+  beside it switches to All songs instead, which stops waiting. Waiting needs no
+  notification of its own.
 - **Shared controls**: the group of station-wide controls on All songs. On Radio
   it comes after this device's own controls (Listen and the song's actions); the
   station name and **Change** stay at the top. On a station you made, the same
   group is titled **Your station** or **Your temporary station**, with "Anyone
   on Zak Radio can listen · only you can change it".
 - **Listen-only · shared by its owner**: what a listener who can't control the
-  station sees in that place, and how the station sheet begins.
+  station sees in that place, and how the station sheet begins. What they can't
+  change is said one way: "only its owner can change the order", not "someone
+  with editing access". Settings they can't change are shown as a summary, not
+  as disabled controls.
 - **Pause for everyone**, **Skip for everyone**, **Resume for everyone**:
   station-wide changes on every station you control. They live in Shared
-  controls and the full player. Temporary stations use labeled transport icons
-  on phones to keep all five actions in one row.
+  controls, the full player, and full-screen lyrics. Temporary stations use
+  labeled transport icons on phones to keep all five actions in one row.
 - Playback settings (**Playback order**, **Skip disliked**) change the station
   for everyone, so they confirm with **Undo** like Pause and Skip.
 - **Shuffle** / **Repeat**: a temporary station's play order, labelled toggles
@@ -104,7 +109,8 @@ messages, and announcements.
   Badges use the same first words.
 - Station limits are said plainly: "You can keep up to 5 stations at once";
   never "slots".
-- **Skipped early**, not "early skips".
+- **Skipped early**, not "early skips": "Skipped early 3 times", "Never skipped
+  early".
 - **Oldest added first** / **Newest added first**, not "In the order added" or
   "Newest first". Library starts at Newest added first (Best match while
   searching) and remembers the listener's choice.
