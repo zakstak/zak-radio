@@ -404,10 +404,19 @@ export function createLyricsView({
       line.append(secondary);
     }
     if (seekable) {
-      const hint = document.createElement("span");
-      hint.className = "sr-only";
-      hint.textContent = `, play from ${timeLabel(cue.start)}`;
-      line.append(hint);
+      // The name is set from the same words: visually hidden text would be
+      // read with a stray space before its comma ("…after rain , play from
+      // 0:06").
+      line.setAttribute(
+        "aria-label",
+        [
+          `${cue.text}${cue.quality_status === "warning" ? " (uncertain)" : ""}`,
+          cue.secondary_text ? `backing vocal: ${cue.secondary_text}` : "",
+          `play from ${timeLabel(cue.start)}`,
+        ]
+          .filter(Boolean)
+          .join(", "),
+      );
       line.addEventListener("click", () => {
         if (!canSeek()) return;
         state.following = true;
