@@ -41,6 +41,9 @@ const PAGE_SIZE = 60;
 const SHELF_SIZE = 12;
 const RECENT_WINDOW = 180 * 24 * 60 * 60 * 1000;
 
+// What trackDisplayTitle (app.js) calls a song with no usable title.
+const UNTITLED = "Untitled";
+
 const KIND_LABELS = {
   list: "Hand-picked station",
   filter: "Filter station",
@@ -520,6 +523,21 @@ export function initLibrary({ router } = {}) {
   const quote = (text) => `“${text}”`;
   const displayTitle = (track) => window.ZakTrackDisplayTitle(track);
   const displayGroup = (track) => window.ZakTrackDisplayGroup(track) || "";
+  // Who made a song. Rows that leave out the collection still name it for
+  // an "Untitled" song (one with no usable title), so it can be told apart.
+  const byline = (track) =>
+    [
+      track.artist || "Zak",
+      displayTitle(track) === UNTITLED ? displayGroup(track) : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  // A new hand-picked station is named for its first song, unless that song
+  // has no title of its own.
+  const listName = (track) =>
+    track && displayTitle(track) !== UNTITLED
+      ? `${displayTitle(track)} and more`.slice(0, 80)
+      : "Hand-picked mix";
   const ownerToken = (stationId) =>
     window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
 
@@ -3024,10 +3042,10 @@ export function initLibrary({ router } = {}) {
       title.className = "editor-preview-title";
       title.textContent = entry.title;
       row.append(title);
-      if (entry.track.artist) {
+      if (entry.track.artist || entry.title === UNTITLED) {
         const artist = document.createElement("span");
         artist.className = "editor-preview-artist";
-        artist.textContent = entry.track.artist;
+        artist.textContent = byline(entry.track);
         row.append(artist);
       }
       return row;
@@ -3128,10 +3146,7 @@ export function initLibrary({ router } = {}) {
     );
     if (track) {
       const meta = element("span", "tabular");
-      meta.textContent = [
-        track.artist || "Zak",
-        timeLabel(track.duration),
-      ].join(" · ");
+      meta.textContent = `${byline(track)} · ${timeLabel(track.duration)}`;
       copy.append(meta);
     }
     if (excerpt) {
@@ -3158,12 +3173,8 @@ export function initLibrary({ router } = {}) {
     if (!editor || editor.sourceType !== "list") return;
     const ids = editor.trackIds;
     const first = trackById(ids[0]);
-    if (
-      !editor.stationId &&
-      first &&
-      els.editorName.value === "Hand-picked mix"
-    ) {
-      els.editorName.value = `${displayTitle(first)} and more`.slice(0, 80);
+    if (!editor.stationId && els.editorName.value === "Hand-picked mix") {
+      els.editorName.value = listName(first);
     }
 
     if (focusIndex < 0 && els.editorMembers.contains(document.activeElement)) {
@@ -3441,9 +3452,7 @@ export function initLibrary({ router } = {}) {
     els.editorName.value = editing
       ? station.name
       : kind === "list"
-        ? track
-          ? `${displayTitle(track)} and more`.slice(0, 80)
-          : "Hand-picked mix"
+        ? listName(track)
         : defaultFilterName(query, mode);
     setRadioGroupValue(els.editorRandom, station?.random_mode || "deck");
     els.editorSkip.checked = Boolean(station?.skip_disliked);
@@ -4038,7 +4047,7 @@ export function initLibrary({ router } = {}) {
         copy.append(
           element("span", "library-on-air-kicker", index ? "Next" : "Now"),
           element("span", "library-on-air-title", displayTitle(track)),
-          element("span", "library-on-air-artist", track.artist || "Zak"),
+          element("span", "library-on-air-artist", byline(track)),
         );
         item.append(createArtwork(track, "library-on-air-art"), copy);
         if (!index) item.classList.add("is-now");

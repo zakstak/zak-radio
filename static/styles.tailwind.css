@@ -4891,10 +4891,14 @@ html[data-zs-theme="radio"] {
     height: 18px;
     fill: currentColor;
   }
+  /* Up to two lines, so an untitled song's collection doesn't push its
+     length out of view. */
   .editor-song-copy > span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .editor-song-copy .editor-song-excerpt {
     display: none;

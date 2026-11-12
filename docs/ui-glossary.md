@@ -80,6 +80,9 @@ messages, and announcements.
 
 - **Song description**, not "prompt" or "production notes": the musical
   description only.
+- **Untitled**: a song whose imported title isn't usable (a number or a lyric
+  section like "[Verse 1]") and that has no subject. Its collection appears
+  beside the title, never in place of it.
 - **Creation details**: the raw settings a song was made with (persona, seed),
   folded away under the song description.
 - A change that didn't go through says why with the error heading, then what

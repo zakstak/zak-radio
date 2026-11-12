@@ -310,6 +310,10 @@ function weakTrackLabel(value) {
   return false;
 }
 
+// A weak imported title ("2", "[Verse 1]") gives way to the song's subject.
+// Without one the song is "Untitled", never its collection's name: that
+// would read as the collection itself, and every view already shows the
+// collection beside the title.
 function trackDisplayTitle(track) {
   const title = cleanedTrackLabel(track?.title);
   if (!weakTrackLabel(title)) return title;
@@ -317,9 +321,7 @@ function trackDisplayTitle(track) {
     String(track?.summary || "").split(/\r?\n/, 1)[0],
   );
   if (!weakTrackLabel(subject)) return subject;
-  const group = cleanedTrackLabel(track?.group);
-  if (!weakTrackLabel(group)) return group;
-  return "Original track";
+  return "Untitled";
 }
 
 function trackDisplayGroup(track) {
