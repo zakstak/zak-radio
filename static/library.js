@@ -1917,6 +1917,10 @@ export function initLibrary({ router } = {}) {
           .filter(Boolean)
           .join(" · "),
         reactions: window.ZakReactions?.view?.(track) || null,
+        // Add to station opens over the full player and returns to it.
+        add: window.ZakStations
+          ? { run: (opener) => window.ZakStations.addTrack(track, opener) }
+          : null,
         href: "/library",
         artwork: track.has_cover
           ? { src: window.ZakMediaURL.cover(track), seed: track.id }
