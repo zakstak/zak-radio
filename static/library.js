@@ -1115,12 +1115,12 @@ export function initLibrary({ router } = {}) {
   // along it.
 
   // Shelves and search results use the same song card and actions.
-  function songShelfItem(entry, index) {
+  function songShelfItem(entry, index, { likedBadge = true } = {}) {
     const item = element("li", "shelf-item");
     const card = createCard(
       { entry, fields: [], hidden: false },
       `shelf-${entry.track.id}`,
-      { shelf: true },
+      { shelf: true, likedBadge },
     );
     card.querySelectorAll("button, a, [tabindex]").forEach((node) => {
       node.tabIndex = -1;
@@ -1262,7 +1262,11 @@ export function initLibrary({ router } = {}) {
         shelf(
           "liked",
           "Liked by listeners",
-          liked.slice(0, SHELF_SIZE).map(songShelfItem),
+          liked
+            .slice(0, SHELF_SIZE)
+            .map((entry, index) =>
+              songShelfItem(entry, index, { likedBadge: false }),
+            ),
           () => {
             state.filter = "liked";
             state.limit = PAGE_SIZE;
@@ -1642,7 +1646,14 @@ export function initLibrary({ router } = {}) {
     return line;
   }
 
-  function createCard(result, index, { shelf = false } = {}) {
+  function createCard(
+    result,
+    index,
+    {
+      shelf = false,
+      likedBadge = state.filter !== "liked" && state.filter !== "mine",
+    } = {},
+  ) {
     const { entry } = result;
     const track = entry.track;
     const title = entry.title;
@@ -1667,15 +1678,23 @@ export function initLibrary({ router } = {}) {
     ) {
       heading.replaceChildren(title);
     }
-    // Liked is a small heart: on the artwork in the grid, at the end of the
-    // row in the list, so the artist name keeps its room.
-    if (track.liked) {
+    // Liked is a small heart, a mark rather than a control: on the artwork
+    // in the grid, at the end of the row in the list, so the artist name
+    // keeps its room. Where every song is liked (the Liked by listeners
+    // shelf and filter, and Your likes) it would say nothing. Screen
+    // readers hear it after the title, as the card's description; hidden
+    // text inside the title would join the card's name with a stray space
+    // before its comma.
+    let likedNote = null;
+    if (track.liked && likedBadge) {
       const badge = element("span", "track-card-liked-badge");
+      badge.setAttribute("aria-hidden", "true");
       badge.innerHTML =
-        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg>';
-      badge.title = "Liked by listeners";
+        '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg>';
       art.append(badge);
-      heading.append(element("span", "sr-only", ", liked by listeners"));
+      likedNote = element("span", "sr-only", "Liked by listeners");
+      likedNote.id = `${titleId}-liked`;
+      card.setAttribute("aria-describedby", likedNote.id);
     }
     const meta = element("p", "track-card-meta tabular");
     const artistName = track.artist || "Zak";
@@ -1696,7 +1715,9 @@ export function initLibrary({ router } = {}) {
     meta.append(artist);
     if (!list) meta.append(element("span", "track-card-sep", "·"), duration);
 
-    body.append(heading, meta);
+    body.append(heading);
+    if (likedNote) body.append(likedNote);
+    body.append(meta);
 
     // A match on the collection is said and shown, not left unexplained.
     if (groupMatched) body.append(matchedLabel(result, "group", entry.group));

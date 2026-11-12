@@ -4377,19 +4377,24 @@ html[data-zs-theme="radio"] {
   .track-card-duration {
     @apply shrink-0;
   }
+  /* A mark, not a control: a bare heart with no button-like chip behind
+     it, outlined in the canvas color so it reads on any artwork. */
   .track-card-liked-badge {
-    @apply pointer-events-none absolute top-2 left-2 grid size-7 place-items-center rounded-full;
-    background: rgb(8 10 12 / 72%);
+    @apply pointer-events-none absolute top-2 left-2 grid place-items-center;
     color: var(--zs-signal-readable);
   }
   .track-card-liked-badge svg {
-    @apply size-4 fill-current stroke-none;
+    @apply size-4 fill-current;
+    stroke: var(--zs-canvas);
+    stroke-width: 3px;
+    paint-order: stroke;
+    overflow: visible;
   }
   .track-card.is-list .track-card-liked-badge {
-    @apply top-auto -right-1 -bottom-1 left-auto size-5;
+    @apply top-auto -right-1 -bottom-1 left-auto;
   }
   .track-card.is-list .track-card-liked-badge svg {
-    @apply size-3;
+    @apply size-3.5;
   }
   .track-card.is-list .track-card-art {
     @apply overflow-visible;
