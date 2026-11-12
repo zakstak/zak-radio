@@ -134,6 +134,19 @@ test("failed refresh retains live apps and restores exactly one compact Fleet li
   }
 });
 
+test("a failed directory says to open Fleet and links it", async () => {
+  const { loadServiceSwitcher } = await switcher;
+  const { root, status } = launcher();
+  await loadServiceSwitcher(root, { fetchImpl: unavailable });
+  const [before, link, after] = status.children;
+  assert.equal(link.tag, "a");
+  assert.equal(link.href, fleetHref);
+  assert.equal(
+    `${before}${link.textContent}${after}`,
+    "Apps didn’t load. Open Fleet to see them all.",
+  );
+});
+
 test("initial fetch failure preserves the authored static Fleet fallback", async () => {
   const { loadServiceSwitcher } = await switcher;
   const { root, list } = launcher();

@@ -1378,6 +1378,13 @@ html[data-zs-theme="radio"] {
   font: 400 13px/1.5 var(--font-sans);
 }
 
+.app-rail .zs-service-switcher__status a {
+  color: var(--zs-signal-readable);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 @layer components {
   .app-rail {
     @apply z-40 min-w-0;
