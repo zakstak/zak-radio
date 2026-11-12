@@ -154,9 +154,11 @@ scripts against isolated fixtures.
 [`15d427e`](https://github.com/zakstak/saga-product/commit/15d427e4944d3b209530dfa34a65a15d5b074886).
 Its SHA-256 is
 `93259cde1c74b2bb619d5259ee4aac8de4d70b7809179f9457ca0f8be8800c88`. The service
-switcher keeps Zak Radio's compact launcher tiles (name and monogram) while
-sharing the canonical directory validation and reliable Fleet fallback.
-`npm test` checks that adaptation and failed-directory refresh behavior.
+switcher adapts the canonical one in two ways: compact launcher tiles (name and
+monogram), and a fallback note that links Fleet when the service directory
+doesn't load. It shares the canonical directory validation and reliable Fleet
+fallback. `npm test` checks those adaptations and failed-directory refresh
+behavior.
 
 Interface wording follows [docs/ui-glossary.md](docs/ui-glossary.md).
 
