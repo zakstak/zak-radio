@@ -1511,6 +1511,15 @@ function failureKind(error) {
   return kind === "busy" ? "server" : kind;
 }
 
+// A song list that didn't load keeps the failure's shared heading and says
+// what didn't happen under it, as Library does. An empty archive did load,
+// so it keeps Radio's own words.
+function unavailableCopy(kind, catalog) {
+  if (!catalog || kind === "empty") return UNAVAILABLE[kind];
+  const copy = problemCopy(kind);
+  return [copy.title, `The song list didn’t load. ${copy.text}`];
+}
+
 function setStationUnavailable(kind = "unreachable", { catalog = false } = {}) {
   if (audioController.is("radio")) audioController.clear("radio");
   if (!catalog) state.station = null;
@@ -1521,7 +1530,7 @@ function setStationUnavailable(kind = "unreachable", { catalog = false } = {}) {
   )
     state.lastFailure = state.stationError;
   resetNowPlaying();
-  const [title, detail] = UNAVAILABLE[state.stationError];
+  const [title, detail] = unavailableCopy(state.stationError, catalog);
   els.radioView.dataset.state = "error";
   els.coverSurface.classList.remove("skeleton");
   delete els.emptyCover.dataset.seed;
@@ -1531,7 +1540,7 @@ function setStationUnavailable(kind = "unreachable", { catalog = false } = {}) {
   els.emptyCover.innerHTML = ARTWORK_ICON;
   els.emptyCover.classList.remove("hidden");
   els.emptyCover.classList.add("grid");
-  els.title.textContent = catalog ? "Couldn’t load the song list" : title;
+  els.title.textContent = title;
   els.title.classList.remove("is-long");
   els.nowPlaying.classList.remove("has-long-title");
   els.source.hidden = true;
