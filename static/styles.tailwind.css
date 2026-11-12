@@ -159,6 +159,11 @@
   /* Everything fixed at the bottom: the dock and the tab bar. player.js
      measures it; this is the value before it does. */
   --bottom-chrome: calc(var(--player-height) + var(--tabbar-height));
+  /* A notification sits this far above the bottom chrome. While one shows,
+     player.js sets --notice-space to its height and a gap above and below,
+     and pages reserve it so it never covers their last controls. */
+  --notice-gap: 16px;
+  --notice-space: 0px;
   /* Unfilled progress keeps 3:1 or more on canvas, surface, and raised
      surfaces; the filled part is the light accent. */
   --track-rest: #6b7280;
@@ -264,6 +269,7 @@ html {
 @media (max-width: 639px) {
   :root {
     --tabbar-height: calc(56px + var(--safe-bottom));
+    --notice-gap: 8px;
   }
 }
 
@@ -274,11 +280,15 @@ html {
   html {
     @apply min-w-80 bg-radio-bg;
     scroll-padding-top: 72px;
-    scroll-padding-bottom: calc(var(--bottom-chrome) + 16px);
+    scroll-padding-bottom: calc(
+      var(--bottom-chrome) + var(--notice-space) + 16px
+    );
   }
   body {
     @apply m-0 min-w-80 overflow-x-hidden bg-radio-bg font-sans text-radio-fg antialiased;
-    padding-bottom: calc(var(--bottom-chrome) + var(--safe-bottom));
+    padding-bottom: calc(
+      var(--bottom-chrome) + var(--notice-space) + var(--safe-bottom)
+    );
     padding-left: var(--safe-left);
     padding-right: var(--safe-right);
   }
@@ -324,7 +334,7 @@ html {
   @media (max-width: 639px) {
     body {
       /* The tab bar already includes the safe area. */
-      padding-bottom: var(--bottom-chrome);
+      padding-bottom: calc(var(--bottom-chrome) + var(--notice-space));
     }
   }
 }
@@ -639,7 +649,7 @@ html {
   .snackbar {
     @apply fixed z-50 flex w-max max-w-[min(520px,calc(100vw-48px))] items-center gap-1 border border-radio-line-strong bg-radio-panel py-1 pr-1 pl-4 text-[14px] leading-5 text-radio-fg shadow-[0_18px_60px_rgba(0,0,0,.6)];
     left: max(24px, var(--safe-left));
-    bottom: calc(var(--bottom-chrome) + 16px);
+    bottom: calc(var(--bottom-chrome) + var(--notice-gap));
     border-radius: var(--zs-radius-compact);
     animation: snackbar-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -1061,7 +1071,6 @@ html {
       @apply w-auto max-w-none;
       left: max(8px, var(--safe-left));
       right: max(8px, var(--safe-right));
-      bottom: calc(var(--bottom-chrome) + 8px);
     }
   }
 }
@@ -1367,6 +1376,13 @@ html[data-zs-theme="radio"] {
   padding: 12px 16px 14px;
   color: var(--zs-frost-mid);
   font: 400 13px/1.5 var(--font-sans);
+}
+
+.app-rail .zs-service-switcher__status a {
+  color: var(--zs-signal-readable);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 @layer components {
@@ -3681,6 +3697,7 @@ html[data-zs-theme="radio"] {
   }
   .player:not(.has-extras) .player-extras,
   .player-open,
+  .player-expand,
   .player-line {
     display: none;
   }
@@ -3749,9 +3766,12 @@ html[data-zs-theme="radio"] {
   .player-sheet-note {
     @apply m-0 text-[13px] leading-5 text-radio-muted;
   }
-  /* This song: reactions and download, as on Radio. */
+  /* This song: Like, Dislike, Add, and Download share one row of equal
+     buttons, each icon above its label, as on Radio's phone layout. */
   .player-sheet-song {
-    @apply flex flex-wrap items-center gap-2;
+    @apply grid gap-2;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
   }
   .player-reaction {
     @apply gap-1.5;
@@ -3765,10 +3785,25 @@ html[data-zs-theme="radio"] {
     fill: currentColor;
   }
   .player-sheet-song .button {
-    @apply gap-1.5 px-3;
+    @apply min-h-14 min-w-0 flex-col gap-1 px-1 py-1.5 text-xs whitespace-nowrap;
   }
   .player-sheet-song .button svg {
     @apply size-[18px];
+  }
+  /* The count sits beside its label, under the icon. */
+  .player-sheet-song .player-reaction {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: center;
+    justify-items: center;
+    align-content: center;
+    gap: 4px;
+  }
+  .player-sheet-song .player-reaction svg {
+    grid-column: 1 / -1;
+  }
+  .player-sheet-song .reaction-count {
+    @apply px-1 text-xs leading-4;
   }
   .player-sheet-transport {
     @apply flex items-center justify-center gap-2;
@@ -3810,9 +3845,9 @@ html[data-zs-theme="radio"] {
     }
     .player-inner {
       @apply gap-x-2.5;
-      grid-template-columns: 44px minmax(0, 1fr) auto auto;
+      grid-template-columns: 44px minmax(0, 1fr) 16px auto auto;
       row-gap: 0;
-      grid-template-areas: "art meta extras transport" ". progress progress progress";
+      grid-template-areas: "art meta expand extras transport" ". progress progress progress progress";
     }
     .player-art {
       display: grid;
@@ -3836,11 +3871,24 @@ html[data-zs-theme="radio"] {
     .player-title {
       @apply my-0 min-h-0 py-0 hover:no-underline;
     }
+    /* The open button covers the art, the title, and the chevron. */
     .player-open {
       @apply relative z-[1] m-0 block min-h-12 cursor-pointer border-0 bg-transparent p-0;
       grid-row: 1;
-      grid-column: 1 / 3;
+      grid-column: 1 / 4;
       border-radius: var(--zs-radius-control);
+    }
+    /* The chevron that says the dock opens: its own column, so the
+       source line and title truncate before it. */
+    .player-expand {
+      @apply pointer-events-none grid place-items-center self-center;
+      grid-area: expand;
+      color: var(--zs-frost-mid);
+    }
+    .player-expand svg {
+      @apply size-4 fill-none stroke-current stroke-2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
     .player-open:focus-visible {
       outline-offset: 2px;
@@ -3897,17 +3945,6 @@ html[data-zs-theme="radio"] {
     }
     .player-progress .player-time {
       font-size: 12px;
-    }
-    .player-meta {
-      padding-right: 20px;
-    }
-    .player-open::after {
-      content: "⌃";
-      position: absolute;
-      right: 2px;
-      top: 0;
-      color: var(--zs-frost-mid);
-      font-size: 16px;
     }
   }
 }
@@ -3981,25 +4018,30 @@ html[data-zs-theme="radio"] {
   }
 }
 
+/* Shared controls keep their labels on one line: the buttons share a row,
+   at equal widths, when both fit, and take a row each when they don't. */
 .player-sheet-shared {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  flex-basis: 100%;
   gap: 8px;
-  grid-column: 1 / -1;
   padding-top: 12px;
   border-top: 1px solid var(--zs-line-soft);
 }
 
 .player-sheet-scope {
-  grid-column: 1 / -1;
+  flex-basis: 100%;
   margin: 0;
   color: var(--zs-frost-mid);
   font-size: 13px;
 }
 
 .player-sheet-shared .button {
-  min-width: 0;
-  white-space: normal;
+  flex: 1 1 0;
+  min-width: max-content;
+  column-gap: 6px;
+  padding-inline: 10px;
+  white-space: nowrap;
 }
 
 .player-toggle {
@@ -4023,7 +4065,7 @@ html[data-zs-theme="radio"] {
     display: none;
   }
   .player .player-inner {
-    grid-template-areas: "art meta extras transport";
+    grid-template-areas: "art meta expand extras transport";
   }
   .player .player-title {
     white-space: normal;
@@ -4032,9 +4074,6 @@ html[data-zs-theme="radio"] {
     -webkit-box-orient: vertical;
     line-height: 18px;
     font-size: 13px;
-  }
-  .player .player-meta {
-    padding-right: 8px;
   }
   .player .player-note {
     white-space: normal;

@@ -65,6 +65,11 @@ messages, and announcements.
 - **Try again**: the only retry label.
 - **Undo**: reverse the last change; it stays until your next action. Several
   deletes in a row stay undoable together.
+- Notifications: only one with **Undo** stays until your next action. Every
+  other notification, including **Try again** and ways back such as **Back to
+  “All songs”**, leaves on its own after a few seconds (8 with an action) and
+  waits while it’s pointed at or focused. Pages leave room for it, so it never
+  covers their last controls.
 - **Play from this paragraph**: the Reader control beside each paragraph.
 - **You stopped here**: marks where an opened Reader item resumes. The item
   opens at its header; **Resume** goes to the mark and plays from there.
@@ -104,5 +109,7 @@ messages, and announcements.
   "Newest first". Library starts at Newest added first (Best match while
   searching) and remembers the listener's choice.
 - **Search songs and lyrics**: Library's search, at every width.
+- **Playback position**: the progress bar or seek slider in every player (Radio,
+  the dock, and the full player). Not "Song progress".
 - **Fleet**, not "Saga Fleet".
 - Apostrophes are curly (’) everywhere in the interface.
