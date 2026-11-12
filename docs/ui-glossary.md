@@ -5,7 +5,9 @@ messages, and announcements.
 
 ## Stations
 
-- **All songs**: the main, shared station.
+- **All songs**: the main, shared station, and nothing else. Library's whole
+  song list is **Every song**: its heading, its jump link, and a filter
+  station's Include option.
 - **Temporary station**: a queue you control that ends 24 hours after its last
   use. Not "queue station" or "temporary queue".
 - **Hand-picked station**: a saved list of chosen songs. Not "list station".
@@ -60,6 +62,10 @@ messages, and announcements.
 - **Add**: the song action that opens Add to station, at every width.
 - **Preview**: play a song privately in Library. The player says "Preview" at
   every width.
+- **Your likes**: the Library filter for songs liked in this browser or app.
+  Filter stations can't use it, so saving it makes a hand-picked station of the
+  songs shown. A filter station started from it includes every song, and the
+  editor says why and offers that hand-picked station instead.
 - **Recently added**: songs added in the last six months, in the shelf, the
   filter chip, the list heading, and the filter station option. Not "Recent" or
   "Recent additions".
@@ -90,6 +96,9 @@ messages, and announcements.
 
 - **Song description**, not "prompt" or "production notes": the musical
   description only.
+- **Untitled**: a song whose imported title isn't usable (a number or a lyric
+  section like "[Verse 1]") and that has no subject. Its collection appears
+  beside the title, never in place of it.
 - **Creation details**: the raw settings a song was made with (persona, seed),
   folded away under the song description.
 - A change that didn't go through says why with the error heading, then what
@@ -113,7 +122,8 @@ messages, and announcements.
   early".
 - **Oldest added first** / **Newest added first**, not "In the order added" or
   "Newest first". Library starts at Newest added first (Best match while
-  searching) and remembers the listener's choice.
+  searching) and remembers the listener's choice. Best match is offered only
+  while searching.
 - **Search songs and lyrics**: Library's search, at every width.
 - **Playback position**: the progress bar or seek slider in every player (Radio,
   the dock, and the full player). Not "Song progress".

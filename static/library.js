@@ -18,15 +18,48 @@ import {
 const randomBrowserHex = window.ZakRandomBrowserHex;
 
 // One name per idea: the "Recently added" shelf, chip, heading, and filter
-// station option all say the same thing.
+// station option all say the same thing. "All songs" is the main station's
+// name, so the whole library is "Every song".
 const FILTER_LABELS = {
-  all: "All songs",
+  all: "Every song",
   liked: "Liked by listeners",
+  mine: "Your likes",
   covers: "Songs with artwork",
   recent: "Recently added",
 };
 const FILTER_KEYS = Object.keys(FILTER_LABELS);
-// Best match and newest are separate orders. Remember the selected order.
+// The filters a filter station can play: the server can't match Your likes,
+// which are kept in this browser. The station editor's Include options.
+export const STATION_FILTERS = ["all", "liked", "covers", "recent"];
+
+// What a new filter station starts from: the search and filter on screen.
+// This is the one place a Library filter becomes a station's filter. From
+// Your likes the station includes every song and the editor says why,
+// offering the liked songs shown as a hand-picked station instead, so the
+// station never claims likes it can't play.
+export function filterStationPrefill({
+  query = "",
+  filter = "all",
+  shownIds = [],
+} = {}) {
+  const prefill = {
+    query: query.slice(0, 160),
+    mode: STATION_FILTERS.includes(filter) ? filter : "all",
+    note: "",
+    shownIds: [],
+  };
+  if (filter !== "mine") return prefill;
+  return {
+    ...prefill,
+    note: shownIds.length
+      ? "Filter stations can’t use Your likes, which are kept in this browser. You can keep the songs you liked as a hand-picked station instead."
+      : "Filter stations can’t use Your likes, which are kept in this browser.",
+    shownIds,
+  };
+}
+
+// "match" is the order Library starts with: Best match while searching,
+// Newest added first otherwise. Remember the order the listener chooses.
 const SORT_VALUES = [
   "match",
   "newest",
@@ -40,6 +73,9 @@ const VIEW_VALUES = ["grid", "list"];
 const PAGE_SIZE = 60;
 const SHELF_SIZE = 12;
 const RECENT_WINDOW = 180 * 24 * 60 * 60 * 1000;
+
+// What trackDisplayTitle (app.js) calls a song with no usable title.
+const UNTITLED = "Untitled";
 
 const KIND_LABELS = {
   list: "Hand-picked station",
@@ -520,6 +556,24 @@ export function initLibrary({ router } = {}) {
   const quote = (text) => `“${text}”`;
   const displayTitle = (track) => window.ZakTrackDisplayTitle(track);
   const displayGroup = (track) => window.ZakTrackDisplayGroup(track) || "";
+  // Who made a song. Rows that leave out the collection still name it for
+  // an "Untitled" song (one with no usable title), so it can be told apart.
+  const byline = (track) =>
+    [
+      track.artist || "Zak",
+      displayTitle(track) === UNTITLED ? displayGroup(track) : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  // A new hand-picked station is named for its first song, unless that song
+  // has no title of its own.
+  const listName = (track) =>
+    track && displayTitle(track) !== UNTITLED
+      ? `${displayTitle(track)} and more`.slice(0, 80)
+      : "Hand-picked mix";
+  // Like and Dislike belong to this browser; Radio's reactions remember them.
+  const likedHere = (track) =>
+    Boolean(window.ZakReactions?.view?.(track)?.liked);
   const ownerToken = (stationId) =>
     window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
 
@@ -848,9 +902,24 @@ export function initLibrary({ router } = {}) {
     );
   }
 
+  const searching = () => Boolean(state.parsed.terms.length);
+
+  // The order in effect. "match", the order Library starts with, is Best
+  // match while searching and Newest added first otherwise; any other order
+  // is the listener's own choice and applies either way.
+  function activeSort() {
+    return state.sort === "match" && !searching() ? "newest" : state.sort;
+  }
+
   function syncControls() {
     if (els.search.value !== state.query) els.search.value = state.query;
-    if (els.sort.value !== state.sort) els.sort.value = state.sort;
+    // Best match means nothing without search words, so it is offered only
+    // while searching, and the control names the order the list is in.
+    const match = els.sort.querySelector('option[value="match"]');
+    match.hidden = !searching();
+    match.disabled = !searching();
+    const sort = activeSort();
+    if (els.sort.value !== sort) els.sort.value = sort;
     // "All" is pressed only when nothing narrows the list, group included.
     els.filters.forEach((chip) => {
       const key = chip.dataset.libraryFilter;
@@ -947,6 +1016,7 @@ export function initLibrary({ router } = {}) {
       if (state.artist && fold(track.artist) !== fold(state.artist))
         return false;
       if (state.filter === "liked") return Boolean(track.liked);
+      if (state.filter === "mine") return likedHere(track);
       if (state.filter === "covers") return Boolean(track.has_cover);
       if (state.filter === "recent")
         return newest > 0 && entry.date >= newest - RECENT_WINDOW;
@@ -965,9 +1035,7 @@ export function initLibrary({ router } = {}) {
       (a.entry.date || Infinity) - (b.entry.date || Infinity) ||
       byPosition(a, b);
     const sorters = {
-      match: state.parsed.terms.length
-        ? (a, b) => b.score - a.score || byPosition(a, b)
-        : (a, b) => b.entry.date - a.entry.date || byPosition(a, b),
+      match: (a, b) => b.score - a.score || byPosition(a, b),
       newest: (a, b) => b.entry.date - a.entry.date || byPosition(a, b),
       archive: oldest,
       title: (a, b) =>
@@ -979,7 +1047,7 @@ export function initLibrary({ router } = {}) {
         number(b.entry.track.play_count) - number(a.entry.track.play_count) ||
         byPosition(a, b),
     };
-    results.sort(sorters[state.sort] || byPosition);
+    results.sort(sorters[activeSort()] || byPosition);
     state.results = results;
   }
 
@@ -1077,12 +1145,12 @@ export function initLibrary({ router } = {}) {
   // along it.
 
   // Shelves and search results use the same song card and actions.
-  function songShelfItem(entry, index) {
+  function songShelfItem(entry, index, { likedBadge = true } = {}) {
     const item = element("li", "shelf-item");
     const card = createCard(
       { entry, fields: [], hidden: false },
       `shelf-${entry.track.id}`,
-      { shelf: true },
+      { shelf: true, likedBadge },
     );
     card.querySelectorAll("button, a, [tabindex]").forEach((node) => {
       node.tabIndex = -1;
@@ -1224,7 +1292,11 @@ export function initLibrary({ router } = {}) {
         shelf(
           "liked",
           "Liked by listeners",
-          liked.slice(0, SHELF_SIZE).map(songShelfItem),
+          liked
+            .slice(0, SHELF_SIZE)
+            .map((entry, index) =>
+              songShelfItem(entry, index, { likedBadge: false }),
+            ),
           () => {
             state.filter = "liked";
             state.limit = PAGE_SIZE;
@@ -1355,7 +1427,7 @@ export function initLibrary({ router } = {}) {
         els.count.textContent = `${countText()} · ${els.sort.selectedOptions[0].textContent}`;
         // With no results, the empty state says so; no "0 songs · Best match".
         els.count.hidden = !state.results.length;
-        els.jumpAllLabel.textContent = "All songs";
+        els.jumpAllLabel.textContent = FILTER_LABELS.all;
         const fragment = document.createDocumentFragment();
         if (!state.results.length) {
           fragment.append(emptyState());
@@ -1410,7 +1482,7 @@ export function initLibrary({ router } = {}) {
   function emptyState() {
     const scoped =
       state.filter !== "all" || Boolean(state.group) || Boolean(state.artist);
-    const showAll = button("Show all songs", "button", () => {
+    const showAll = button("Show every song", "button", () => {
       state.filter = "all";
       state.group = "";
       state.artist = "";
@@ -1431,7 +1503,7 @@ export function initLibrary({ router } = {}) {
         "empty",
         `No songs match ${quote(state.parsed.raw)}`,
         scoped
-          ? "Nothing matches with the current filter. Show all songs to search the whole library."
+          ? "Nothing matches with the current filter. Show every song to search the whole library."
           : "Check the spelling or try fewer words. Search covers titles, artists, lyrics, and song descriptions.",
         scoped ? [clear, showAll] : [clear],
       );
@@ -1441,6 +1513,14 @@ export function initLibrary({ router } = {}) {
         "empty",
         "No liked songs yet",
         "Like songs while they play on Radio, and they’ll collect here.",
+        [showAll],
+      );
+    }
+    if (state.filter === "mine") {
+      return stateBox(
+        "empty",
+        "You haven’t liked any songs here yet",
+        "Songs you like on Radio or in the player collect here. Likes are kept in this browser or app.",
         [showAll],
       );
     }
@@ -1549,10 +1629,11 @@ export function initLibrary({ router } = {}) {
         els.tracks.querySelector(".error-state button")?.focus();
       }
     });
-    // The same diagnosis and next step as Radio and Reader.
+    // The same heading, diagnosis, and next step as Radio and Reader; the
+    // sentence under it says what didn't happen.
     const box = problemState({
       error,
-      title: "Couldn’t load the song list",
+      text: `The song list didn’t load. ${problemCopy(error).text}`,
       actions: [retry],
     });
     box.classList.add("library-state");
@@ -1595,7 +1676,14 @@ export function initLibrary({ router } = {}) {
     return line;
   }
 
-  function createCard(result, index, { shelf = false } = {}) {
+  function createCard(
+    result,
+    index,
+    {
+      shelf = false,
+      likedBadge = state.filter !== "liked" && state.filter !== "mine",
+    } = {},
+  ) {
     const { entry } = result;
     const track = entry.track;
     const title = entry.title;
@@ -1620,15 +1708,23 @@ export function initLibrary({ router } = {}) {
     ) {
       heading.replaceChildren(title);
     }
-    // Liked is a small heart: on the artwork in the grid, at the end of the
-    // row in the list, so the artist name keeps its room.
-    if (track.liked) {
+    // Liked is a small heart, a mark rather than a control: on the artwork
+    // in the grid, at the end of the row in the list, so the artist name
+    // keeps its room. Where every song is liked (the Liked by listeners
+    // shelf and filter, and Your likes) it would say nothing. Screen
+    // readers hear it after the title, as the card's description; hidden
+    // text inside the title would join the card's name with a stray space
+    // before its comma.
+    let likedNote = null;
+    if (track.liked && likedBadge) {
       const badge = element("span", "track-card-liked-badge");
+      badge.setAttribute("aria-hidden", "true");
       badge.innerHTML =
-        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg>';
-      badge.title = "Liked by listeners";
+        '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"></path></svg>';
       art.append(badge);
-      heading.append(element("span", "sr-only", ", liked by listeners"));
+      likedNote = element("span", "sr-only", "Liked by listeners");
+      likedNote.id = `${titleId}-liked`;
+      card.setAttribute("aria-describedby", likedNote.id);
     }
     const meta = element("p", "track-card-meta tabular");
     const artistName = track.artist || "Zak";
@@ -1649,7 +1745,9 @@ export function initLibrary({ router } = {}) {
     meta.append(artist);
     if (!list) meta.append(element("span", "track-card-sep", "·"), duration);
 
-    body.append(heading, meta);
+    body.append(heading);
+    if (likedNote) body.append(likedNote);
+    body.append(meta);
 
     // A match on the collection is said and shown, not left unexplained.
     if (groupMatched) body.append(matchedLabel(result, "group", entry.group));
@@ -2312,7 +2410,6 @@ export function initLibrary({ router } = {}) {
         state.pendingDeletes.set(id, {
           station,
           height: tileFor(id)?.getBoundingClientRect().height || 0,
-          timer: 0,
         });
         commitDelete(id);
         focusAfterRemoval(id);
@@ -2339,9 +2436,7 @@ export function initLibrary({ router } = {}) {
     text.append(
       element("span", "", pending.committing ? "Deleting " : "Deleted "),
       element("strong", "", quote(pending.station.name)),
-      pending.committing
-        ? ""
-        : " · Undo within 10 seconds or before leaving Library.",
+      pending.committing ? "" : " · Undo stays until your next action.",
     );
     if (pending.committing) {
       tile.append(text);
@@ -2600,16 +2695,16 @@ export function initLibrary({ router } = {}) {
     if (!tileFor(stationId)) focusVisible(els.newStation);
   }
 
-  // Each inline Undo has its own predictable lifetime, independent of notices.
+  // A deleted station's inline Undo stays until the listener's next action,
+  // like every Undo: a press anywhere outside the deletes (another Delete,
+  // an inline Undo, or the menu that holds Delete keep them), leaving
+  // Library, or hiding or closing the page. Only then does the delete reach
+  // the server.
   function requestDelete(station) {
     const id = station.station_id;
     const height = tileFor(id)?.getBoundingClientRect().height || 0;
     state.deleteErrors.delete(id);
-    state.pendingDeletes.set(id, {
-      station,
-      height,
-      timer: window.setTimeout(() => commitDelete(id), 10000),
-    });
+    state.pendingDeletes.set(id, { station, height });
     renderStations();
     tileFor(id)
       ?.querySelector('[data-control="undo"]')
@@ -2625,14 +2720,27 @@ export function initLibrary({ router } = {}) {
 
   function announceDeletes() {
     announce(
-      "Station removed. Undo in its place within 10 seconds or before leaving Library.",
+      "Station deleted. Undo stays in its place until your next action.",
     );
   }
+
+  // The press finishes first: committing repaints the station list, which
+  // would otherwise replace the control that was pressed under its handler.
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (
+        waitingDeletes().length &&
+        !event.target.closest?.("[data-keep-notice]")
+      )
+        window.setTimeout(() => commitDeletes());
+    },
+    { capture: true },
+  );
 
   function undoDelete(stationId) {
     const pending = state.pendingDeletes.get(stationId);
     if (!pending || pending.committing) return;
-    window.clearTimeout(pending.timer);
     state.pendingDeletes.delete(stationId);
     renderStations();
     highlightTile(stationId);
@@ -2650,23 +2758,16 @@ export function initLibrary({ router } = {}) {
   async function commitDelete(stationId, { keepalive = false } = {}) {
     const pending = state.pendingDeletes.get(stationId);
     if (!pending || pending.committing) return;
-    window.clearTimeout(pending.timer);
     pending.committing = true;
-    if (!keepalive) renderStations({ force: true });
-    const request = window.ZakAPI(
-      `/api/stations/${encodeURIComponent(stationId)}`,
-      {
+    renderStations({ force: true });
+    // keepalive lets the request outlive a page that is closing or that a
+    // phone suspends; a page that stays (or comes back) still finishes it.
+    try {
+      await window.ZakAPI(`/api/stations/${encodeURIComponent(stationId)}`, {
         method: "DELETE",
         body: { owner_token: ownerToken(stationId) },
         keepalive,
-      },
-    );
-    if (keepalive) {
-      request.catch(() => {});
-      return;
-    }
-    try {
-      await request;
+      });
       finishDelete(stationId);
     } catch (error) {
       if (number(error?.status) === 404) {
@@ -2696,7 +2797,13 @@ export function initLibrary({ router } = {}) {
     renderStations();
   }
 
+  // A hidden page may be closed without warning, so hiding it counts as the
+  // next action too.
   window.addEventListener("pagehide", () => commitDeletes({ keepalive: true }));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden")
+      commitDeletes({ keepalive: true });
+  });
 
   // -------------------------------------------------------------- chooser
 
@@ -2957,15 +3064,25 @@ export function initLibrary({ router } = {}) {
 
   // -------------------------------------------------------------- editor
 
+  // The songs on screen, for a station that keeps them; a very long list
+  // isn't offered.
+  function shownTrackIds() {
+    const ids = state.results.map(({ entry }) => entry.track.id);
+    return ids.length <= 400 ? ids : [];
+  }
+
   function currentFilterPrefill() {
-    if (!onLibrary()) return { query: "", mode: "all" };
-    const query = state.query.trim() || state.group;
-    return { query: query.slice(0, 160), mode: state.filter };
+    if (!onLibrary()) return filterStationPrefill();
+    return filterStationPrefill({
+      query: state.query.trim() || state.group,
+      filter: state.filter,
+      shownIds: shownTrackIds(),
+    });
   }
 
   function defaultFilterName(query, mode) {
-    const base = FILTER_LABELS[mode] || "All songs";
-    // "All songs" is the built-in station's name; don't reuse it.
+    const base = FILTER_LABELS[mode] || FILTER_LABELS.all;
+    // "All songs" is the main station's name; don't reuse it.
     if (!query) return mode === "all" ? "Library mix" : base;
     const words = query.replace(/["“”]/g, "").trim();
     const name =
@@ -3028,10 +3145,10 @@ export function initLibrary({ router } = {}) {
       title.className = "editor-preview-title";
       title.textContent = entry.title;
       row.append(title);
-      if (entry.track.artist) {
+      if (entry.track.artist || entry.title === UNTITLED) {
         const artist = document.createElement("span");
         artist.className = "editor-preview-artist";
-        artist.textContent = entry.track.artist;
+        artist.textContent = byline(entry.track);
         row.append(artist);
       }
       return row;
@@ -3132,10 +3249,7 @@ export function initLibrary({ router } = {}) {
     );
     if (track) {
       const meta = element("span", "tabular");
-      meta.textContent = [
-        track.artist || "Zak",
-        timeLabel(track.duration),
-      ].join(" · ");
+      meta.textContent = `${byline(track)} · ${timeLabel(track.duration)}`;
       copy.append(meta);
     }
     if (excerpt) {
@@ -3162,12 +3276,8 @@ export function initLibrary({ router } = {}) {
     if (!editor || editor.sourceType !== "list") return;
     const ids = editor.trackIds;
     const first = trackById(ids[0]);
-    if (
-      !editor.stationId &&
-      first &&
-      els.editorName.value === "Hand-picked mix"
-    ) {
-      els.editorName.value = `${displayTitle(first)} and more`.slice(0, 80);
+    if (!editor.stationId && els.editorName.value === "Hand-picked mix") {
+      els.editorName.value = listName(first);
     }
 
     if (focusIndex < 0 && els.editorMembers.contains(document.activeElement)) {
@@ -3410,6 +3520,7 @@ export function initLibrary({ router } = {}) {
     mode = "all",
     note = "",
     shownIds = [],
+    trackIds = track ? [track.id] : [],
   } = {}) {
     if (state.editor?.saving) return;
     closeMenu(false);
@@ -3421,11 +3532,7 @@ export function initLibrary({ router } = {}) {
       sourceType: kind,
       original: station ? { ...station } : null,
       originalName: station?.name || "",
-      trackIds: station
-        ? [...(station.track_ids || [])]
-        : track
-          ? [track.id]
-          : [],
+      trackIds: [...(station ? station.track_ids || [] : trackIds)],
       opener: opener || document.activeElement,
       creationAttempt: null,
       saving: false,
@@ -3445,9 +3552,7 @@ export function initLibrary({ router } = {}) {
     els.editorName.value = editing
       ? station.name
       : kind === "list"
-        ? track
-          ? `${displayTitle(track)} and more`.slice(0, 80)
-          : "Hand-picked mix"
+        ? listName(track)
         : defaultFilterName(query, mode);
     setRadioGroupValue(els.editorRandom, station?.random_mode || "deck");
     els.editorSkip.checked = Boolean(station?.skip_disliked);
@@ -3461,6 +3566,7 @@ export function initLibrary({ router } = {}) {
     renderEditorMatches();
     els.editorDiscard.hidden = true;
     els.editorAccess.hidden = !editing;
+    els.editorAccess.open = false;
     els.editorLinkFallback.hidden = true;
     els.editorAccessStatus.textContent = "";
     els.editorNotice.hidden = true;
@@ -3882,9 +3988,13 @@ export function initLibrary({ router } = {}) {
   });
 
   els.sort.addEventListener("change", () => {
-    state.sort = SORT_VALUES.includes(els.sort.value)
+    const value = SORT_VALUES.includes(els.sort.value)
       ? els.sort.value
       : "newest";
+    // Newest added first is what the automatic order shows while not
+    // searching, so choosing it there goes back to that order (Best match
+    // when a search starts) rather than fixing newest for searches too.
+    state.sort = value === "newest" && !searching() ? "match" : value;
     window.ZakStorage.set(SORT_KEY, state.sort);
     refresh({ announce: true });
     writeURL();
@@ -3928,8 +4038,18 @@ export function initLibrary({ router } = {}) {
   // would still play different songs (a collection shown as its name) does
   // the editor say so up front and offer a hand-picked station instead.
   function saveShownAsStation() {
-    const prefill = currentFilterPrefill();
     const shownIds = state.results.map(({ entry }) => entry.track.id);
+    // Your likes live in this browser, so no filter station can play them;
+    // the songs shown become a hand-picked station instead.
+    if (state.filter === "mine") {
+      openEditor({
+        sourceType: "list",
+        opener: els.saveFilter,
+        trackIds: shownIds,
+      });
+      return;
+    }
+    const prefill = currentFilterPrefill();
     const { query } = prefill;
     let note = "";
     const plays = filterMatches(query, prefill.mode).length;
@@ -3944,7 +4064,7 @@ export function initLibrary({ router } = {}) {
       mode: prefill.mode,
       query,
       note,
-      shownIds: shownIds.length <= 400 ? shownIds : [],
+      shownIds: shownTrackIds(),
     });
   }
 
@@ -3992,7 +4112,7 @@ export function initLibrary({ router } = {}) {
       (item) => item.station_id === stationId,
     );
     if (!station) {
-      notify("Only someone with editing access to this station can edit it.", {
+      notify("Listen-only · only its owner can edit this station.", {
         tone: "error",
       });
       return;
@@ -4042,7 +4162,7 @@ export function initLibrary({ router } = {}) {
         copy.append(
           element("span", "library-on-air-kicker", index ? "Next" : "Now"),
           element("span", "library-on-air-title", displayTitle(track)),
-          element("span", "library-on-air-artist", track.artist || "Zak"),
+          element("span", "library-on-air-artist", byline(track)),
         );
         item.append(createArtwork(track, "library-on-air-art"), copy);
         if (!index) item.classList.add("is-now");
@@ -4213,6 +4333,16 @@ export function initLibrary({ router } = {}) {
       renderEditorMatches();
     }
     window.ZakPlayer?.update?.();
+  });
+
+  // A like here reaches the list with the stats the server confirms (the
+  // catalog update above); one made in another tab arrives through storage.
+  window.addEventListener("storage", (event) => {
+    if (
+      state.filter === "mine" &&
+      (!event.key || event.key.startsWith("zak-reaction:"))
+    )
+      refresh();
   });
 
   if (onLibrary()) {

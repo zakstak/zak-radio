@@ -776,7 +776,6 @@
       >
         <div class="library-intro">
           <div class="library-intro-copy">
-            <p class="section-label">Music library</p>
             <h2 id="libraryViewTitle" class="view-title" tabindex="-1">
               Library
             </h2>
@@ -868,7 +867,7 @@
             class="button-quiet library-jump"
             href="#libraryTitle"
             hidden
-            ><span id="libraryJumpAllLabel">All songs</span
+            ><span id="libraryJumpAllLabel">Every song</span
             ><svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 5v14M6.5 13.5 12 19l5.5-5.5"></path></svg
           ></a>
@@ -898,6 +897,13 @@
                 aria-pressed="false"
               >
                 Liked by listeners</button
+              ><button
+                class="filter-chip"
+                type="button"
+                data-library-filter="mine"
+                aria-pressed="false"
+              >
+                Your likes</button
               ><button
                 class="filter-chip"
                 type="button"
@@ -933,7 +939,7 @@
           ></section>
           <div class="library-results-head">
             <div class="library-results-title">
-              <h3 id="libraryTitle" tabindex="-1">All songs</h3>
+              <h3 id="libraryTitle" tabindex="-1">Every song</h3>
               <p id="libraryCount" class="tabular">Loading songs…</p>
               <button
                 id="librarySaveFilter"
@@ -2039,7 +2045,7 @@
           <label class="field" for="stationEditorMode"
             >Include
             <select id="stationEditorMode" class="select-control">
-              <option value="all">All songs</option>
+              <option value="all">Every song</option>
               <option value="liked">Liked by listeners</option>
               <option value="covers">Songs with artwork</option>
               <option value="recent">Recently added (last 6 months)</option>
@@ -2065,63 +2071,6 @@
             ></button>
           </div>
         </fieldset>
-        <section
-          id="stationEditorAccess"
-          class="library-editor-group editor-access"
-          aria-labelledby="stationEditorAccessTitle"
-          hidden
-        >
-          <h3 id="stationEditorAccessTitle" class="programming-label">
-            Sharing and editing
-          </h3>
-          <div class="editor-access-row">
-            <div class="editor-access-copy">
-              <strong>Listen-only link</strong>
-              <p class="field-hint">
-                Anyone on Zak Radio can listen · only you can change it.
-              </p>
-            </div>
-            <button id="stationEditorShare" class="button" type="button">
-              Copy listen-only link
-            </button>
-          </div>
-          <div class="editor-access-row">
-            <div class="editor-access-copy">
-              <strong>Edit on another device</strong>
-              <p class="field-hint">
-                Open this private link on your other device to edit the station
-                there too. It also keeps your editing access if this app’s data
-                is cleared.
-                <strong class="editor-access-warning"
-                  >Anyone with it can change or delete the station, so send it
-                  only to yourself.</strong
-                >
-              </p>
-            </div>
-            <button id="stationEditorTransfer" class="button" type="button">
-              Copy private edit link
-            </button>
-          </div>
-          <p
-            id="stationEditorAccessStatus"
-            class="field-hint editor-access-status"
-            role="status"
-          ></p>
-          <div
-            id="stationEditorLinkFallback"
-            class="editor-link-fallback"
-            hidden
-          >
-            <label class="field" for="stationEditorLinkField"
-              ><span id="stationEditorLinkLabel">Link</span>
-              <input
-                id="stationEditorLinkField"
-                class="text-input"
-                type="text"
-                readonly
-            /></label>
-          </div>
-        </section>
         <section
           id="stationEditorList"
           class="library-editor-group"
@@ -2154,6 +2103,67 @@
             aria-labelledby="stationEditorSongsTitle"
           ></ol>
         </section>
+        <!-- Sharing is occasional; it waits behind its heading so the
+             songs come first, on phones especially. -->
+        <details id="stationEditorAccess" class="editor-access" hidden>
+          <summary>
+            <span class="editor-access-summary">
+              <span class="programming-label">Sharing and editing</span>
+              <span class="disclosure-summary"
+                >Listen-only link and private edit link</span
+              >
+            </span>
+          </summary>
+          <div class="editor-access-body">
+            <div class="editor-access-row">
+              <div class="editor-access-copy">
+                <strong>Listen-only link</strong>
+                <p class="field-hint">
+                  Anyone on Zak Radio can listen · only you can change it.
+                </p>
+              </div>
+              <button id="stationEditorShare" class="button" type="button">
+                Copy listen-only link
+              </button>
+            </div>
+            <div class="editor-access-row">
+              <div class="editor-access-copy">
+                <strong>Edit on another device</strong>
+                <p class="field-hint">
+                  Open this private link on your other device to edit the
+                  station there too. It also keeps your editing access if this
+                  app’s data is cleared.
+                  <strong class="editor-access-warning"
+                    >Anyone with it can change or delete the station, so send it
+                    only to yourself.</strong
+                  >
+                </p>
+              </div>
+              <button id="stationEditorTransfer" class="button" type="button">
+                Copy private edit link
+              </button>
+            </div>
+            <p
+              id="stationEditorAccessStatus"
+              class="field-hint editor-access-status"
+              role="status"
+            ></p>
+            <div
+              id="stationEditorLinkFallback"
+              class="editor-link-fallback"
+              hidden
+            >
+              <label class="field" for="stationEditorLinkField"
+                ><span id="stationEditorLinkLabel">Link</span>
+                <input
+                  id="stationEditorLinkField"
+                  class="text-input"
+                  type="text"
+                  readonly
+              /></label>
+            </div>
+          </div>
+        </details>
         <div class="station-programming-field">
           <span id="stationEditorRandomLabel" class="programming-label"
             >Playback order</span
@@ -2283,7 +2293,8 @@
           <legend class="sr-only">Choose stations</legend>
           <p class="field-hint">
             Only hand-picked stations take individual songs. Filter stations
-            play songs matching their saved search.
+            play every song that matches their search or filter, so they can’t
+            be checked here.
           </p>
           <p class="field-hint">
             Changes save right away. Use Undo to reverse one.
