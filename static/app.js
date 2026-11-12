@@ -2162,15 +2162,19 @@ function renderQueue() {
     return;
   } else if (stationKind() === "temporary") {
     ids = Array.isArray(station.queue) ? station.queue : [];
+    // With nothing queued, the server plays on through the catalog, which
+    // is ordered by collection.
+    const after = station.repeat_one
+      ? "Nothing queued, so this song repeats."
+      : station.shuffle
+        ? "Nothing queued, so songs from the whole library play at random."
+        : "Nothing queued, so the library plays in order, one collection at a time.";
     if (ids.length)
-      summary = `${plural(ids.length, "song")} queued${canControlStation() ? "" : " · Only the owner can change this queue."}`;
+      summary = `${plural(ids.length, "song")} queued${canControlStation() ? "" : " · only its owner can change the queue"}`;
     else if (canControlStation()) {
-      summary =
-        "Nothing queued. Choose Play next or Add to queue on any song in Library.";
+      summary = `${after} Choose Play next or Add to queue on any song in Library.`;
       libraryHint = true;
-    } else
-      summary =
-        "Nothing queued. The station keeps playing songs in the order they were added.";
+    } else summary = after;
   } else if (emptyStation()) {
     summary = canControlStation()
       ? "No songs match this station. Edit the station to change which songs it plays."
@@ -3306,10 +3310,13 @@ async function createTemporaryStation({ trackId } = {}) {
         JSON.stringify(attempt),
       );
     }
+    // Without a chosen song, the station starts with the one on Radio.
+    const radioTrack = trackId ? null : currentTrack();
+    const firstTrackId = trackId || radioTrack?.id || state.tracks[0]?.id;
     const created = await api("/api/stations", {
       method: "POST",
       body: {
-        track_id: trackId || currentTrack()?.id || state.tracks[0]?.id,
+        track_id: firstTrackId,
         idempotency_key: attempt.idempotency_key,
         owner_token: attempt.owner_token,
       },
@@ -3337,7 +3344,13 @@ async function createTemporaryStation({ trackId } = {}) {
     if (state.station && !state.station.playing)
       await resumeForEveryone({ listen: true, quiet: true });
     else await listenLive();
-    return { ok: true, stationId: created.station_id };
+    // What it starts with, so the confirmation can say so.
+    return {
+      ok: true,
+      stationId: created.station_id,
+      firstTrack: trackById(firstTrackId),
+      fromRadio: Boolean(radioTrack),
+    };
   } catch (error) {
     if (error.status === 429) {
       if (!/capacity/i.test(error.detail || "")) {
