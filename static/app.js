@@ -1599,19 +1599,16 @@ function renderTrack(track) {
 
 // The live region says what's playing once per song, whenever Radio is on
 // screen or being heard: on a song change, on returning to Radio, and when
-// a station switch elsewhere makes it the one being heard. A paused station
-// says so, and so does one this device is waiting for; only a live one is
-// "Now playing".
+// a station switch elsewhere makes it the one being heard.
 function announceNowPlaying() {
   const track = currentTrack();
-  if (!track) return;
-  const live = Boolean(state.station?.playing);
-  const key = `${live ? "live" : "paused"}:${track.id}`;
-  if (state.announcedTrackId === key) return;
+  if (!track || state.announcedTrackId === track.id) return;
   if (router.path() !== "/" && !radioHearing()) return;
-  state.announcedTrackId = key;
-  const lead = live ? "Now playing" : state.autoListen ? "Waiting:" : "Paused:";
-  setText(els.nowPlayingAnnouncement, `${lead} ${trackDisplayTitle(track)}`);
+  state.announcedTrackId = track.id;
+  setText(
+    els.nowPlayingAnnouncement,
+    `Now playing ${trackDisplayTitle(track)}`,
+  );
 }
 
 // The stage takes a dim tint from the artwork: its average color, kept dark
