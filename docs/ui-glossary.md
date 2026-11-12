@@ -59,7 +59,8 @@ messages, and announcements.
   every width.
 - **Your likes**: the Library filter for songs liked in this browser or app.
   Filter stations can't use it, so saving it makes a hand-picked station of the
-  songs shown.
+  songs shown. A filter station started from it includes every song, and the
+  editor says why and offers that hand-picked station instead.
 - **Recently added**: songs added in the last six months, in the shelf, the
   filter chip, the list heading, and the filter station option. Not "Recent" or
   "Recent additions".

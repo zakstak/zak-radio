@@ -28,6 +28,36 @@ const FILTER_LABELS = {
   recent: "Recently added",
 };
 const FILTER_KEYS = Object.keys(FILTER_LABELS);
+// The filters a filter station can play: the server can't match Your likes,
+// which are kept in this browser. The station editor's Include options.
+export const STATION_FILTERS = ["all", "liked", "covers", "recent"];
+
+// What a new filter station starts from: the search and filter on screen.
+// This is the one place a Library filter becomes a station's filter. From
+// Your likes the station includes every song and the editor says why,
+// offering the liked songs shown as a hand-picked station instead, so the
+// station never claims likes it can't play.
+export function filterStationPrefill({
+  query = "",
+  filter = "all",
+  shownIds = [],
+} = {}) {
+  const prefill = {
+    query: query.slice(0, 160),
+    mode: STATION_FILTERS.includes(filter) ? filter : "all",
+    note: "",
+    shownIds: [],
+  };
+  if (filter !== "mine") return prefill;
+  return {
+    ...prefill,
+    note: shownIds.length
+      ? "Filter stations can’t use Your likes, which are kept in this browser. You can keep the songs you liked as a hand-picked station instead."
+      : "Filter stations can’t use Your likes, which are kept in this browser.",
+    shownIds,
+  };
+}
+
 // "match" is the order Library starts with: Best match while searching,
 // Newest added first otherwise. Remember the order the listener chooses.
 const SORT_VALUES = [
@@ -3030,10 +3060,20 @@ export function initLibrary({ router } = {}) {
 
   // -------------------------------------------------------------- editor
 
+  // The songs on screen, for a station that keeps them; a very long list
+  // isn't offered.
+  function shownTrackIds() {
+    const ids = state.results.map(({ entry }) => entry.track.id);
+    return ids.length <= 400 ? ids : [];
+  }
+
   function currentFilterPrefill() {
-    if (!onLibrary()) return { query: "", mode: "all" };
-    const query = state.query.trim() || state.group;
-    return { query: query.slice(0, 160), mode: state.filter };
+    if (!onLibrary()) return filterStationPrefill();
+    return filterStationPrefill({
+      query: state.query.trim() || state.group,
+      filter: state.filter,
+      shownIds: shownTrackIds(),
+    });
   }
 
   function defaultFilterName(query, mode) {
@@ -3994,7 +4034,6 @@ export function initLibrary({ router } = {}) {
   // would still play different songs (a collection shown as its name) does
   // the editor say so up front and offer a hand-picked station instead.
   function saveShownAsStation() {
-    const prefill = currentFilterPrefill();
     const shownIds = state.results.map(({ entry }) => entry.track.id);
     // Your likes live in this browser, so no filter station can play them;
     // the songs shown become a hand-picked station instead.
@@ -4006,6 +4045,7 @@ export function initLibrary({ router } = {}) {
       });
       return;
     }
+    const prefill = currentFilterPrefill();
     const { query } = prefill;
     let note = "";
     const plays = filterMatches(query, prefill.mode).length;
@@ -4020,7 +4060,7 @@ export function initLibrary({ router } = {}) {
       mode: prefill.mode,
       query,
       note,
-      shownIds: shownIds.length <= 400 ? shownIds : [],
+      shownIds: shownTrackIds(),
     });
   }
 
