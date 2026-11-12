@@ -159,6 +159,11 @@
   /* Everything fixed at the bottom: the dock and the tab bar. player.js
      measures it; this is the value before it does. */
   --bottom-chrome: calc(var(--player-height) + var(--tabbar-height));
+  /* A notification sits this far above the bottom chrome. While one shows,
+     player.js sets --notice-space to its height and a gap above and below,
+     and pages reserve it so it never covers their last controls. */
+  --notice-gap: 16px;
+  --notice-space: 0px;
   /* Unfilled progress keeps 3:1 or more on canvas, surface, and raised
      surfaces; the filled part is the light accent. */
   --track-rest: #6b7280;
@@ -264,6 +269,7 @@ html {
 @media (max-width: 639px) {
   :root {
     --tabbar-height: calc(56px + var(--safe-bottom));
+    --notice-gap: 8px;
   }
 }
 
@@ -274,11 +280,15 @@ html {
   html {
     @apply min-w-80 bg-radio-bg;
     scroll-padding-top: 72px;
-    scroll-padding-bottom: calc(var(--bottom-chrome) + 16px);
+    scroll-padding-bottom: calc(
+      var(--bottom-chrome) + var(--notice-space) + 16px
+    );
   }
   body {
     @apply m-0 min-w-80 overflow-x-hidden bg-radio-bg font-sans text-radio-fg antialiased;
-    padding-bottom: calc(var(--bottom-chrome) + var(--safe-bottom));
+    padding-bottom: calc(
+      var(--bottom-chrome) + var(--notice-space) + var(--safe-bottom)
+    );
     padding-left: var(--safe-left);
     padding-right: var(--safe-right);
   }
@@ -324,7 +334,7 @@ html {
   @media (max-width: 639px) {
     body {
       /* The tab bar already includes the safe area. */
-      padding-bottom: var(--bottom-chrome);
+      padding-bottom: calc(var(--bottom-chrome) + var(--notice-space));
     }
   }
 }
@@ -639,7 +649,7 @@ html {
   .snackbar {
     @apply fixed z-50 flex w-max max-w-[min(520px,calc(100vw-48px))] items-center gap-1 border border-radio-line-strong bg-radio-panel py-1 pr-1 pl-4 text-[14px] leading-5 text-radio-fg shadow-[0_18px_60px_rgba(0,0,0,.6)];
     left: max(24px, var(--safe-left));
-    bottom: calc(var(--bottom-chrome) + 16px);
+    bottom: calc(var(--bottom-chrome) + var(--notice-gap));
     border-radius: var(--zs-radius-compact);
     animation: snackbar-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -1061,7 +1071,6 @@ html {
       @apply w-auto max-w-none;
       left: max(8px, var(--safe-left));
       right: max(8px, var(--safe-right));
-      bottom: calc(var(--bottom-chrome) + 8px);
     }
   }
 }

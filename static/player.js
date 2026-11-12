@@ -66,6 +66,20 @@ function paintTypeArt(target, { seed = "", text = "", label = "" }) {
   target.replaceChildren(mark, kind);
 }
 
+// Pages reserve room at their end for what is fixed at the bottom: the
+// dock, the tab bar, and a notification. When that room grows, a page that
+// was scrolled to its end stays there, so its last controls stay in view.
+function reserveBottom(apply) {
+  const page = document.scrollingElement;
+  const before = page?.scrollHeight || 0;
+  const atEnd =
+    before > window.innerHeight &&
+    page.scrollTop + window.innerHeight >= before - 2;
+  apply();
+  const grown = (page?.scrollHeight || 0) - before;
+  if (atEnd && grown > 0) window.scrollBy({ top: grown, behavior: "instant" });
+}
+
 function element(tag, className, attributes = {}) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -580,8 +594,10 @@ export function createPlayer({
         ? Math.ceil(nav.getBoundingClientRect().height)
         : 0;
     const rootStyle = document.documentElement.style;
-    rootStyle.setProperty("--player-height", `${dock}px`);
-    rootStyle.setProperty("--bottom-chrome", `${dock + fixedNav}px`);
+    reserveBottom(() => {
+      rootStyle.setProperty("--player-height", `${dock}px`);
+      rootStyle.setProperty("--bottom-chrome", `${dock + fixedNav}px`);
+    });
     keepFocusVisible();
   }
 
@@ -591,15 +607,18 @@ export function createPlayer({
       document.documentElement.dataset.keyboard !== "true" ||
       !focused ||
       focused === document.body ||
-      focused.closest("dialog, .player, .primary-nav, .app-rail")
+      focused.closest("dialog, .player, .primary-nav, .app-rail, .snackbar")
     )
       return;
     const rect = focused.getBoundingClientRect();
-    const chrome =
-      Number.parseFloat(
-        document.documentElement.style.getPropertyValue("--bottom-chrome"),
-      ) || 0;
-    const bottom = window.innerHeight - chrome - 12;
+    // The bottom chrome and a notification above it (see createNotifier).
+    const rootStyle = document.documentElement.style;
+    const covered = ["--bottom-chrome", "--notice-space"].reduce(
+      (sum, name) =>
+        sum + (Number.parseFloat(rootStyle.getPropertyValue(name)) || 0),
+      0,
+    );
+    const bottom = window.innerHeight - covered - 12;
     if (rect.height && rect.top < window.innerHeight && rect.bottom > bottom)
       window.scrollBy({ top: rect.bottom - bottom, behavior: "instant" });
   }
@@ -1017,14 +1036,22 @@ export function createPlayer({
 // Notifications. Each message is announced once through a polite live
 // region; the notification itself never takes focus. It has one fixed home,
 // directly above the bottom chrome (the dock and, on phones, the tab bar),
-// so it never moves over the station's shared controls or the player. An
-// Undo stays until the next action instead of timing out.
+// so it never moves over the station's shared controls or the player, and
+// pages reserve its height (--notice-space) so it never covers their last
+// controls. An Undo stays until the next action. Every other notification
+// leaves on its own, and waits while it is pointed at or focused.
 const CLOSE_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"></path></svg>';
+
+// How long a notification that isn't an Undo stays. One with an action
+// ("Back to …", "Open Radio", "Try again") stays long enough to reach it.
+const NOTICE_LIFETIME = { plain: 5000, error: 7000, action: 8000 };
 
 export function createNotifier({ host, announcer }) {
   let current = null;
   let announceFrame = 0;
+  // The notification the live region currently speaks for.
+  let announced = null;
   const apple = /Mac|iPhone|iPad/.test(
     navigator.userAgentData?.platform || navigator.platform || "",
   );
@@ -1038,12 +1065,52 @@ export function createNotifier({ host, announcer }) {
     { capture: true },
   );
 
-  function announce(message) {
+  function announce(handle, message) {
     window.cancelAnimationFrame(announceFrame);
     announcer.textContent = "";
+    announced = handle;
     announceFrame = window.requestAnimationFrame(() => {
       announcer.textContent = message;
     });
+  }
+
+  // A dismissed notification leaves nothing behind in the live region.
+  function unannounce(handle) {
+    if (announced !== handle) return;
+    window.cancelAnimationFrame(announceFrame);
+    announcer.textContent = "";
+    announced = null;
+  }
+
+  // Pages pad their end by --notice-space: the shown notification's height
+  // and the gaps above and below it (see reserveBottom). Notifications
+  // inside a modal sit in its flow and reserve nothing.
+  const rootStyle = document.documentElement.style;
+  let reserved = null;
+  const resizes =
+    "ResizeObserver" in window
+      ? new ResizeObserver(() => reserveSpace())
+      : null;
+  function reserveSpace() {
+    const gap =
+      Number.parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue(
+          "--notice-gap",
+        ),
+      ) || 0;
+    const space =
+      reserved?.parentElement === host ? reserved.offsetHeight + gap * 2 : 0;
+    if (
+      space === Number.parseFloat(rootStyle.getPropertyValue("--notice-space"))
+    )
+      return;
+    reserveBottom(() => rootStyle.setProperty("--notice-space", `${space}px`));
+  }
+  function reserveFor(snackbar) {
+    if (reserved && reserved !== snackbar) resizes?.unobserve(reserved);
+    reserved = snackbar;
+    if (snackbar) resizes?.observe(snackbar);
+    reserveSpace();
   }
 
   function typing(target) {
@@ -1111,8 +1178,15 @@ export function createNotifier({ host, announcer }) {
     let timer = 0;
     let dismissed = false;
     const undo = action?.label === "Undo";
-    const persistent = Boolean(action?.label) && action.label !== "Listen live";
-    const lifetime = Number(duration) || (tone === "error" ? 7000 : 5000);
+    // Only an Undo waits for the next action; it would be lost otherwise.
+    const persistent = undo;
+    const lifetime =
+      Number(duration) ||
+      (action?.label
+        ? NOTICE_LIFETIME.action
+        : tone === "error"
+          ? NOTICE_LIFETIME.error
+          : NOTICE_LIFETIME.plain);
 
     const handle = {
       undo,
@@ -1124,6 +1198,8 @@ export function createNotifier({ host, announcer }) {
         window.clearTimeout(timer);
         const hadFocus = snackbar.contains(document.activeElement);
         snackbar.remove();
+        unannounce(handle);
+        if (reserved === snackbar) reserveFor(null);
         if (current === handle) current = null;
         if (hadFocus && returnFocus?.isConnected)
           returnFocus.focus({ preventScroll: true });
@@ -1180,7 +1256,10 @@ export function createNotifier({ host, announcer }) {
       modal.addEventListener(
         "close",
         () => {
-          if (!dismissed && modal.contains(snackbar)) host.append(snackbar);
+          if (!dismissed && modal.contains(snackbar)) {
+            host.append(snackbar);
+            reserveFor(snackbar);
+          }
         },
         { once: true },
       );
@@ -1188,12 +1267,14 @@ export function createNotifier({ host, announcer }) {
       host.append(snackbar);
     }
     current = handle;
+    reserveFor(snackbar);
     // The press that showed this message must not count as the next action.
     window.setTimeout(() => {
       if (current === handle) handle.persistent = persistent;
     });
     // Say what can be done, not where it is on screen.
     announce(
+      handle,
       undo
         ? `${message} Undo from the notification${keyboardUsed || window.matchMedia("(pointer: fine)").matches ? `, or press ${undoKeys}` : ""}.`
         : action?.label
