@@ -221,6 +221,8 @@ const els = {
   addToStationList: byId("addToStationList"),
   addToStationStatus: byId("addToStationStatus"),
   addToStationNew: byId("addToStationNew"),
+  addToStationFilterNote: byId("addToStationFilterNote"),
+  addToStationSaveNote: byId("addToStationSaveNote"),
   audio: byId("audio"),
   player: byId("player"),
   snackbarHost: byId("toast"),
@@ -1116,8 +1118,12 @@ async function updateSavedStation(stationId, changes) {
 let addToStationTrack = null;
 let addToStationOpener = null;
 
+// Only hand-picked stations take individual songs, so filter stations
+// aren't listed.
 function listStationsForAdding() {
-  return ownedSavedStations();
+  return ownedSavedStations().filter(
+    (station) => station.source_type === "list",
+  );
 }
 
 function stationHasTrack(station, trackId) {
@@ -1128,10 +1134,12 @@ function stationHasTrack(station, trackId) {
 
 // The dialog lists every hand-picked station this browser can change, with
 // a check on those that already have the song. A change takes effect at
-// once and can be undone from its notification.
+// once and can be undone from its notification. It opens whenever this
+// browser has a station of its own, so someone with only filter stations
+// is told why theirs aren't there; with none, the song goes straight into
+// a new hand-picked station.
 function openAddToStation(track, opener = document.activeElement) {
-  const stations = listStationsForAdding();
-  if (!stations.length) {
+  if (!ownedSavedStations().length) {
     window.dispatchEvent(
       new CustomEvent("zak-new-list-station", { detail: { track, opener } }),
     );
@@ -1215,18 +1223,21 @@ function renderAddToStationRows() {
     input.checked = pending
       ? addToStationPending.get(station.station_id).add
       : stationHasTrack(station, track.id);
-    input.disabled = station.source_type !== "list" || connectionLost();
+    input.disabled = connectionLost();
     input.setAttribute("aria-disabled", String(pending || input.disabled));
     input.setAttribute("aria-busy", String(pending));
     item.querySelector(".add-station-name").textContent = station.name;
-    item.querySelector(".add-station-meta").textContent =
-      station.source_type !== "list"
-        ? stationSelection(station)
-        : pending
-          ? "Saving…"
-          : plural(station.track_ids?.length || 0, "song");
+    item.querySelector(".add-station-meta").textContent = pending
+      ? "Saving…"
+      : plural(station.track_ids?.length || 0, "song");
     return item;
   });
+  // Why filter stations aren't listed, only to someone who has one; how
+  // changes save, only when there is something to change.
+  els.addToStationFilterNote.hidden = !ownedSavedStations().some(
+    (station) => station.source_type !== "list",
+  );
+  els.addToStationSaveNote.hidden = !rows.length;
   els.addToStationNew.disabled = connectionLost();
   for (const item of els.addToStationList.querySelectorAll(":scope > li"))
     if (!rows.includes(item)) item.remove();

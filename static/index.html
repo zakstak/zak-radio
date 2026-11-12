@@ -2413,12 +2413,12 @@
              has the song; changing it adds or removes the song at once. -->
         <fieldset class="add-station-choices">
           <legend class="sr-only">Choose stations</legend>
-          <p class="field-hint">
+          <p id="addToStationFilterNote" class="field-hint" hidden>
             Only hand-picked stations take individual songs. Filter stations
-            play every song that matches their search or filter, so they can’t
-            be checked here.
+            play every song that matches their search or filter, so they aren’t
+            listed here.
           </p>
-          <p class="field-hint">
+          <p id="addToStationSaveNote" class="field-hint">
             Changes save right away. Use Undo to reverse one.
           </p>
           <ul id="addToStationList" class="add-station-list" role="list"></ul>
