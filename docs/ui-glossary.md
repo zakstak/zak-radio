@@ -5,7 +5,9 @@ messages, and announcements.
 
 ## Stations
 
-- **All songs**: the main, shared station.
+- **All songs**: the main, shared station, and nothing else. Library's whole
+  song list is **Every song**: its heading, its jump link, and a filter
+  station's Include option.
 - **Temporary station**: a queue you control that ends 24 hours after its last
   use. Not "queue station" or "temporary queue".
 - **Hand-picked station**: a saved list of chosen songs. Not "list station".

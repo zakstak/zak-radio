@@ -18,9 +18,10 @@ import {
 const randomBrowserHex = window.ZakRandomBrowserHex;
 
 // One name per idea: the "Recently added" shelf, chip, heading, and filter
-// station option all say the same thing.
+// station option all say the same thing. "All songs" is the main station's
+// name, so the whole library is "Every song".
 const FILTER_LABELS = {
-  all: "All songs",
+  all: "Every song",
   liked: "Liked by listeners",
   covers: "Songs with artwork",
   recent: "Recently added",
@@ -1387,7 +1388,7 @@ export function initLibrary({ router } = {}) {
         els.count.textContent = `${countText()} · ${els.sort.selectedOptions[0].textContent}`;
         // With no results, the empty state says so; no "0 songs · Best match".
         els.count.hidden = !state.results.length;
-        els.jumpAllLabel.textContent = "All songs";
+        els.jumpAllLabel.textContent = FILTER_LABELS.all;
         const fragment = document.createDocumentFragment();
         if (!state.results.length) {
           fragment.append(emptyState());
@@ -1442,7 +1443,7 @@ export function initLibrary({ router } = {}) {
   function emptyState() {
     const scoped =
       state.filter !== "all" || Boolean(state.group) || Boolean(state.artist);
-    const showAll = button("Show all songs", "button", () => {
+    const showAll = button("Show every song", "button", () => {
       state.filter = "all";
       state.group = "";
       state.artist = "";
@@ -1463,7 +1464,7 @@ export function initLibrary({ router } = {}) {
         "empty",
         `No songs match ${quote(state.parsed.raw)}`,
         scoped
-          ? "Nothing matches with the current filter. Show all songs to search the whole library."
+          ? "Nothing matches with the current filter. Show every song to search the whole library."
           : "Check the spelling or try fewer words. Search covers titles, artists, lyrics, and song descriptions.",
         scoped ? [clear, showAll] : [clear],
       );
@@ -3002,8 +3003,8 @@ export function initLibrary({ router } = {}) {
   }
 
   function defaultFilterName(query, mode) {
-    const base = FILTER_LABELS[mode] || "All songs";
-    // "All songs" is the built-in station's name; don't reuse it.
+    const base = FILTER_LABELS[mode] || FILTER_LABELS.all;
+    // "All songs" is the main station's name; don't reuse it.
     if (!query) return mode === "all" ? "Library mix" : base;
     const words = query.replace(/["“”]/g, "").trim();
     const name =
