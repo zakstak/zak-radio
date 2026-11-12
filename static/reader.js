@@ -826,11 +826,13 @@ export function initReader({ router }) {
           "Everything else is in Continue listening above.",
         ),
       );
-    // Phones show the sort as an icon; the count says which order it is.
-    // With nothing to show, the empty state says so instead.
+    // The count matches the cards under it: items shown in Continue
+    // listening aren't repeated here. Phones show the sort as an icon; the
+    // count says which order it is. With nothing to show, the empty state
+    // says so instead.
     const countText =
       continuing.size && listed.length
-        ? `${countLabel()} · ${continuing.size} in progress above`
+        ? plural(listed.length, "more item")
         : countLabel();
     const sortText = els.sort.selectedOptions[0]?.textContent || "";
     if (els.count.dataset.key !== `${countText}|${sortText}`) {
