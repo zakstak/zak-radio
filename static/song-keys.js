@@ -286,9 +286,15 @@ export function initSongKeys({ onSignedOut = () => {} } = {}) {
   }
 
   copy.addEventListener("click", copySecret);
-  // Copying it by hand counts too.
+  // Copying it by hand counts too, but only the whole key: a fragment is
+  // no use to an agent, so closing still asks.
   secret.addEventListener("copy", () => {
-    if (secret.selectionStart !== secret.selectionEnd) secretState = "copied";
+    if (
+      secret.value &&
+      secret.selectionStart === 0 &&
+      secret.selectionEnd === secret.value.length
+    )
+      secretState = "copied";
   });
   copyGuide.addEventListener("click", async () => {
     const link = new URL("/ai.json", window.location.href).href;

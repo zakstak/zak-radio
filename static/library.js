@@ -4227,7 +4227,17 @@ export function initLibrary({ router } = {}) {
     state.group = "";
     state.artist = "";
     state.sort = "match";
-    state.limit = PAGE_SIZE;
+    // Other songs can share the title, so the list shows as many pages
+    // as it takes to include this one.
+    state.parsed = parseQuery(state.query);
+    computeResults();
+    const index = state.results.findIndex(
+      (result) => result.entry.track.id === trackId,
+    );
+    state.limit = Math.max(
+      PAGE_SIZE,
+      Math.ceil((index + 1) / PAGE_SIZE) * PAGE_SIZE,
+    );
     refresh({ announce: true });
     writeURL({ push: true, focus: "#songUploadOpen" });
     const card = els.tracks.querySelector(
