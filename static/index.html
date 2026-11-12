@@ -2048,63 +2048,6 @@
           </div>
         </fieldset>
         <section
-          id="stationEditorAccess"
-          class="library-editor-group editor-access"
-          aria-labelledby="stationEditorAccessTitle"
-          hidden
-        >
-          <h3 id="stationEditorAccessTitle" class="programming-label">
-            Sharing and editing
-          </h3>
-          <div class="editor-access-row">
-            <div class="editor-access-copy">
-              <strong>Listen-only link</strong>
-              <p class="field-hint">
-                Anyone on Zak Radio can listen · only you can change it.
-              </p>
-            </div>
-            <button id="stationEditorShare" class="button" type="button">
-              Copy listen-only link
-            </button>
-          </div>
-          <div class="editor-access-row">
-            <div class="editor-access-copy">
-              <strong>Edit on another device</strong>
-              <p class="field-hint">
-                Open this private link on your other device to edit the station
-                there too. It also keeps your editing access if this app’s data
-                is cleared.
-                <strong class="editor-access-warning"
-                  >Anyone with it can change or delete the station, so send it
-                  only to yourself.</strong
-                >
-              </p>
-            </div>
-            <button id="stationEditorTransfer" class="button" type="button">
-              Copy private edit link
-            </button>
-          </div>
-          <p
-            id="stationEditorAccessStatus"
-            class="field-hint editor-access-status"
-            role="status"
-          ></p>
-          <div
-            id="stationEditorLinkFallback"
-            class="editor-link-fallback"
-            hidden
-          >
-            <label class="field" for="stationEditorLinkField"
-              ><span id="stationEditorLinkLabel">Link</span>
-              <input
-                id="stationEditorLinkField"
-                class="text-input"
-                type="text"
-                readonly
-            /></label>
-          </div>
-        </section>
-        <section
           id="stationEditorList"
           class="library-editor-group"
           aria-labelledby="stationEditorSongsTitle"
@@ -2136,6 +2079,67 @@
             aria-labelledby="stationEditorSongsTitle"
           ></ol>
         </section>
+        <!-- Sharing is occasional; it waits behind its heading so the
+             songs come first, on phones especially. -->
+        <details id="stationEditorAccess" class="editor-access" hidden>
+          <summary>
+            <span class="editor-access-summary">
+              <span class="programming-label">Sharing and editing</span>
+              <span class="disclosure-summary"
+                >Listen-only link and private edit link</span
+              >
+            </span>
+          </summary>
+          <div class="editor-access-body">
+            <div class="editor-access-row">
+              <div class="editor-access-copy">
+                <strong>Listen-only link</strong>
+                <p class="field-hint">
+                  Anyone on Zak Radio can listen · only you can change it.
+                </p>
+              </div>
+              <button id="stationEditorShare" class="button" type="button">
+                Copy listen-only link
+              </button>
+            </div>
+            <div class="editor-access-row">
+              <div class="editor-access-copy">
+                <strong>Edit on another device</strong>
+                <p class="field-hint">
+                  Open this private link on your other device to edit the
+                  station there too. It also keeps your editing access if this
+                  app’s data is cleared.
+                  <strong class="editor-access-warning"
+                    >Anyone with it can change or delete the station, so send it
+                    only to yourself.</strong
+                  >
+                </p>
+              </div>
+              <button id="stationEditorTransfer" class="button" type="button">
+                Copy private edit link
+              </button>
+            </div>
+            <p
+              id="stationEditorAccessStatus"
+              class="field-hint editor-access-status"
+              role="status"
+            ></p>
+            <div
+              id="stationEditorLinkFallback"
+              class="editor-link-fallback"
+              hidden
+            >
+              <label class="field" for="stationEditorLinkField"
+                ><span id="stationEditorLinkLabel">Link</span>
+                <input
+                  id="stationEditorLinkField"
+                  class="text-input"
+                  type="text"
+                  readonly
+              /></label>
+            </div>
+          </div>
+        </details>
         <div class="station-programming-field">
           <span id="stationEditorRandomLabel" class="programming-label"
             >Playback order</span

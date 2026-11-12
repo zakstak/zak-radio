@@ -4738,8 +4738,33 @@ html[data-zs-theme="radio"] {
   .library-editor:has(.editor-discard:not([hidden])) .sheet-actions {
     display: none;
   }
+  /* Sharing folds away under the songs, a band with the same chevron as
+     Radio's Playback settings. */
   .editor-access {
-    @apply gap-2 border-t border-radio-line pt-4;
+    @apply min-w-0 border-y border-radio-line;
+  }
+  .editor-access > summary {
+    @apply flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-3;
+  }
+  .editor-access > summary::-webkit-details-marker {
+    display: none;
+  }
+  .editor-access > summary::after {
+    @apply size-2 shrink-0 border-r-2 border-b-2 border-radio-muted transition-transform;
+    content: "";
+    transform: translateY(-2px) rotate(45deg);
+  }
+  .editor-access[open] > summary::after {
+    transform: translateY(2px) rotate(-135deg);
+  }
+  .editor-access > summary:hover .programming-label {
+    @apply underline underline-offset-4;
+  }
+  .editor-access-summary {
+    @apply grid min-w-0 gap-0.5;
+  }
+  .editor-access-body {
+    @apply grid gap-2 pb-4;
   }
   .editor-access-row {
     @apply flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-1;

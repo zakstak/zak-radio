@@ -3491,6 +3491,7 @@ export function initLibrary({ router } = {}) {
     renderEditorMatches();
     els.editorDiscard.hidden = true;
     els.editorAccess.hidden = !editing;
+    els.editorAccess.open = false;
     els.editorLinkFallback.hidden = true;
     els.editorAccessStatus.textContent = "";
     els.editorNotice.hidden = true;
