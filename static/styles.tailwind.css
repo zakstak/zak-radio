@@ -2787,11 +2787,12 @@ html[data-zs-theme="radio"] {
     @apply w-auto;
     flex-basis: 100%;
   }
-  /* Song actions become icons; their names stay for assistive tech. */
+  /* Song actions become icons; their names stay for assistive tech. Add
+     keeps its label at every width. */
   .listener-controls .track-action {
     @apply px-2;
   }
-  .listener-controls .track-action > span:not(.reaction-count) {
+  .listener-controls .track-action > span:not(.reaction-count, .song-add-label) {
     @apply sr-only;
   }
   .station-switch {
@@ -3014,11 +3015,18 @@ html[data-zs-theme="radio"] {
   .radio-primary .station-switch {
     min-height: 44px;
   }
-  .radio-primary .station-switch-status {
-    display: none;
-  }
+  /* Phones keep Live or Paused, as a compact badge before the name. */
   .radio-primary .station-switch-copy {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .radio-primary .station-switch-status {
+    flex-shrink: 0;
+    padding: 1px 6px 0;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    line-height: 16px;
   }
   .radio-primary .listen-button {
     padding-block: 6px;
