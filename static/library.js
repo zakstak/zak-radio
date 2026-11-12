@@ -4108,7 +4108,7 @@ export function initLibrary({ router } = {}) {
       (item) => item.station_id === stationId,
     );
     if (!station) {
-      notify("Only someone with editing access to this station can edit it.", {
+      notify("Listen-only · only its owner can edit this station.", {
         tone: "error",
       });
       return;
