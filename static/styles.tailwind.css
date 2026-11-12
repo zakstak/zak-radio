@@ -6315,11 +6315,6 @@ html[data-zs-theme="radio"] {
     .reader-text-open .reader-text-label {
       @apply sr-only;
     }
-    /* Phones: one row of Resume, Contents, and More; the source links move
-     into More. Short landscape screens move them there too. */
-    .reader-actions {
-      @apply flex-nowrap gap-x-2;
-    }
     .reader-item:is([data-text-theme="sepia"], [data-text-theme="light"])
       .reader-text {
       @apply mx-0 px-0 pt-0 pb-5;
@@ -6750,9 +6745,6 @@ html
     grid-template-columns: 180px minmax(0, 1fr);
     grid-template-areas: "back back" "toc head" "toc listening" "toc text";
   }
-  .reader-actions {
-    min-height: 100px;
-  }
 }
 
 @media (min-width: 1280px) and (min-height: 501px) {
@@ -6765,21 +6757,30 @@ html
       );
     grid-template-areas: ". back ." "toc head listening" "toc text listening";
   }
-  .reader-actions {
-    min-height: 48px;
-  }
 }
 
-@media (max-width: 639px), (orientation: landscape) and (max-height: 500px) {
-  .reader-actions .reader-link {
-    display: none;
-  }
+/* The item controls keep one row (fitActions in reader.js). Resume takes
+   the row above them when they can't fit beside it. Then, until they fit,
+   the source links move into More, and Text and then Contents keep only
+   their icons. */
+.reader-actions.is-sources-in-more .reader-link,
+.reader-actions:not(.is-sources-in-more) .reader-menu-source {
+  display: none;
 }
 
-@media (min-width: 640px) and (not ((orientation: landscape) and (max-height: 500px))) {
-  .reader-menu-source {
-    display: none;
-  }
+.reader-actions.is-text-icon .reader-text-open,
+.reader-item .reader-actions.is-contents-icon .reader-toc-open {
+  @apply size-11 min-w-11 shrink-0 px-0;
+}
+
+.reader-actions.is-text-icon .reader-text-label,
+.reader-actions.is-contents-icon .reader-toc-open > span {
+  @apply sr-only;
+}
+
+.reader-item .reader-actions.is-resume-row .reader-resume {
+  flex-basis: 100%;
+  margin-right: 0;
 }
 
 @media (max-width: 767px), (max-height: 500px) {
