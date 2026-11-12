@@ -1581,10 +1581,11 @@ export function initLibrary({ router } = {}) {
         els.tracks.querySelector(".error-state button")?.focus();
       }
     });
-    // The same diagnosis and next step as Radio and Reader.
+    // The same heading, diagnosis, and next step as Radio and Reader; the
+    // sentence under it says what didn't happen.
     const box = problemState({
       error,
-      title: "Couldn’t load the song list",
+      text: `The song list didn’t load. ${problemCopy(error).text}`,
       actions: [retry],
     });
     box.classList.add("library-state");
