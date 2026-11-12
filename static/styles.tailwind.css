@@ -4087,7 +4087,6 @@ html[data-zs-theme="radio"] {
   .library-intro-copy {
     @apply grid min-w-0 gap-1;
   }
-  .library-intro .section-label,
   .library-intro .view-lede {
     @apply m-0;
   }
@@ -5415,9 +5414,6 @@ html[data-zs-theme="radio"] {
     justify-content: space-between;
     gap: 12px;
   }
-  .library-intro .section-label {
-    display: none;
-  }
   .library-intro .view-title {
     font-size: 28px;
   }
@@ -5493,9 +5489,6 @@ html[data-zs-theme="radio"] {
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
-  .library-intro .section-label {
-    display: none;
-  }
   .library-intro .view-title {
     font-size: 24px;
   }
