@@ -2166,7 +2166,12 @@ html[data-zs-theme="radio"] {
     width: 16px;
     height: 16px;
   }
+  /* Presence has a line of its own, aligned with the text above it (past
+     the 18px people mark, its margin, and the row gap), so it never runs on
+     from the note. */
   .station-presence {
+    flex-basis: 100%;
+    padding-left: 26px;
     font-size: 12px;
     font-weight: 400;
     color: var(--zs-frost-mid);
@@ -2837,7 +2842,11 @@ html[data-zs-theme="radio"] {
   .station-controls-note {
     grid-column: 2;
   }
-  .station-presence,
+  .station-presence {
+    grid-column: 2;
+    padding-left: 0;
+    margin-top: 2px;
+  }
   .station-share-nearby {
     grid-column: 1 / -1;
     margin-top: 6px;
