@@ -33,6 +33,9 @@ const VOLUME_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="is-solid" d="M4.5 9.5h3l4-3.5v12l-4-3.5h-3z"></path><path class="volume-wave-1" d="M15 9.5a3.5 3.5 0 0 1 0 5"></path><path class="volume-wave-2" d="M17.5 7a7 7 0 0 1 0 10"></path></svg>';
 const DOWNLOAD_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>';
+// The same mark as Radio's Add.
+const ADD_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5h11M4 12h11M4 17.5h7M18 14v7M14.5 17.5h7"></path></svg>';
 const SKIP_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l8 6-8 6zM18 5v14"></path></svg>';
 const LIVE_ICON =
@@ -515,14 +518,17 @@ export function createPlayer({
     download: "",
   });
   sheetDownload.innerHTML = `${DOWNLOAD_ICON}<span class="player-action-label">Download</span>`;
-  // This song: the same reactions as on Radio, and its download.
+  // This song: the same actions as on Radio (Like, Dislike, Add, and
+  // Download), in the same order.
   const sheetSong = element("div", "player-sheet-song", {
     role: "group",
     "aria-label": "This song",
   });
   const sheetLike = createReactionButton("like");
   const sheetDislike = createReactionButton("dislike");
-  sheetSong.append(sheetLike, sheetDislike, sheetDownload);
+  const sheetAdd = labelledButton("button player-sheet-add", ADD_ICON);
+  paintLabelled(sheetAdd, "Add");
+  sheetSong.append(sheetLike, sheetDislike, sheetAdd, sheetDownload);
   // Where to look (Lyrics, Up next, Contents) comes first; a station-wide
   // change, or the way back to Radio, comes last, on its own.
   sheetActions.append(
@@ -814,7 +820,8 @@ export function createPlayer({
       sheetDownload.hidden = true;
       sheetDownload.removeAttribute("href");
     }
-    sheetSong.hidden = !reactions && sheetDownload.hidden;
+    sheetAdd.hidden = !view.add;
+    sheetSong.hidden = !reactions && !view.add && sheetDownload.hidden;
   }
 
   function render() {
@@ -955,6 +962,10 @@ export function createPlayer({
       update();
     });
   }
+  // Add to station opens over the full player and returns to it.
+  sheetAdd.addEventListener("click", () =>
+    describe(shown)?.add?.run?.(sheetAdd),
+  );
   sheetPause.addEventListener("click", async () => {
     await describe(shown)?.stationPause?.run?.();
     update();

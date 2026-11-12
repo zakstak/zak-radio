@@ -3758,9 +3758,12 @@ html[data-zs-theme="radio"] {
   .player-sheet-note {
     @apply m-0 text-[13px] leading-5 text-radio-muted;
   }
-  /* This song: reactions and download, as on Radio. */
+  /* This song: Like, Dislike, Add, and Download share one row of equal
+     buttons, each icon above its label, as on Radio's phone layout. */
   .player-sheet-song {
-    @apply flex flex-wrap items-center gap-2;
+    @apply grid gap-2;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
   }
   .player-reaction {
     @apply gap-1.5;
@@ -3774,10 +3777,25 @@ html[data-zs-theme="radio"] {
     fill: currentColor;
   }
   .player-sheet-song .button {
-    @apply gap-1.5 px-3;
+    @apply min-h-14 min-w-0 flex-col gap-1 px-1 py-1.5 text-xs whitespace-nowrap;
   }
   .player-sheet-song .button svg {
     @apply size-[18px];
+  }
+  /* The count sits beside its label, under the icon. */
+  .player-sheet-song .player-reaction {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: center;
+    justify-items: center;
+    align-content: center;
+    gap: 4px;
+  }
+  .player-sheet-song .player-reaction svg {
+    grid-column: 1 / -1;
+  }
+  .player-sheet-song .reaction-count {
+    @apply px-1 text-xs leading-4;
   }
   .player-sheet-transport {
     @apply flex items-center justify-center gap-2;
@@ -3990,25 +4008,30 @@ html[data-zs-theme="radio"] {
   }
 }
 
+/* Shared controls keep their labels on one line: the buttons share a row,
+   at equal widths, when both fit, and take a row each when they don't. */
 .player-sheet-shared {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  flex-basis: 100%;
   gap: 8px;
-  grid-column: 1 / -1;
   padding-top: 12px;
   border-top: 1px solid var(--zs-line-soft);
 }
 
 .player-sheet-scope {
-  grid-column: 1 / -1;
+  flex-basis: 100%;
   margin: 0;
   color: var(--zs-frost-mid);
   font-size: 13px;
 }
 
 .player-sheet-shared .button {
-  min-width: 0;
-  white-space: normal;
+  flex: 1 1 0;
+  min-width: max-content;
+  column-gap: 6px;
+  padding-inline: 10px;
+  white-space: nowrap;
 }
 
 .player-toggle {

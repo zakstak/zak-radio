@@ -493,6 +493,9 @@ const radioAdapter = {
         .filter(Boolean)
         .join(" · "),
       reactions: station && !lost ? reactionView(track) : null,
+      add: station
+        ? { run: (opener) => openAddToStation(track, opener) }
+        : null,
       href: radioHref(),
       artwork: track.has_cover
         ? { src: mediaCoverURL(track), seed: track.id }
