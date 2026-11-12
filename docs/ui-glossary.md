@@ -57,6 +57,9 @@ messages, and announcements.
 - **Add**: the song action that opens Add to station, at every width.
 - **Preview**: play a song privately in Library. The player says "Preview" at
   every width.
+- **Your likes**: the Library filter for songs liked in this browser or app.
+  Filter stations can't use it, so saving it makes a hand-picked station of the
+  songs shown.
 - **Recently added**: songs added in the last six months, in the shelf, the
   filter chip, the list heading, and the filter station option. Not "Recent" or
   "Recent additions".

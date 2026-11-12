@@ -23,6 +23,7 @@ const randomBrowserHex = window.ZakRandomBrowserHex;
 const FILTER_LABELS = {
   all: "Every song",
   liked: "Liked by listeners",
+  mine: "Your likes",
   covers: "Songs with artwork",
   recent: "Recently added",
 };
@@ -540,6 +541,9 @@ export function initLibrary({ router } = {}) {
     track && displayTitle(track) !== UNTITLED
       ? `${displayTitle(track)} and more`.slice(0, 80)
       : "Hand-picked mix";
+  // Like and Dislike belong to this browser; Radio's reactions remember them.
+  const likedHere = (track) =>
+    Boolean(window.ZakReactions?.view?.(track)?.liked);
   const ownerToken = (stationId) =>
     window.ZakStorage.get(`zak-radio-owner:${stationId}`, "");
 
@@ -982,6 +986,7 @@ export function initLibrary({ router } = {}) {
       if (state.artist && fold(track.artist) !== fold(state.artist))
         return false;
       if (state.filter === "liked") return Boolean(track.liked);
+      if (state.filter === "mine") return likedHere(track);
       if (state.filter === "covers") return Boolean(track.has_cover);
       if (state.filter === "recent")
         return newest > 0 && entry.date >= newest - RECENT_WINDOW;
@@ -1474,6 +1479,14 @@ export function initLibrary({ router } = {}) {
         "empty",
         "No liked songs yet",
         "Like songs while they play on Radio, and they’ll collect here.",
+        [showAll],
+      );
+    }
+    if (state.filter === "mine") {
+      return stateBox(
+        "empty",
+        "You haven’t liked any songs here yet",
+        "Songs you like on Radio or in the player collect here. Likes are kept in this browser or app.",
         [showAll],
       );
     }
@@ -3442,6 +3455,7 @@ export function initLibrary({ router } = {}) {
     mode = "all",
     note = "",
     shownIds = [],
+    trackIds = track ? [track.id] : [],
   } = {}) {
     if (state.editor?.saving) return;
     closeMenu(false);
@@ -3453,11 +3467,7 @@ export function initLibrary({ router } = {}) {
       sourceType: kind,
       original: station ? { ...station } : null,
       originalName: station?.name || "",
-      trackIds: station
-        ? [...(station.track_ids || [])]
-        : track
-          ? [track.id]
-          : [],
+      trackIds: [...(station ? station.track_ids || [] : trackIds)],
       opener: opener || document.activeElement,
       creationAttempt: null,
       saving: false,
@@ -3965,6 +3975,16 @@ export function initLibrary({ router } = {}) {
   function saveShownAsStation() {
     const prefill = currentFilterPrefill();
     const shownIds = state.results.map(({ entry }) => entry.track.id);
+    // Your likes live in this browser, so no filter station can play them;
+    // the songs shown become a hand-picked station instead.
+    if (state.filter === "mine") {
+      openEditor({
+        sourceType: "list",
+        opener: els.saveFilter,
+        trackIds: shownIds,
+      });
+      return;
+    }
     const { query } = prefill;
     let note = "";
     const plays = filterMatches(query, prefill.mode).length;
@@ -4248,6 +4268,16 @@ export function initLibrary({ router } = {}) {
       renderEditorMatches();
     }
     window.ZakPlayer?.update?.();
+  });
+
+  // A like here reaches the list with the stats the server confirms (the
+  // catalog update above); one made in another tab arrives through storage.
+  window.addEventListener("storage", (event) => {
+    if (
+      state.filter === "mine" &&
+      (!event.key || event.key.startsWith("zak-reaction:"))
+    )
+      refresh();
   });
 
   if (onLibrary()) {
