@@ -1881,12 +1881,9 @@ html[data-zs-theme="radio"] {
     @apply m-0 text-[13px] leading-5 text-radio-muted lg:text-sm;
     min-height: 20px;
   }
-  /* Song details open in place, under the song's own metadata. */
+  /* Song details open in a sheet, from under the song's own metadata. */
   .details-toggle {
     @apply -ml-1 min-h-11 justify-self-start px-1 text-[13px] text-radio-accent-readable hover:bg-transparent lg:text-sm;
-  }
-  .details-toggle[aria-expanded="true"] .disclosure-chevron {
-    rotate: 180deg;
   }
   /* The same heading style as every other error state. */
   .radio-stage[data-state="error"] .track-title {

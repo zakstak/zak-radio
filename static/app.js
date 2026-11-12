@@ -93,8 +93,8 @@ const state = {
   // "none", or "error". Desktop moves Up next beside the player when a song
   // has none.
   lyricsKind: "loading",
-  // The song the now-playing live region last named.
-  announcedTrackId: "",
+  // The song and play state the now-playing live region last announced.
+  announcedNowPlaying: "",
 };
 
 const byId = (id) => document.getElementById(id);
@@ -179,7 +179,6 @@ const els = {
   lyricsFollow: byId("lyricsFollow"),
   lyricsSyncStatus: byId("lyricsSyncStatus"),
   toggleDetails: byId("toggleDetails"),
-  toggleDetailsLabel: byId("toggleDetailsLabel"),
   promptPanel: byId("promptPanel"),
   promptTitle: byId("promptTitle"),
   promptClose: byId("promptClose"),
@@ -961,12 +960,12 @@ function stationOptionButton({ id, name, meta }) {
   check.innerHTML =
     '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>';
   option.append(check);
-  if (current) {
-    const sr = document.createElement("span");
-    sr.className = "sr-only";
-    sr.textContent = ", playing now";
-    copy.append(sr);
-  }
+  // The name is set from the same words: visually hidden text would be read
+  // with a stray space before its comma ("…pause or skip , playing now").
+  option.setAttribute(
+    "aria-label",
+    [name, meta, current ? "playing now" : ""].filter(Boolean).join(", "),
+  );
   return option;
 }
 
@@ -1603,18 +1602,25 @@ function renderTrack(track) {
   updateNowPlayingMetadata();
 }
 
-// The live region says what's playing once per song, whenever Radio is on
-// screen or being heard: on a song change, on returning to Radio, and when
-// a station switch elsewhere makes it the one being heard.
+// The live region says what's playing once per song, and again when the
+// station pauses or starts, whenever Radio is on screen or being heard: on a
+// song change, on returning to Radio, and when a station switch elsewhere
+// makes it the one being heard. A paused station says so, and so does one
+// this device is waiting for, in the words of its status and note.
 function announceNowPlaying() {
   const track = currentTrack();
-  if (!track || state.announcedTrackId === track.id) return;
+  if (!track || !state.station) return;
   if (router.path() !== "/" && !radioHearing()) return;
-  state.announcedTrackId = track.id;
-  setText(
-    els.nowPlayingAnnouncement,
-    `Now playing ${trackDisplayTitle(track)}`,
-  );
+  const title = trackDisplayTitle(track);
+  const announcement = state.station.playing
+    ? `Now playing ${title}`
+    : state.autoListen
+      ? `Waiting · ${title}`
+      : `Paused · ${title}`;
+  const key = `${track.id}\n${announcement}`;
+  if (state.announcedNowPlaying === key) return;
+  state.announcedNowPlaying = key;
+  setText(els.nowPlayingAnnouncement, announcement);
 }
 
 // The stage takes a dim tint from the artwork: its average color, kept dark
@@ -2365,6 +2371,7 @@ function renderStation() {
       els.audio.loop = Boolean(station.repeat_one);
     if (!radioHearing()) updateProgressFromStation();
   }
+  announceNowPlaying();
   player?.update();
   updateNowPlayingMetadata();
   syncMediaSessionActions();
@@ -3910,9 +3917,11 @@ if ("ResizeObserver" in window) {
   }).observe(els.title);
 }
 // ---- Song details ----
-// Details use the same dismissible sheet at every width, leaving lyrics in place.
+// Details use the same dismissible sheet at every width, leaving lyrics in
+// place. The button opens that dialog, so it keeps its name and has no
+// expanded state of its own.
 function detailsOpen() {
-  return els.toggleDetails.getAttribute("aria-expanded") === "true";
+  return !els.promptPanel.hidden;
 }
 
 function homeDetails() {
@@ -3921,8 +3930,6 @@ function homeDetails() {
 }
 
 function setDetailsOpen(open) {
-  setAttribute(els.toggleDetails, "aria-expanded", String(open));
-  setText(els.toggleDetailsLabel, open ? "Hide details" : "Song details");
   if (!open) {
     if (els.songDetailsSheet.open) els.songDetailsSheet.close();
     homeDetails();
@@ -3935,9 +3942,7 @@ function setDetailsOpen(open) {
   els.promptTitle.focus({ preventScroll: true });
 }
 
-els.toggleDetails.addEventListener("click", () =>
-  setDetailsOpen(!detailsOpen()),
-);
+els.toggleDetails.addEventListener("click", () => setDetailsOpen(true));
 els.promptClose.addEventListener("click", () => {
   setDetailsOpen(false);
   els.toggleDetails.focus({ preventScroll: true });

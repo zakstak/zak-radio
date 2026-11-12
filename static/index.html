@@ -208,11 +208,11 @@
                 id="toggleDetails"
                 class="button-quiet details-toggle"
                 type="button"
-                aria-expanded="false"
-                aria-controls="promptPanel"
+                aria-haspopup="dialog"
+                aria-controls="songDetailsSheet"
                 hidden
               >
-                <span id="toggleDetailsLabel">Song details</span
+                <span>Song details</span
                 ><svg
                   class="disclosure-chevron"
                   viewBox="0 0 24 24"
@@ -1570,12 +1570,7 @@
         <p id="stationAccess" class="station-note">
           <span class="skeleton skeleton-line">Checking this station</span>
         </p>
-        <div
-          id="stationMenu"
-          class="station-sheet-actions"
-          role="group"
-          aria-label="This station"
-        >
+        <div id="stationMenu" class="station-sheet-actions">
           <button id="editStation" class="button" type="button" hidden>
             Edit this station
           </button>
