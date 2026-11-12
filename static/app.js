@@ -210,7 +210,11 @@ const els = {
   radioQueueTracks: byId("radioQueueTracks"),
   radioOwnerControls: byId("radioOwnerControls"),
   radioOwnerControlsSummary: byId("radioOwnerControlsSummary"),
+  radioProgramming: byId("radioProgramming"),
   radioProgrammingNote: byId("radioProgrammingNote"),
+  radioSettingsReadOnly: byId("radioSettingsReadOnly"),
+  radioSettingsOrder: byId("radioSettingsOrder"),
+  radioSettingsSkip: byId("radioSettingsSkip"),
   stationRandomMode: byId("stationRandomMode"),
   stationSkipDisliked: byId("stationSkipDisliked"),
   addToStationDialog: byId("addToStationDialog"),
@@ -2180,8 +2184,13 @@ function renderQueue() {
       ? `No repeats · ${plural(remaining, "song")} left before reshuffling`
       : "No repeats · reshuffling after this song";
   }
-  if (station && stationKind() === "saved" && !canControlStation())
-    summary += " · Only the owner can change this station’s order.";
+  if (
+    station &&
+    stationKind() === "saved" &&
+    !canControlStation() &&
+    !emptyStation()
+  )
+    summary += " · only its owner can change the order";
   if (libraryHint) {
     if (!els.radioQueueSummary.querySelector("a")) {
       const link = document.createElement("a");
@@ -2226,12 +2235,17 @@ function renderQueue() {
 
 els.titleToggle.addEventListener("blur", renderTitleClamp);
 
+// Playback settings change the station for everyone. Listen-only listeners
+// see what they are set to instead of controls they can't use.
 function renderSettings() {
   const station = state.station;
   els.radioOwnerControls.hidden =
     stationKind() === "temporary" || Boolean(state.stationError);
   const lost = connectionLost();
-  const control = Boolean(station) && canControlStation() && !lost;
+  const readOnly = Boolean(station) && !canControlStation();
+  const control = Boolean(station) && !readOnly && !lost;
+  els.radioProgramming.hidden = readOnly;
+  els.radioSettingsReadOnly.hidden = !readOnly;
   setRadioGroupDisabled(els.stationRandomMode, !control);
   els.stationSkipDisliked.disabled = !control;
   setText(
@@ -2240,24 +2254,22 @@ function renderSettings() {
       ? "Loading this station’s settings…"
       : lost
         ? "You can change these again when Zak Radio reconnects."
-        : control
-          ? "Changes affect everyone listening."
-          : "Listen-only. Only someone with editing access to this station can change these.",
+        : "Changes affect everyone listening.",
   );
   if (!station) {
     setText(els.radioOwnerControlsSummary, "");
     return;
   }
   const mode = station.random_mode || "deck";
+  const order = mode === "true_random" ? "Shuffle with repeats" : "No repeats";
   if (document.activeElement?.name !== "stationRandomMode")
     setRadioGroupValue(els.stationRandomMode, mode);
   els.stationSkipDisliked.checked = Boolean(station.skip_disliked);
+  setText(els.radioSettingsOrder, order);
+  setText(els.radioSettingsSkip, station.skip_disliked ? "On" : "Off");
   setText(
     els.radioOwnerControlsSummary,
-    [
-      mode === "true_random" ? "Shuffle with repeats" : "No repeats",
-      station.skip_disliked ? "Skips disliked" : "",
-    ]
+    [order, station.skip_disliked ? "Skips disliked" : ""]
       .filter(Boolean)
       .join(" · "),
   );
@@ -2273,10 +2285,10 @@ function accessNote() {
   if (kind === "saved")
     return control
       ? "Anyone on Zak Radio can listen. Only you can change it; your editing access is saved in this browser or app."
-      : "Listen-only · shared by its owner. Only someone with editing access to this station can pause, skip, or change it.";
+      : "Listen-only · shared by its owner. Only its owner can pause, skip, or change it.";
   return control
     ? `Your temporary station ${endsLabel(state.station.expires_at)}. People with the link can listen but can’t change it.`
-    : "Listen-only · shared by its owner. Only someone with editing access to this temporary station can pause, skip, or change it.";
+    : "Listen-only · shared by its owner. Only its owner can pause, skip, or change it.";
 }
 
 // "ends in about 23 hours unless you use it", from a server expiry time.

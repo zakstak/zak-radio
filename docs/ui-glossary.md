@@ -38,7 +38,10 @@ messages, and announcements.
   group is titled **Your station** or **Your temporary station**, with "Anyone
   on Zak Radio can listen · only you can change it".
 - **Listen-only · shared by its owner**: what a listener who can't control the
-  station sees in that place, and how the station sheet begins.
+  station sees in that place, and how the station sheet begins. What they can't
+  change is said one way: "only its owner can change the order", not "someone
+  with editing access". Settings they can't change are shown as a summary, not
+  as disabled controls.
 - **Pause for everyone**, **Skip for everyone**, **Resume for everyone**:
   station-wide changes on every station you control. They live in Shared
   controls, the full player, and full-screen lyrics. Temporary stations use

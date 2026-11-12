@@ -2055,6 +2055,13 @@ html[data-zs-theme="radio"] {
   .radio-programming .field-hint {
     @apply m-0;
   }
+  /* Listen-only listeners read the settings instead of disabled controls. */
+  .radio-settings-read-only {
+    @apply grid min-w-0 gap-3 pb-2;
+  }
+  .radio-settings-read-only .field-hint {
+    @apply m-0;
+  }
   /* One row per station: a check shows it has the song, and changing it
      adds or removes the song at once. New station is the last row. */
   .add-station-choices {
