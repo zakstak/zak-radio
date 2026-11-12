@@ -109,5 +109,7 @@ messages, and announcements.
   "Newest first". Library starts at Newest added first (Best match while
   searching) and remembers the listener's choice.
 - **Search songs and lyrics**: Library's search, at every width.
+- **Playback position**: the progress bar or seek slider in every player (Radio,
+  the dock, and the full player). Not "Song progress".
 - **Fleet**, not "Saga Fleet".
 - Apostrophes are curly (’) everywhere in the interface.

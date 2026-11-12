@@ -2499,7 +2499,7 @@ function renderProgress(position, duration) {
     setAttribute(els.progress, "aria-valuetext", valueText);
   } else {
     setAttribute(els.progressTrack, "role", "progressbar");
-    setAttribute(els.progressTrack, "aria-label", "Song progress");
+    setAttribute(els.progressTrack, "aria-label", "Playback position");
     setAttribute(els.progressTrack, "aria-valuemin", "0");
     setAttribute(
       els.progressTrack,

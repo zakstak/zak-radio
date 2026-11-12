@@ -95,7 +95,9 @@ function element(tag, className, attributes = {}) {
 }
 
 // A compact volume slider for pointer devices; phones use their own volume
-// buttons. Every slider on the page follows the same audio element.
+// buttons. Every slider on the page follows the same audio element. The
+// slider runs in percent, so its value reads the same as its text ("100%"),
+// even where aria-valuetext isn't used.
 export function createVolumeControl({ audio, label = "Volume" }) {
   const wrap = element("div", "volume-control");
   const mute = element("button", "icon-button volume-mute", {
@@ -108,8 +110,8 @@ export function createVolumeControl({ audio, label = "Volume" }) {
   const input = element("input", "volume-range", {
     type: "range",
     min: "0",
-    max: "1",
-    step: "0.05",
+    max: "100",
+    step: "5",
     "aria-label": label,
   });
   wrap.append(mute, input);
@@ -117,10 +119,10 @@ export function createVolumeControl({ audio, label = "Volume" }) {
   if (!Number.isFinite(stored) || stored < 0 || stored > 1) stored = 1;
   if (Math.abs(audio.volume - stored) > 0.001) audio.volume = stored;
   function sync() {
-    const value = audio.muted ? 0 : audio.volume;
-    input.value = String(value);
-    input.style.setProperty("--volume", `${Math.round(value * 100)}%`);
-    input.setAttribute("aria-valuetext", `${Math.round(value * 100)}%`);
+    const percent = Math.round((audio.muted ? 0 : audio.volume) * 100);
+    input.value = String(percent);
+    input.style.setProperty("--volume", `${percent}%`);
+    input.setAttribute("aria-valuetext", `${percent}%`);
     mute.setAttribute(
       "aria-pressed",
       String(audio.muted || audio.volume === 0),
@@ -131,7 +133,7 @@ export function createVolumeControl({ audio, label = "Volume" }) {
     wrap.dataset.level = quiet ? "off" : audio.volume < 0.5 ? "low" : "high";
   }
   input.addEventListener("input", () => {
-    const value = Number(input.value);
+    const value = Number(input.value) / 100;
     audio.muted = false;
     audio.volume = value;
     window.ZakStorage?.set("zak-volume", String(value));
