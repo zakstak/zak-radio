@@ -556,15 +556,8 @@ export function initLibrary({ router } = {}) {
   const quote = (text) => `“${text}”`;
   const displayTitle = (track) => window.ZakTrackDisplayTitle(track);
   const displayGroup = (track) => window.ZakTrackDisplayGroup(track) || "";
-  // Who made a song. Rows that leave out the collection still name it for
-  // an "Untitled" song (one with no usable title), so it can be told apart.
-  const byline = (track) =>
-    [
-      track.artist || "Zak",
-      displayTitle(track) === UNTITLED ? displayGroup(track) : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
+  // Who made a song, with the collection for an "Untitled" one (app.js).
+  const byline = (track) => window.ZakTrackByline(track);
   // A new hand-picked station is named for its first song, unless that song
   // has no title of its own.
   const listName = (track) =>
@@ -1924,6 +1917,10 @@ export function initLibrary({ router } = {}) {
           .filter(Boolean)
           .join(" · "),
         reactions: window.ZakReactions?.view?.(track) || null,
+        // Add to station opens over the full player and returns to it.
+        add: window.ZakStations
+          ? { run: (opener) => window.ZakStations.addTrack(track, opener) }
+          : null,
         href: "/library",
         artwork: track.has_cover
           ? { src: window.ZakMediaURL.cover(track), seed: track.id }

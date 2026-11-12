@@ -221,6 +221,8 @@ const els = {
   addToStationList: byId("addToStationList"),
   addToStationStatus: byId("addToStationStatus"),
   addToStationNew: byId("addToStationNew"),
+  addToStationFilterNote: byId("addToStationFilterNote"),
+  addToStationSaveNote: byId("addToStationSaveNote"),
   audio: byId("audio"),
   player: byId("player"),
   snackbarHost: byId("toast"),
@@ -313,6 +315,8 @@ function weakTrackLabel(value) {
   return false;
 }
 
+const UNTITLED = "Untitled";
+
 // A weak imported title ("2", "[Verse 1]") gives way to the song's subject.
 // Without one the song is "Untitled", never its collection's name: that
 // would read as the collection itself, and every view already shows the
@@ -324,12 +328,23 @@ function trackDisplayTitle(track) {
     String(track?.summary || "").split(/\r?\n/, 1)[0],
   );
   if (!weakTrackLabel(subject)) return subject;
-  return "Untitled";
+  return UNTITLED;
 }
 
 function trackDisplayGroup(track) {
   const group = cleanedTrackLabel(track?.group);
   return weakTrackLabel(group) ? "" : group;
+}
+
+// Who made a song, for rows that leave out the collection. An "Untitled"
+// song names its collection too, so it can be told apart from the others.
+function trackByline(track) {
+  return [
+    track?.artist || "Zak",
+    trackDisplayTitle(track) === UNTITLED ? trackDisplayGroup(track) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // The neutral tile for a station that isn't available; songs without
@@ -348,6 +363,7 @@ function createArtworkFallback(track) {
 
 window.ZakTrackDisplayTitle = trackDisplayTitle;
 window.ZakTrackDisplayGroup = trackDisplayGroup;
+window.ZakTrackByline = trackByline;
 window.ZakArtworkFallback = createArtworkFallback;
 
 const audioController = createAudioController({
@@ -944,6 +960,9 @@ function stationOptionButton({ id, name, meta }) {
   option.type = "button";
   option.className = "station-option";
   option.dataset.stationId = id;
+  // The name is the visible text, so voice control can say what it reads.
+  // The station playing now is the current one, as state rather than
+  // added words.
   const current = id === state.stationId;
   option.setAttribute("aria-current", String(current));
   const copy = document.createElement("span");
@@ -965,12 +984,6 @@ function stationOptionButton({ id, name, meta }) {
   check.innerHTML =
     '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>';
   option.append(check);
-  // The name is set from the same words: visually hidden text would be read
-  // with a stray space before its comma ("…pause or skip , playing now").
-  option.setAttribute(
-    "aria-label",
-    [name, meta, current ? "playing now" : ""].filter(Boolean).join(", "),
-  );
   return option;
 }
 
@@ -1102,8 +1115,12 @@ async function updateSavedStation(stationId, changes) {
 let addToStationTrack = null;
 let addToStationOpener = null;
 
+// Only hand-picked stations take individual songs, so filter stations
+// aren't listed.
 function listStationsForAdding() {
-  return ownedSavedStations();
+  return ownedSavedStations().filter(
+    (station) => station.source_type === "list",
+  );
 }
 
 function stationHasTrack(station, trackId) {
@@ -1114,10 +1131,12 @@ function stationHasTrack(station, trackId) {
 
 // The dialog lists every hand-picked station this browser can change, with
 // a check on those that already have the song. A change takes effect at
-// once and can be undone from its notification.
+// once and can be undone from its notification. It opens whenever this
+// browser has a station of its own, so someone with only filter stations
+// is told why theirs aren't there; with none, the song goes straight into
+// a new hand-picked station.
 function openAddToStation(track, opener = document.activeElement) {
-  const stations = listStationsForAdding();
-  if (!stations.length) {
+  if (!ownedSavedStations().length) {
     window.dispatchEvent(
       new CustomEvent("zak-new-list-station", { detail: { track, opener } }),
     );
@@ -1201,18 +1220,21 @@ function renderAddToStationRows() {
     input.checked = pending
       ? addToStationPending.get(station.station_id).add
       : stationHasTrack(station, track.id);
-    input.disabled = station.source_type !== "list" || connectionLost();
+    input.disabled = connectionLost();
     input.setAttribute("aria-disabled", String(pending || input.disabled));
     input.setAttribute("aria-busy", String(pending));
     item.querySelector(".add-station-name").textContent = station.name;
-    item.querySelector(".add-station-meta").textContent =
-      station.source_type !== "list"
-        ? stationSelection(station)
-        : pending
-          ? "Saving…"
-          : plural(station.track_ids?.length || 0, "song");
+    item.querySelector(".add-station-meta").textContent = pending
+      ? "Saving…"
+      : plural(station.track_ids?.length || 0, "song");
     return item;
   });
+  // Why filter stations aren't listed, only to someone who has one; how
+  // changes save, only when there is something to change.
+  els.addToStationFilterNote.hidden = !ownedSavedStations().some(
+    (station) => station.source_type !== "list",
+  );
+  els.addToStationSaveNote.hidden = !rows.length;
   els.addToStationNew.disabled = connectionLost();
   for (const item of els.addToStationList.querySelectorAll(":scope > li"))
     if (!rows.includes(item)) item.remove();
@@ -1511,6 +1533,15 @@ function failureKind(error) {
   return kind === "busy" ? "server" : kind;
 }
 
+// A song list that didn't load keeps the failure's shared heading and says
+// what didn't happen under it, as Library does. An empty archive did load,
+// so it keeps Radio's own words.
+function unavailableCopy(kind, catalog) {
+  if (!catalog || kind === "empty") return UNAVAILABLE[kind];
+  const copy = problemCopy(kind);
+  return [copy.title, `The song list didn’t load. ${copy.text}`];
+}
+
 function setStationUnavailable(kind = "unreachable", { catalog = false } = {}) {
   if (audioController.is("radio")) audioController.clear("radio");
   if (!catalog) state.station = null;
@@ -1521,7 +1552,7 @@ function setStationUnavailable(kind = "unreachable", { catalog = false } = {}) {
   )
     state.lastFailure = state.stationError;
   resetNowPlaying();
-  const [title, detail] = UNAVAILABLE[state.stationError];
+  const [title, detail] = unavailableCopy(state.stationError, catalog);
   els.radioView.dataset.state = "error";
   els.coverSurface.classList.remove("skeleton");
   delete els.emptyCover.dataset.seed;
@@ -1531,7 +1562,7 @@ function setStationUnavailable(kind = "unreachable", { catalog = false } = {}) {
   els.emptyCover.innerHTML = ARTWORK_ICON;
   els.emptyCover.classList.remove("hidden");
   els.emptyCover.classList.add("grid");
-  els.title.textContent = catalog ? "Couldn’t load the song list" : title;
+  els.title.textContent = title;
   els.title.classList.remove("is-long");
   els.nowPlaying.classList.remove("has-long-title");
   els.source.hidden = true;
@@ -2054,10 +2085,10 @@ function queueItem(track, index, editable) {
   title.className = "queue-title";
   title.textContent = track ? trackDisplayTitle(track) : "Unknown song";
   copy.append(title);
-  if (track?.artist) {
+  if (track) {
     const artist = document.createElement("span");
     artist.className = "queue-artist";
-    artist.textContent = track.artist;
+    artist.textContent = trackByline(track);
     copy.append(artist);
   }
   const length = document.createElement("span");
@@ -2139,7 +2170,7 @@ function renderQueue() {
   setText(
     nextLine,
     nextTrack
-      ? `Next: ${trackDisplayTitle(nextTrack)}${nextTrack.artist ? ` · ${nextTrack.artist}` : ""}`
+      ? `Next: ${trackDisplayTitle(nextTrack)} · ${trackByline(nextTrack)}`
       : "",
   );
   let ids = [];

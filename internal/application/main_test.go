@@ -789,7 +789,7 @@ func TestPlayerUsesSinglePlayPauseAndRepeatControls(t *testing.T) {
 	}
 	for _, marker := range []string{
 		`data-zs-theme="radio"`,
-		`href="/static/signal-stack.css?v=2"`,
+		`href="/static/signal-stack.css?v=3"`,
 		`app-rail zs-product-bar`,
 		`primary-nav zs-nav`,
 		`data-zs-service-switcher`,

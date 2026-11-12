@@ -34,8 +34,8 @@
       type="font/woff2"
       crossorigin
     />
-    <link rel="stylesheet" href="/static/styles.css?v=28" />
-    <link rel="stylesheet" href="/static/signal-stack.css?v=2" />
+    <link rel="stylesheet" href="/static/styles.css?v=29" />
+    <link rel="stylesheet" href="/static/signal-stack.css?v=3" />
     <script type="module" src="/static/service-switcher.js"></script>
   </head>
   <body>
@@ -2413,12 +2413,12 @@
              has the song; changing it adds or removes the song at once. -->
         <fieldset class="add-station-choices">
           <legend class="sr-only">Choose stations</legend>
-          <p class="field-hint">
+          <p id="addToStationFilterNote" class="field-hint" hidden>
             Only hand-picked stations take individual songs. Filter stations
-            play every song that matches their search or filter, so they can’t
-            be checked here.
+            play every song that matches their search or filter, so they aren’t
+            listed here.
           </p>
-          <p class="field-hint">
+          <p id="addToStationSaveNote" class="field-hint">
             Changes save right away. Use Undo to reverse one.
           </p>
           <ul id="addToStationList" class="add-station-list" role="list"></ul>
@@ -2450,7 +2450,7 @@
       aria-live="polite"
       aria-atomic="true"
     ></div>
-    <script src="/static/platform.js?v=3"></script>
-    <script type="module" src="/static/app.js?v=42"></script>
+    <script src="/static/platform.js?v=4"></script>
+    <script type="module" src="/static/app.js?v=43"></script>
   </body>
 </html>

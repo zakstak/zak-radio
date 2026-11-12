@@ -404,10 +404,21 @@ export function createLyricsView({
       line.append(secondary);
     }
     if (seekable) {
-      const hint = document.createElement("span");
-      hint.className = "sr-only";
-      hint.textContent = `, play from ${timeLabel(cue.start)}`;
-      line.append(hint);
+      // The name is set from the same words: visually hidden text would be
+      // read with a stray space before its comma ("…after rain , play from
+      // 0:06"). It starts with the visible text, unbroken, so voice control
+      // can say the line as shown; what the line looks like comes after.
+      const shown = [cue.text, cue.secondary_text].filter(Boolean).join(" ");
+      line.setAttribute(
+        "aria-label",
+        [
+          `${shown}${cue.quality_status === "warning" ? " (uncertain)" : ""}`,
+          cue.secondary_text ? "with a backing vocal" : "",
+          `play from ${timeLabel(cue.start)}`,
+        ]
+          .filter(Boolean)
+          .join(", "),
+      );
       line.addEventListener("click", () => {
         if (!canSeek()) return;
         state.following = true;
