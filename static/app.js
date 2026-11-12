@@ -93,8 +93,8 @@ const state = {
   // "none", or "error". Desktop moves Up next beside the player when a song
   // has none.
   lyricsKind: "loading",
-  // The song the now-playing live region last named.
-  announcedTrackId: "",
+  // The song and play state the now-playing live region last announced.
+  announcedNowPlaying: "",
 };
 
 const byId = (id) => document.getElementById(id);
@@ -145,7 +145,7 @@ const els = {
   pauseIcon: byId("pauseIcon"),
   listenNote: byId("listenNote"),
   listenAlternatives: byId("listenAlternatives"),
-  listenMainMeanwhile: byId("listenMainMeanwhile"),
+  listenMain: byId("listenMain"),
   like: byId("like"),
   likeCount: byId("likeCount"),
   dislike: byId("dislike"),
@@ -179,7 +179,6 @@ const els = {
   lyricsFollow: byId("lyricsFollow"),
   lyricsSyncStatus: byId("lyricsSyncStatus"),
   toggleDetails: byId("toggleDetails"),
-  toggleDetailsLabel: byId("toggleDetailsLabel"),
   promptPanel: byId("promptPanel"),
   promptTitle: byId("promptTitle"),
   promptClose: byId("promptClose"),
@@ -210,7 +209,11 @@ const els = {
   radioQueueTracks: byId("radioQueueTracks"),
   radioOwnerControls: byId("radioOwnerControls"),
   radioOwnerControlsSummary: byId("radioOwnerControlsSummary"),
+  radioProgramming: byId("radioProgramming"),
   radioProgrammingNote: byId("radioProgrammingNote"),
+  radioSettingsReadOnly: byId("radioSettingsReadOnly"),
+  radioSettingsOrder: byId("radioSettingsOrder"),
+  radioSettingsSkip: byId("radioSettingsSkip"),
   stationRandomMode: byId("stationRandomMode"),
   stationSkipDisliked: byId("stationSkipDisliked"),
   addToStationDialog: byId("addToStationDialog"),
@@ -493,6 +496,9 @@ const radioAdapter = {
         .filter(Boolean)
         .join(" · "),
       reactions: station && !lost ? reactionView(track) : null,
+      add: station
+        ? { run: (opener) => openAddToStation(track, opener) }
+        : null,
       href: radioHref(),
       artwork: track.has_cover
         ? { src: mediaCoverURL(track), seed: track.id }
@@ -957,12 +963,12 @@ function stationOptionButton({ id, name, meta }) {
   check.innerHTML =
     '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"></path></svg>';
   option.append(check);
-  if (current) {
-    const sr = document.createElement("span");
-    sr.className = "sr-only";
-    sr.textContent = ", playing now";
-    copy.append(sr);
-  }
+  // The name is set from the same words: visually hidden text would be read
+  // with a stray space before its comma ("…pause or skip , playing now").
+  option.setAttribute(
+    "aria-label",
+    [name, meta, current ? "playing now" : ""].filter(Boolean).join(", "),
+  );
   return option;
 }
 
@@ -1425,7 +1431,9 @@ const lyricsSheetLike = createReactionButton("like");
 const lyricsSheetDislike = createReactionButton("dislike");
 byId("lyricsSheetReactions").append(lyricsSheetLike, lyricsSheetDislike);
 const lyricsSheetShared = byId("lyricsSheetShared");
+const lyricsSheetPause = byId("lyricsSheetPause");
 const lyricsSheetSkip = byId("lyricsSheetSkip");
+lyricsSheetPause.addEventListener("click", () => toggleStationForEveryone());
 lyricsSheetSkip.addEventListener("click", () => skipForEveryone());
 bindProgress(
   lyricsSheetProgress,
@@ -1597,18 +1605,25 @@ function renderTrack(track) {
   updateNowPlayingMetadata();
 }
 
-// The live region says what's playing once per song, whenever Radio is on
-// screen or being heard: on a song change, on returning to Radio, and when
-// a station switch elsewhere makes it the one being heard.
+// The live region says what's playing once per song, and again when the
+// station pauses or starts, whenever Radio is on screen or being heard: on a
+// song change, on returning to Radio, and when a station switch elsewhere
+// makes it the one being heard. A paused station says so, and so does one
+// this device is waiting for, in the words of its status and note.
 function announceNowPlaying() {
   const track = currentTrack();
-  if (!track || state.announcedTrackId === track.id) return;
+  if (!track || !state.station) return;
   if (router.path() !== "/" && !radioHearing()) return;
-  state.announcedTrackId = track.id;
-  setText(
-    els.nowPlayingAnnouncement,
-    `Now playing ${trackDisplayTitle(track)}`,
-  );
+  const title = trackDisplayTitle(track);
+  const announcement = state.station.playing
+    ? `Now playing ${title}`
+    : state.autoListen
+      ? `Waiting · ${title}`
+      : `Paused · ${title}`;
+  const key = `${track.id}\n${announcement}`;
+  if (state.announcedNowPlaying === key) return;
+  state.announcedNowPlaying = key;
+  setText(els.nowPlayingAnnouncement, announcement);
 }
 
 // The stage takes a dim tint from the artwork: its average color, kept dark
@@ -1703,11 +1718,11 @@ function renderTrackFacts(track, station) {
     ["Made with", providerName(track.source)],
     ["File size", fileSize(track.audio_bytes)],
   ].filter(([, value]) => value);
-  // Listening statistics read as a sentence, not a label and a value.
+  // Listening statistics read as a sentence, in Library's words.
   const stats = station
     ? skips
       ? `Skipped early ${plural(skips, "time")}.`
-      : "Listeners have let this song play through."
+      : "Never skipped early."
     : "";
   setText(els.trackStats, stats);
   els.trackStats.hidden = !stats;
@@ -2075,7 +2090,7 @@ function queueItem(track, index, editable) {
         const result = await postControl(
           action,
           { track_id: track.id, position: index },
-          { outcome: "The queue didn’t change" },
+          { outcome: "the queue didn’t change" },
         );
         if (state.stationId !== stationId) return;
         delete els.radioQueueTracks.dataset.key;
@@ -2156,15 +2171,19 @@ function renderQueue() {
     return;
   } else if (stationKind() === "temporary") {
     ids = Array.isArray(station.queue) ? station.queue : [];
+    // With nothing queued, the server plays on through the catalog, which
+    // is ordered by collection.
+    const after = station.repeat_one
+      ? "Nothing queued, so this song repeats."
+      : station.shuffle
+        ? "Nothing queued, so songs from the whole library play at random."
+        : "Nothing queued, so the library plays in order, one collection at a time.";
     if (ids.length)
-      summary = `${plural(ids.length, "song")} queued${canControlStation() ? "" : " · Only the owner can change this queue."}`;
+      summary = `${plural(ids.length, "song")} queued${canControlStation() ? "" : " · only its owner can change the queue"}`;
     else if (canControlStation()) {
-      summary =
-        "Nothing queued. Choose Play next or Add to queue on any song in Library.";
+      summary = `${after} Choose Play next or Add to queue on any song in Library.`;
       libraryHint = true;
-    } else
-      summary =
-        "Nothing queued. The station keeps playing songs in the order they were added.";
+    } else summary = after;
   } else if (emptyStation()) {
     summary = canControlStation()
       ? "No songs match this station. Edit the station to change which songs it plays."
@@ -2178,8 +2197,13 @@ function renderQueue() {
       ? `No repeats · ${plural(remaining, "song")} left before reshuffling`
       : "No repeats · reshuffling after this song";
   }
-  if (station && stationKind() === "saved" && !canControlStation())
-    summary += " · Only the owner can change this station’s order.";
+  if (
+    station &&
+    stationKind() === "saved" &&
+    !canControlStation() &&
+    !emptyStation()
+  )
+    summary += " · only its owner can change the order";
   if (libraryHint) {
     if (!els.radioQueueSummary.querySelector("a")) {
       const link = document.createElement("a");
@@ -2224,12 +2248,17 @@ function renderQueue() {
 
 els.titleToggle.addEventListener("blur", renderTitleClamp);
 
+// Playback settings change the station for everyone. Listen-only listeners
+// see what they are set to instead of controls they can't use.
 function renderSettings() {
   const station = state.station;
   els.radioOwnerControls.hidden =
     stationKind() === "temporary" || Boolean(state.stationError);
   const lost = connectionLost();
-  const control = Boolean(station) && canControlStation() && !lost;
+  const readOnly = Boolean(station) && !canControlStation();
+  const control = Boolean(station) && !readOnly && !lost;
+  els.radioProgramming.hidden = readOnly;
+  els.radioSettingsReadOnly.hidden = !readOnly;
   setRadioGroupDisabled(els.stationRandomMode, !control);
   els.stationSkipDisliked.disabled = !control;
   setText(
@@ -2238,24 +2267,22 @@ function renderSettings() {
       ? "Loading this station’s settings…"
       : lost
         ? "You can change these again when Zak Radio reconnects."
-        : control
-          ? "Changes affect everyone listening."
-          : "Listen-only. Only someone with editing access to this station can change these.",
+        : "Changes affect everyone listening.",
   );
   if (!station) {
     setText(els.radioOwnerControlsSummary, "");
     return;
   }
   const mode = station.random_mode || "deck";
+  const order = mode === "true_random" ? "Shuffle with repeats" : "No repeats";
   if (document.activeElement?.name !== "stationRandomMode")
     setRadioGroupValue(els.stationRandomMode, mode);
   els.stationSkipDisliked.checked = Boolean(station.skip_disliked);
+  setText(els.radioSettingsOrder, order);
+  setText(els.radioSettingsSkip, station.skip_disliked ? "On" : "Off");
   setText(
     els.radioOwnerControlsSummary,
-    [
-      mode === "true_random" ? "Shuffle with repeats" : "No repeats",
-      station.skip_disliked ? "Skips disliked" : "",
-    ]
+    [order, station.skip_disliked ? "Skips disliked" : ""]
       .filter(Boolean)
       .join(" · "),
   );
@@ -2271,10 +2298,10 @@ function accessNote() {
   if (kind === "saved")
     return control
       ? "Anyone on Zak Radio can listen. Only you can change it; your editing access is saved in this browser or app."
-      : "Listen-only · shared by its owner. Only someone with editing access to this station can pause, skip, or change it.";
+      : "Listen-only · shared by its owner. Only its owner can pause, skip, or change it.";
   return control
     ? `Your temporary station ${endsLabel(state.station.expires_at)}. People with the link can listen but can’t change it.`
-    : "Listen-only · shared by its owner. Only someone with editing access to this temporary station can pause, skip, or change it.";
+    : "Listen-only · shared by its owner. Only its owner can pause, skip, or change it.";
 }
 
 // "ends in about 23 hours unless you use it", from a server expiry time.
@@ -2347,6 +2374,7 @@ function renderStation() {
       els.audio.loop = Boolean(station.repeat_one);
     if (!radioHearing()) updateProgressFromStation();
   }
+  announceNowPlaying();
   player?.update();
   updateNowPlayingMetadata();
   syncMediaSessionActions();
@@ -2496,7 +2524,7 @@ function renderProgress(position, duration) {
     setAttribute(els.progress, "aria-valuetext", valueText);
   } else {
     setAttribute(els.progressTrack, "role", "progressbar");
-    setAttribute(els.progressTrack, "aria-label", "Song progress");
+    setAttribute(els.progressTrack, "aria-label", "Playback position");
     setAttribute(els.progressTrack, "aria-valuemin", "0");
     setAttribute(
       els.progressTrack,
@@ -2770,7 +2798,7 @@ async function refreshStation(force = false, required = false) {
         stationId !== state.stationId
       )
         return;
-      state.streamConnected = false;
+      setStreamConnected(false);
       state.eventSource?.close();
       state.eventSource = null;
       setConnected(false, error);
@@ -2795,11 +2823,29 @@ async function refreshStation(force = false, required = false) {
   }
 }
 
+// The event stream keeps the station current. Polling stands in only while
+// the stream is down, and rests while the page is hidden; the stream keeps
+// reconnecting on its own either way.
+function syncStationPolling() {
+  const poll = !state.streamConnected && document.visibilityState !== "hidden";
+  if (poll && !state.pollTimer)
+    state.pollTimer = window.setInterval(refreshStation, 5000);
+  else if (!poll && state.pollTimer) {
+    window.clearInterval(state.pollTimer);
+    state.pollTimer = 0;
+  }
+}
+
+function setStreamConnected(connected) {
+  state.streamConnected = connected;
+  syncStationPolling();
+}
+
 function connectStationEvents() {
   window.clearTimeout(state.eventReconnectTimer);
   state.eventReconnectTimer = 0;
   state.eventSource?.close();
-  state.streamConnected = false;
+  setStreamConnected(false);
   setConnected(state.connected);
   state.connectedListeners = null;
   renderPresence();
@@ -2807,14 +2853,14 @@ function connectStationEvents() {
   state.eventSource = source;
   source.onopen = () => {
     if (source !== state.eventSource) return;
-    state.streamConnected = true;
+    setStreamConnected(true);
     state.eventReconnectAttempt = 0;
     setConnected(true);
   };
   source.addEventListener("station", async (event) => {
     if (source !== state.eventSource) return;
     try {
-      state.streamConnected = true;
+      setStreamConnected(true);
       state.eventReconnectAttempt = 0;
       setConnected(true);
       await applyStation(JSON.parse(event.data));
@@ -2855,7 +2901,7 @@ function connectStationEvents() {
     source.close();
     state.connectedListeners = null;
     renderPresence();
-    state.streamConnected = false;
+    setStreamConnected(false);
     setConnected(state.connected);
     const delay = Math.min(30000, 500 * 2 ** state.eventReconnectAttempt++);
     state.eventReconnectTimer = window.setTimeout(() => {
@@ -3151,7 +3197,9 @@ async function primaryAction() {
   );
 }
 
-async function listenToMainMeanwhile() {
+// While waiting for a paused station, "Listen to All songs" switches to All
+// songs instead, which stops waiting.
+async function listenToMain() {
   const previous = { id: state.stationId, label: stationLabel() };
   state.autoListen = false;
   state.userActivatedAudio = true;
@@ -3290,10 +3338,13 @@ async function createTemporaryStation({ trackId } = {}) {
         JSON.stringify(attempt),
       );
     }
+    // Without a chosen song, the station starts with the one on Radio.
+    const radioTrack = trackId ? null : currentTrack();
+    const firstTrackId = trackId || radioTrack?.id || state.tracks[0]?.id;
     const created = await api("/api/stations", {
       method: "POST",
       body: {
-        track_id: trackId || currentTrack()?.id || state.tracks[0]?.id,
+        track_id: firstTrackId,
         idempotency_key: attempt.idempotency_key,
         owner_token: attempt.owner_token,
       },
@@ -3321,7 +3372,13 @@ async function createTemporaryStation({ trackId } = {}) {
     if (state.station && !state.station.playing)
       await resumeForEveryone({ listen: true, quiet: true });
     else await listenLive();
-    return { ok: true, stationId: created.station_id };
+    // What it starts with, so the confirmation can say so.
+    return {
+      ok: true,
+      stationId: created.station_id,
+      firstTrack: trackById(firstTrackId),
+      fromRadio: Boolean(radioTrack),
+    };
   } catch (error) {
     if (error.status === 429) {
       if (!/capacity/i.test(error.detail || "")) {
@@ -3680,8 +3737,7 @@ async function boot(forceCatalog = false) {
     setStationUnavailable(failureKind(error));
     connectStationEvents();
   }
-  window.clearInterval(state.pollTimer);
-  state.pollTimer = window.setInterval(refreshStation, 5000);
+  syncStationPolling();
 }
 
 // Without the catalog nothing can play, so keep retrying in the background.
@@ -3881,9 +3937,11 @@ if ("ResizeObserver" in window) {
   }).observe(els.title);
 }
 // ---- Song details ----
-// Details use the same dismissible sheet at every width, leaving lyrics in place.
+// Details use the same dismissible sheet at every width, leaving lyrics in
+// place. The button opens that dialog, so it keeps its name and has no
+// expanded state of its own.
 function detailsOpen() {
-  return els.toggleDetails.getAttribute("aria-expanded") === "true";
+  return !els.promptPanel.hidden;
 }
 
 function homeDetails() {
@@ -3892,8 +3950,6 @@ function homeDetails() {
 }
 
 function setDetailsOpen(open) {
-  setAttribute(els.toggleDetails, "aria-expanded", String(open));
-  setText(els.toggleDetailsLabel, open ? "Hide details" : "Song details");
   if (!open) {
     if (els.songDetailsSheet.open) els.songDetailsSheet.close();
     homeDetails();
@@ -3906,9 +3962,7 @@ function setDetailsOpen(open) {
   els.promptTitle.focus({ preventScroll: true });
 }
 
-els.toggleDetails.addEventListener("click", () =>
-  setDetailsOpen(!detailsOpen()),
-);
+els.toggleDetails.addEventListener("click", () => setDetailsOpen(true));
 els.promptClose.addEventListener("click", () => {
   setDetailsOpen(false);
   els.toggleDetails.focus({ preventScroll: true });
@@ -4029,7 +4083,13 @@ function renderLyricsSheet() {
       action.icon === "play" ? PLAY_ICON : STOP_ICON;
   }
   els.lyricsSheetToggle.disabled = action.disabled;
+  // The same station-wide controls as Shared controls: Pause becomes Resume
+  // while the station is paused.
   setText(byId("lyricsSheetScope"), stationScope());
+  setText(
+    lyricsSheetPause,
+    state.station?.playing === false ? resumeLabel() : pauseLabel(),
+  );
   lyricsSheetShared.hidden = !(
     canControlStation() &&
     state.station &&
@@ -4176,7 +4236,7 @@ els.stationOptions.addEventListener("click", async (event) => {
 
 // Choosing a station while listening means "play this". A live station plays
 // at once; a paused one this browser controls starts in the same step, with
-// Undo; one it doesn't control is waited for, with the way back. Back and
+// Undo; one it doesn't control is waited for, as Radio itself shows. Back and
 // Forward (fromHistory) keep listening to a live station but never start
 // one for everyone.
 async function tuneTo(stationId, { fromHistory = false } = {}) {
@@ -4230,12 +4290,10 @@ async function tuneTo(stationId, { fromHistory = false } = {}) {
     });
     return;
   }
+  // The big button and its note say this device is waiting, with Listen to
+  // All songs beside them, and the status region announces it.
   state.autoListen = true;
   renderStation();
-  notify(
-    `“${stationLabel()}” is paused by its owner. You’ll hear it as soon as they start it.`,
-    { action: back },
-  );
 }
 
 async function returnToStation(previous) {
@@ -4310,7 +4368,7 @@ els.endStation.addEventListener("click", async () => {
     notify(result.message, { tone: "error" });
   }
 });
-els.listenMainMeanwhile.addEventListener("click", listenToMainMeanwhile);
+els.listenMain.addEventListener("click", listenToMain);
 els.stationRandomMode.addEventListener("change", (event) => {
   if (!event.target.matches('input[type="radio"]')) return;
   void setRandomMode(radioGroupValue(els.stationRandomMode));
@@ -4379,8 +4437,7 @@ els.radioRetry.addEventListener("click", async () => {
       await switchStation(state.stationId, state.ownerToken, {
         updateURL: false,
       });
-      if (!state.pollTimer)
-        state.pollTimer = window.setInterval(refreshStation, 5000);
+      syncStationPolling();
     } else {
       await boot(true);
     }
@@ -4532,7 +4589,11 @@ window.addEventListener("resize", scheduleRadioDock, { passive: true });
 window.addEventListener("zak-route", scheduleRadioDock);
 window.addEventListener("pageshow", () => schedulePlaybackRecovery(0));
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") schedulePlaybackRecovery(0);
+  syncStationPolling();
+  if (document.visibilityState !== "visible") return;
+  schedulePlaybackRecovery(0);
+  // Polling rested while hidden; catch up at once if the stream is down.
+  if (!state.streamConnected) void refreshStation();
 });
 let keyboardSeeking = false;
 function previewSeek() {
