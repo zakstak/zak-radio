@@ -876,7 +876,7 @@ func TestTailwindV4BuildConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, dependency := range []string{`"tailwindcss": "4.3.3"`, `"@tailwindcss/cli": "4.3.3"`} {
+	for _, dependency := range []string{`"tailwindcss": "4.3.5"`, `"@tailwindcss/cli": "4.3.5"`} {
 		if !strings.Contains(string(packageJSON), dependency) {
 			t.Fatalf("package.json is missing %s", dependency)
 		}
@@ -886,8 +886,8 @@ func TestTailwindV4BuildConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(output), "tailwindcss v4.3.3") {
-		t.Fatal("compiled stylesheet was not produced by Tailwind CSS v4.3.3")
+	if !strings.Contains(string(output), "tailwindcss v4.3.5") {
+		t.Fatal("compiled stylesheet was not produced by Tailwind CSS v4.3.5")
 	}
 }
 
